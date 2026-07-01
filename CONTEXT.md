@@ -15,8 +15,9 @@ The official MoonBoard iOS app broke their LEDs after an update (only ~4 LEDs li
 problem — see "The 20-byte bug" below), and it's buggy generally. This app replaces it.
 The Arduino firmware is **unchanged**; the app just speaks its BLE protocol correctly.
 
-Scope is an MVP: **no login, no import of official problems, Mini 2025 only, iOS only.**
-These were deliberate decisions (multiplatform and auth were explicitly dropped).
+Scope is an MVP: **no login, Mini 2025 only, iOS only.** Multiplatform and auth were
+explicitly dropped. Official problems are now importable as a bundled read-only
+catalog — see "Importing official problems" below.
 
 ## How to build / verify
 
@@ -94,6 +95,13 @@ given wiring.
   toggle; ⋯ menu with Edit and Delete (confirmation).
 - `Views/ConnectionView.swift` — scan/connect sheet.
 - `Views/LEDTestView.swift` — calibration.
+- `Catalog/Catalog.swift` — loads the bundled official-problem catalog (Codable);
+  `Catalog.shared` reads `Resources/MiniMoonBoard2025Catalog.json`, empty if absent.
+- `Views/CatalogListView.swift` — browse the official problems (search, grade filter,
+  benchmarks-only). `Views/CatalogProblemDetailView.swift` — view + light one (read-only).
+  Reached from the home menu → "Official Problems". Kept separate from SwiftData `Problem`s.
+- `Resources/MiniMoonBoard2025Catalog.json` — 4,889 Mini 2025 problems (auto-bundled by
+  the synchronized group). Produced by `scripts/fetch_boardsesh_mini2025.py`.
 - `Assets.xcassets/BoardBackground.imageset/board.png` — the Mini 2025 setup photo (1024×1024).
 
 ## Editor interaction model (current behavior)
@@ -110,6 +118,44 @@ given wiring.
     - top row, beta on: end→right→left→match→off (never Start)
     - top row, beta off: end→right→off
 - **Start (green) is never allowed on the top row** (row 12).
+
+## Importing official problems (the catalog)
+
+The "Official Problems" screen is a **read-only**, bundled catalog of Mini 2025
+problems, browsed and lit on the board but never edited or saved (separate from the
+user's own SwiftData `Problem`s). The data is **bundled at build time**, not fetched
+at runtime — the app has no login and makes no network calls.
+
+**Where the data comes from (and why):** MoonBoard's own sources are no longer
+script-accessible — the iOS app's backend (`rest-v1.moonclimbing.com`) is TLS
+**cert-pinned + Firebase App Check device-attested** (can't be MITM'd or scripted),
+and the old `moonboard.com` website + its problem API are **being retired** (return
+404). The catalog is therefore sourced from **boardsesh**, a live service that
+mirrored the full MoonBoard catalog into its own DB and exposes a **public GraphQL
+API** (`https://ws.boardsesh.com/graphql`, no auth for reads).
+
+**Regenerate the catalog:** `python3 scripts/fetch_boardsesh_mini2025.py` (pure
+stdlib, no creds) → pages `searchClimbs` for Mini 2025
+(`boardName="moonboard", layoutId=7, sizeId=1, setIds="28", angle=40`) and writes
+`Resources/MiniMoonBoard2025Catalog.json`, then rebuild.
+
+**Other setups (pre-staged for later):** `scripts/fetch_boardsesh.py` is the
+generalized fetcher — it pulls any of the 7 MoonBoard setups (`--layout N` or
+`--all`, optional `--angle`, server-side `--benchmarks-only` / `--min-ascents`).
+The **benchmark** problems for every setup (both angles) are already fetched into
+`catalog-data/` (NOT bundled — full boards like 2016 have ~94k problems, far too
+many to ship). When adding a board to the app, copy the relevant
+`catalog-data/<slug>_<angle>.json` into `Resources/` and add a layout-aware loader.
+⚠️ The standard boards are an **18-row** grid (rows 1–18); only the Minis are 12-row.
+`BoardGeometry`/`BoardGridView` are currently Mini-specific, so other boards need
+their own geometry + board image before they'll render/light correctly.
+
+**Hold decoding:** boardsesh stores holds as a `frames` string of `p{holdId}r{role}`
+tokens, where `holdId = (row-1)*11 + colIndex+1` (colIndex 0–10 = A–K, row 1=bottom)
+and role `42`=start, `43`=hand/move, `44`=finish. The script inverts that to (col,row).
+boardsesh collapses MoonBoard's left/right/match into a single "hand", so imported
+holds are **start/move/end only** (moves light blue, same as beta-off). Grades come
+from the `difficulty` label (e.g. `"6a+/V3"` → `"6A+"`).
 
 ## Known gotchas
 
@@ -128,7 +174,8 @@ given wiring.
 ## Open / deferred (not done)
 
 - `~D` "LEDs above holds" firmware option (we always send `l#…#`, no `~D` prefix).
-- Importing official MoonBoard problems; login/cloud sync; multiplatform.
+- Login/cloud sync; multiplatform. (Official-problem import is **done** — see
+  "Importing official problems" above.)
 - App icon is a placeholder (empty AppIcon set).
 - Hold→LED mapping not yet hardware-confirmed by the user as of this writing — LED Test is
   the tool to confirm/flip it.
