@@ -60,6 +60,13 @@ LABEL_TO_FONT = {
     "7c/V9": "7C", "7c+/V10": "7C+",
     "8a/V11": "8A", "8a+/V12": "8A+", "8b/V13": "8B", "8b+/V14": "8B+",
 }
+# benchmark flag misses genuine benchmarks; force-flag these by uuid.
+# (uuid is stable per problem across angles, so one entry covers 25° and 40°.)
+BENCHMARK_OVERRIDES = {
+    "ac7d98a1-51b6-5048-8e97-7651c5024a2d",  # THE WARM UP PROBLEM (6A+)
+    "8fe54ddb-c8c1-51fe-8418-45e3da379a07",  # FULL SWINGS (7A)
+}
+
 ROLE_TO_TYPE = {42: "start", 44: "end", 43: "right"}
 FRAME_TOKEN = re.compile(r"p(\d+)r(\d+)")
 HEADERS = {"Content-Type": "application/json", "User-Agent": "moonboard-led-catalog/1.0"}
@@ -103,21 +110,18 @@ def font_grade(label):
     return LABEL_TO_FONT.get(label, label.split("/")[0].upper() if label else "")
 
 
-def fetch_board(layout, angle, set_ids, min_ascents, benchmarks_only, delay):
+def _fetch_filtered(layout, angle, set_ids, server_filter, delay):
+    """Page through every problem matching one server-side filter dict."""
     out, page = [], 0
     while True:
         inp = {"boardName": "moonboard", "layoutId": layout, "sizeId": SIZE_ID,
                "setIds": set_ids, "angle": angle, "page": page, "pageSize": PAGE_SIZE}
-        # Filters applied server-side so we only page over matching problems.
-        if benchmarks_only:
-            inp["onlyBenchmarks"] = True
-        if min_ascents:
-            inp["minAscents"] = min_ascents
-        data = gql({"i": inp})
-        res = data["searchClimbs"]
+        inp.update(server_filter)
+        res = gql({"i": inp})["searchClimbs"]
         climbs = res["climbs"] or []
         for c in climbs:
-            bench = bool((c.get("benchmark_difficulty") or "").strip())
+            bench = bool((c.get("benchmark_difficulty") or "").strip()) or \
+                c.get("uuid") in BENCHMARK_OVERRIDES
             holds = decode_frames(c.get("frames"))
             if not holds:
                 continue
@@ -135,6 +139,34 @@ def fetch_board(layout, angle, set_ids, min_ascents, benchmarks_only, delay):
             break
         page += 1
         time.sleep(delay)
+    return out
+
+
+def fetch_board(layout, angle, set_ids, min_ascents, benchmarks_only, delay):
+    """Fetch matching problems as the UNION of the requested filters, deduped by uuid.
+
+    Many of the most-repeated problems
+    (e.g. 'THE WARM UP PROBLEM', 16k ascents) aren't flagged. So when both
+    --benchmarks-only and --min-ascents are given we union the two result sets
+    rather than intersect: keep every flagged benchmark AND every popular problem.
+    """
+    filters = []
+    if benchmarks_only:
+        filters.append({"onlyBenchmarks": True})
+    if min_ascents:
+        filters.append({"minAscents": min_ascents})
+    if not filters:
+        filters.append({})  # no filter -> everything
+
+    by_id, out = set(), []
+    for i, f in enumerate(filters):
+        if len(filters) > 1:
+            print(f"  filter {i+1}/{len(filters)}: {f}")
+        for p in _fetch_filtered(layout, angle, set_ids, f, delay):
+            if p["id"] in by_id:
+                continue
+            by_id.add(p["id"])
+            out.append(p)
     return out
 
 
