@@ -11,6 +11,8 @@ struct ProblemRow<Trailing: View>: View {
     var isFavorite: Bool = false
     /// When set, a small non-interactive board thumbnail is shown on the left.
     var holds: [HoldAssignment]? = nil
+    /// Which board's art to render the thumbnail with.
+    var setup: MoonBoardSetup = .mini2025
     /// Hold sets to show in the thumbnail (nil = all). The catalog passes the
     /// board's active sets; the logbook leaves it nil so it always shows every set.
     var visibleHoldSetIDs: Set<Int>? = nil
@@ -23,7 +25,7 @@ struct ProblemRow<Trailing: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 if let holds {
-                    BoardImageView(setup: .mini2025, visibleHoldSetIDs: visibleHoldSetIDs,
+                    BoardImageView(setup: setup, visibleHoldSetIDs: visibleHoldSetIDs,
                                    holds: holds, showBeta: false)
                         .frame(width: 72)
                         .allowsHitTesting(false)

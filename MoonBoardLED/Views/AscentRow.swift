@@ -10,6 +10,8 @@ struct AscentRow: View {
     var method: String? = nil
     var setter: String? = nil
     var holds: [HoldAssignment]? = nil
+    /// Board art for the thumbnail (defaults to Mini).
+    var setup: MoonBoardSetup = .mini2025
 
     var body: some View {
         ProblemRow(
@@ -17,6 +19,7 @@ struct AscentRow: View {
             isBenchmark: isBenchmark,
             isSent: ascent.sent,
             holds: holds,
+            setup: setup,
             meta: metaLine,
             subtitle: setter.map { "by \($0)" },
             comment: ascent.comment

@@ -8,6 +8,8 @@ struct CatalogProblemDetailView: View {
     @AppStorage("showBeta") private var showBeta = true
 
     let problem: CatalogProblem
+    /// Board art to render with.
+    var setup: MoonBoardSetup = .mini2025
     /// Hold sets to show (nil = all). The catalog passes the board's active sets;
     /// the logbook leaves it nil so ascents always show the full board.
     var visibleHoldSetIDs: Set<Int>? = nil
@@ -16,8 +18,9 @@ struct CatalogProblemDetailView: View {
     @Query private var ascents: [Ascent]
     @Query private var favorites: [FavoriteProblem]
 
-    init(problem: CatalogProblem, visibleHoldSetIDs: Set<Int>? = nil) {
+    init(problem: CatalogProblem, setup: MoonBoardSetup = .mini2025, visibleHoldSetIDs: Set<Int>? = nil) {
         self.problem = problem
+        self.setup = setup
         self.visibleHoldSetIDs = visibleHoldSetIDs
         let id: String? = problem.id
         _ascents = Query(filter: #Predicate<Ascent> { $0.sourceCatalogID == id })
@@ -32,10 +35,11 @@ struct CatalogProblemDetailView: View {
             CatalogProblemRow(problem: problem,
                               isSent: ascents.contains { $0.sent },
                               isFavorite: !favorites.isEmpty,
+                              setup: setup,
                               visibleHoldSetIDs: visibleHoldSetIDs)
                 .padding(.horizontal)
 
-            BoardImageView(setup: .mini2025, visibleHoldSetIDs: visibleHoldSetIDs,
+            BoardImageView(setup: setup, visibleHoldSetIDs: visibleHoldSetIDs,
                            holds: holds, showBeta: showBeta)
                 .padding(.horizontal, 8)
             Spacer(minLength: 0)
@@ -55,6 +59,8 @@ struct CatalogProblemRow: View {
     var isFavorite: Bool = false
     /// Whether to show the small board thumbnail on the left.
     var showPreview: Bool = false
+    /// Board art to render the thumbnail with.
+    var setup: MoonBoardSetup = .mini2025
     /// Hold sets to show in the thumbnail (nil = all). The catalog passes the
     /// board's active sets; the logbook leaves it nil.
     var visibleHoldSetIDs: Set<Int>? = nil
@@ -66,6 +72,7 @@ struct CatalogProblemRow: View {
             isSent: isSent,
             isFavorite: isFavorite,
             holds: showPreview ? problem.holdAssignments : nil,
+            setup: setup,
             visibleHoldSetIDs: visibleHoldSetIDs,
             meta: metaLine,
             subtitle: problem.setter.isEmpty ? "\(problem.holds.count) holds"
@@ -112,11 +119,13 @@ struct CatalogProblemPager: View {
     @EnvironmentObject private var ble: MoonBoardBLEManager
     @Environment(\.modelContext) private var context
     @Query private var favorites: [FavoriteProblem]
-    @AppStorage("boardOrientationFlipped") private var flipped = false
+    @AppStorage private var flipped: Bool
     @AppStorage("showBeta") private var showBeta = true
     @AppStorage("autoLightOnSwipe") private var autoLightOnSwipe = false
 
     let problems: [CatalogProblem]
+    /// Board these problems belong to (LED row count, per-board flip, logging).
+    let board: Board
     /// Hold sets to show (nil = all). Threaded to each detail view.
     var visibleHoldSetIDs: Set<Int>? = nil
     @State private var currentID: String?
@@ -130,9 +139,12 @@ struct CatalogProblemPager: View {
     /// disconnect). Drives the lightbulb's "active" state.
     @State private var litProblemID: String?
 
-    init(problems: [CatalogProblem], current: CatalogProblem, visibleHoldSetIDs: Set<Int>? = nil) {
+    init(problems: [CatalogProblem], current: CatalogProblem, board: Board,
+         visibleHoldSetIDs: Set<Int>? = nil) {
         self.problems = problems
+        self.board = board
         self.visibleHoldSetIDs = visibleHoldSetIDs
+        _flipped = AppStorage(wrappedValue: false, board.flippedKey)
         _currentID = State(initialValue: current.id)
     }
 
@@ -149,7 +161,8 @@ struct CatalogProblemPager: View {
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 0) {
                     ForEach(problems) { problem in
-                        CatalogProblemDetailView(problem: problem, visibleHoldSetIDs: visibleHoldSetIDs)
+                        CatalogProblemDetailView(problem: problem, setup: board.setup,
+                                                 visibleHoldSetIDs: visibleHoldSetIDs)
                             .frame(width: geo.size.width)
                             .id(problem.id)
                     }
@@ -178,6 +191,7 @@ struct CatalogProblemPager: View {
                                problemGrade: p.grade,
                                tries: max(currentTries, 1),
                                sent: true,
+                               boardLayoutId: board.id,
                                onComplete: { pendingTries = 0; pendingProblemID = nil })
             }
         }
@@ -274,7 +288,7 @@ struct CatalogProblemPager: View {
 
     private func lightUp() {
         guard let p = currentProblem else { return }
-        ble.send(holds: p.holdAssignments, flipped: flipped, showBeta: showBeta)
+        ble.send(holds: p.holdAssignments, rows: board.rows, flipped: flipped, showBeta: showBeta)
         litProblemID = p.id
     }
 

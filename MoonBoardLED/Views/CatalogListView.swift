@@ -30,14 +30,17 @@ struct CatalogListView: View {
         static var statusCases: [CatalogFilter] { [.myAscents, .notCompleted, .notLogged] }
     }
 
-    private let catalog = Catalog.shared
+    let board: Board
+    let angle: Int
+
     @Query private var ascents: [Ascent]
     @Query private var favorites: [FavoriteProblem]
     // Filters persist across visits (and launches) so they don't reset every
     // time the catalog is re-opened from Home. Search is intentionally transient.
     @State private var search = ""
-    @AppStorage("catalogLowerGrade") private var lowerGrade = 0
-    @AppStorage("catalogUpperGrade") private var upperGrade = FontGrade.all.count - 1
+    // Grade range is per board+angle (grade lists differ), so its keys are dynamic.
+    @AppStorage private var lowerGrade: Int
+    @AppStorage private var upperGrade: Int
     @AppStorage("catalogMinStars") private var minStars = 0
     /// Selected filters, "|"-joined raw values (see `CatalogFilter`).
     @AppStorage("catalogFilters") private var filtersCSV = ""
@@ -46,14 +49,44 @@ struct CatalogListView: View {
     @AppStorage("catalogMethods") private var methodsCSV = ""
     @AppStorage("catalogSortOrder") private var sortOrder: SortOrder = .default
     @AppStorage("showClimbPreviews") private var showClimbPreviews = true
-    /// Active hold sets installed on the board (shared with Home + the editor).
-    @AppStorage(ActiveHoldSets.miniStorageKey) private var activeHoldSetsCSV = ""
+    /// Active hold sets installed on this board (shared with Home + the editor).
+    @AppStorage private var activeHoldSetsCSV: String
 
-    private let holdSetSetup = MoonBoardSetup.mini2025
-    private let membership = HoldSetMembership.shared
-    private var activeHoldSets: Set<Int> { ActiveHoldSets.ids(from: activeHoldSetsCSV, in: holdSetSetup) }
+    /// Catalog is decoded off the main thread (4,889 problems is heavy) so tapping
+    /// a board is instant; nil until loaded, which drives the loading state.
+    @State private var loadedCatalog: Catalog?
+
+    init(board: Board, angle: Int) {
+        self.board = board
+        self.angle = angle
+        // No catalog decode here — the upper-grade default is a sentinel that's
+        // clamped to the real grade list once the catalog loads.
+        _lowerGrade = AppStorage(wrappedValue: 0, "catalogLowerGrade_\(board.id)_\(angle)")
+        _upperGrade = AppStorage(wrappedValue: 999, "catalogUpperGrade_\(board.id)_\(angle)")
+        _activeHoldSetsCSV = AppStorage(wrappedValue: "", board.activeHoldSetsKey)
+    }
+
+    private var catalog: Catalog { loadedCatalog ?? .empty }
+    /// The picker's grade range: the contiguous span of the canonical scale the
+    /// loaded catalog actually uses.
+    private var gradeList: [String] {
+        let present = Set(catalog.problems.map(\.grade))
+        let idxs = present.compactMap { FontGrade.all.firstIndex(of: $0) }
+        guard let lo = idxs.min(), let hi = idxs.max() else { return FontGrade.all }
+        return Array(FontGrade.all[lo...hi])
+    }
+    private var gradeMaxIndex: Int { max(gradeList.count - 1, 0) }
+    private var clampedUpper: Int { min(upperGrade, gradeMaxIndex) }
+    private var clampedLower: Int { min(max(lowerGrade, 0), clampedUpper) }
+    private var lowerBinding: Binding<Int> { Binding(get: { clampedLower }, set: { lowerGrade = $0 }) }
+    private var upperBinding: Binding<Int> { Binding(get: { clampedUpper }, set: { upperGrade = $0 }) }
+
+    private var membership: HoldSetMembership { board.membership }
+    private var activeHoldSets: Set<Int> { ActiveHoldSets.ids(from: activeHoldSetsCSV, in: board) }
     /// True when only some hold sets are installed, so the catalog is filtered.
-    private var holdSetSubsetActive: Bool { !ActiveHoldSets.isAllActive(activeHoldSets, in: holdSetSetup) }
+    private var holdSetSubsetActive: Bool { !ActiveHoldSets.isAllActive(activeHoldSets, in: board) }
+    /// Hold-set layers to render (active + always-on feet).
+    private var renderHoldSetIDs: Set<Int> { ActiveHoldSets.visible(activeHoldSets, in: board) }
 
     /// Method filter choices shown in the filter sheet ("Any marked holds" = no
     /// special method).
@@ -81,7 +114,18 @@ struct CatalogListView: View {
 
     @State private var showingFilters = false
     @State private var showingHoldSetEditor = false
-    @FocusState private var searchFocused: Bool
+    /// Drives navigation to the problem pager, built lazily on tap.
+    @State private var selectedProblem: CatalogProblem?
+
+    /// Incremental rendering: show this many rows, growing by `pageSize` as you
+    /// scroll to the end. Reset to one page whenever the filtered set changes.
+    private static let pageSize = 30
+    @State private var visibleLimit = CatalogListView.pageSize
+
+    /// Everything that changes the filtered result — used to reset pagination.
+    private var filterSignature: String {
+        "\(search)|\(filtersCSV)|\(methodsCSV)|\(minStars)|\(lowerGrade)|\(upperGrade)|\(sortOrder.rawValue)|\(activeHoldSetsCSV)"
+    }
 
     /// Catalog ids the user has actually sent (≥1 ascent with `sent == true`).
     private var sentIDs: Set<String> {
@@ -99,7 +143,7 @@ struct CatalogListView: View {
 
     /// Whether the grade range is anything other than the full span.
     private var gradeRangeActive: Bool {
-        lowerGrade > 0 || upperGrade < FontGrade.all.count - 1
+        clampedLower > 0 || clampedUpper < gradeMaxIndex
     }
 
     private var filtered: [CatalogProblem] {
@@ -109,10 +153,22 @@ struct CatalogListView: View {
         let selected = selectedFilters
         let activeSets = activeHoldSets
         let subset = holdSetSubsetActive
+        let selectedMethodSet = selectedMethods
+        // Hoist grade-range state OUT of the per-problem loop. Each of these is
+        // built from `gradeList`, which scans all ~4,889 grades — recomputing it
+        // per problem made filtering O(n²) (hundreds of ms release, seconds in
+        // debug, on every render/keystroke). Compute once, index by grade here.
+        let grades = gradeList
+        let gradeIndexByValue = Dictionary(grades.enumerated().map { ($0.element, $0.offset) },
+                                           uniquingKeysWith: { a, _ in a })
+        let lo = clampedLower
+        let hi = clampedUpper
         let matches = catalog.problems.filter { p in
-            inGradeRange(p.grade) &&
+            // Unknown grades (not in this board's list) are always shown.
+            let gradeOK = gradeIndexByValue[p.grade].map { $0 >= lo && $0 <= hi } ?? true
+            return gradeOK &&
             p.stars >= minStars &&
-            matchesMethod(p) &&
+            (selectedMethodSet.isEmpty || selectedMethodSet.contains(p.method ?? "Any marked holds")) &&
             (!subset || membership.isClimbable(holds: p.holds, activeSetIDs: activeSets)) &&
             matchesFilters(p, selected: selected, sent: sent, logged: logged, favs: favs) &&
             (search.isEmpty
@@ -157,61 +213,77 @@ struct CatalogListView: View {
         }
     }
 
-    /// Position of a grade in `FontGrade.all`; unknown grades sort to the end.
+    /// Position of a grade on the canonical scale; unknown grades sort to the end.
     private func gradeIndex(_ grade: String) -> Int {
-        FontGrade.all.firstIndex(of: grade) ?? FontGrade.all.count
-    }
-
-    private func matchesMethod(_ p: CatalogProblem) -> Bool {
-        let selected = selectedMethods
-        guard !selected.isEmpty else { return true }
-        return selected.contains(p.method ?? "Any marked holds")
-    }
-
-    /// Problems whose grade isn't in `FontGrade.all` are always shown so they
-    /// never silently disappear from the catalog.
-    private func inGradeRange(_ grade: String) -> Bool {
-        guard let idx = FontGrade.all.firstIndex(of: grade) else { return true }
-        return idx >= lowerGrade && idx <= upperGrade
+        FontGrade.index(of: grade)
     }
 
     var body: some View {
-            Group {
-                if catalog.problems.isEmpty {
+            // Compute the filtered/sorted list and lookup sets ONCE per render —
+            // never per row (per-row rebuilds of these made the list O(n²)/laggy).
+            let problems = filtered
+            let shown = visibleLimit >= problems.count ? problems : Array(problems.prefix(visibleLimit))
+            let sent = sentIDs
+            let favs = favoriteIDs
+            let renderIDs = renderHoldSetIDs
+            return Group {
+                if loadedCatalog == nil {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if catalog.problems.isEmpty {
                     ContentUnavailableView {
                         Label("No catalog bundled", systemImage: "tray")
                     } description: {
-                        Text("Run scripts/fetch_mini2025.py to download the official Mini MoonBoard 2025 problems, then rebuild the app.")
+                        Text("This board's problem catalog hasn't been bundled yet.")
                     }
                 } else {
                     List {
                         Section {
-                            ForEach(filtered) { problem in
-                                ZStack(alignment: .leading) {
+                            ForEach(shown) { problem in
+                                Button {
+                                    selectedProblem = problem
+                                } label: {
                                     CatalogProblemRow(problem: problem,
-                                                      isSent: sentIDs.contains(problem.id),
-                                                      isFavorite: favoriteIDs.contains(problem.id),
+                                                      isSent: sent.contains(problem.id),
+                                                      isFavorite: favs.contains(problem.id),
                                                       showPreview: showClimbPreviews,
-                                                      visibleHoldSetIDs: activeHoldSets)
-                                    NavigationLink(destination: CatalogProblemPager(problems: filtered, current: problem, visibleHoldSetIDs: activeHoldSets)) {
-                                        EmptyView()
+                                                      setup: board.setup,
+                                                      visibleHoldSetIDs: renderIDs)
+                                }
+                                .buttonStyle(.plain)
+                                .onAppear {
+                                    // Load the next page when the last visible row shows.
+                                    if problem.id == shown.last?.id && shown.count < problems.count {
+                                        visibleLimit += Self.pageSize
                                     }
-                                    .opacity(0)
                                 }
                             }
                         } header: {
-                            Text("\(filtered.count) of \(catalog.count) problems")
+                            Text("\(problems.count) of \(catalog.count) problems")
                         }
                     }
+                    .scrollDismissesKeyboard(.interactively)
                 }
             }
-            .navigationTitle("Mini MoonBoard 2025")
+            // Native search: on iOS 26 a search-role tab grows the bottom pill bar
+            // into this field; elsewhere it's a standard search bar. Binds the same
+            // `search` string the list filters on.
+            .searchable(text: $search, prompt: "Name or setter")
+            .navigationDestination(item: $selectedProblem) { problem in
+                CatalogProblemPager(problems: problems, current: problem,
+                                    board: board, visibleHoldSetIDs: renderIDs)
+            }
+            .onChange(of: filterSignature) { _, _ in visibleLimit = Self.pageSize }
+            .task {
+                guard loadedCatalog == nil else { return }
+                let resource = board.catalogResource(angle: angle)
+                loadedCatalog = await Task.detached(priority: .userInitiated) {
+                    Catalog.load(resource: resource)
+                }.value
+            }
+            .navigationTitle(board.name)
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if filtersActive || holdSetSubsetActive { activeFilterBar }
-            }
-            .safeAreaInset(edge: .bottom) {
-                floatingSearchBar
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -231,7 +303,7 @@ struct CatalogListView: View {
                 filterSheet
             }
             .sheet(isPresented: $showingHoldSetEditor) {
-                HoldSetEditorView(setup: holdSetSetup)
+                HoldSetEditorView(board: board)
             }
     }
 
@@ -288,17 +360,17 @@ struct CatalogListView: View {
         // Hold-set config reads as a board setting: tapping opens the editor, its
         // ✕ re-installs all sets (rather than clearing a catalog filter).
         if holdSetSubsetActive {
-            items.append(.init(label: ActiveHoldSets.subtitle(activeHoldSets, in: holdSetSetup),
+            items.append(.init(label: ActiveHoldSets.subtitle(activeHoldSets, in: board),
                                tap: { showingHoldSetEditor = true },
                                clear: { activeHoldSetsCSV = "" }))
         }
         if gradeRangeActive {
-            let label = lowerGrade == upperGrade
-                ? FontGrade.all[lowerGrade]
-                : "\(FontGrade.all[lowerGrade])–\(FontGrade.all[upperGrade])"
+            let label = clampedLower == clampedUpper
+                ? gradeList[clampedLower]
+                : "\(gradeList[clampedLower])–\(gradeList[clampedUpper])"
             items.append(.init(label: label) {
                 lowerGrade = 0
-                upperGrade = FontGrade.all.count - 1
+                upperGrade = gradeMaxIndex
             })
         }
         if minStars > 0 {
@@ -316,32 +388,6 @@ struct CatalogListView: View {
         return items
     }
 
-    /// Floating search field pinned to the bottom so it stays reachable while
-    /// the problem list scrolls behind it.
-    private var floatingSearchBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Name or setter", text: $search)
-                .focused($searchFocused)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-            if !search.isEmpty {
-                Button {
-                    search = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 16).padding(.vertical, 11)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(Color(.separator), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-        .padding(.horizontal, 28)
-        .padding(.bottom, 8)
-    }
-
     private var filtersActive: Bool {
         gradeRangeActive || minStars > 0 || !filtersCSV.isEmpty
             || !methodsCSV.isEmpty || sortOrder != .default
@@ -354,15 +400,15 @@ struct CatalogListView: View {
                     HStack {
                         Text("Grade range")
                         Spacer()
-                        Text(lowerGrade == upperGrade
-                             ? FontGrade.all[lowerGrade]
-                             : "\(FontGrade.all[lowerGrade])–\(FontGrade.all[upperGrade])")
+                        Text(clampedLower == clampedUpper
+                             ? gradeList[clampedLower]
+                             : "\(gradeList[clampedLower])–\(gradeList[clampedUpper])")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
-                    GradeRangeSlider(lower: $lowerGrade,
-                                     upper: $upperGrade,
-                                     grades: FontGrade.all)
+                    GradeRangeSlider(lower: lowerBinding,
+                                     upper: upperBinding,
+                                     grades: gradeList)
                         .padding(.vertical, 8)
                 } footer: {
                     Text("Drag either handle to set the minimum and maximum grade.")
@@ -413,7 +459,7 @@ struct CatalogListView: View {
                 Section {
                     Button("Reset filters") {
                         lowerGrade = 0
-                        upperGrade = FontGrade.all.count - 1
+                        upperGrade = gradeMaxIndex
                         minStars = 0
                         filtersCSV = ""
                         methodsCSV = ""

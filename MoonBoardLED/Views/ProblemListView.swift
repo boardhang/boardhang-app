@@ -64,7 +64,7 @@ struct ProblemListView: View {
                 LEDTestView()
             }
             .sheet(isPresented: $showingCatalog) {
-                CatalogListView()
+                CatalogListView(board: .mini2025, angle: Board.mini2025.defaultAngle)
             }
         }
     }

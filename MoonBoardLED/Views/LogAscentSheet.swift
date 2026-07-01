@@ -14,6 +14,8 @@ struct LogAscentSheet: View {
     private let sourceCatalogID: String?
     private let problemName: String
     private let problemGrade: String
+    /// Board this ascent is logged on (only used when creating).
+    private let boardLayoutId: Int
 
     @State private var date: Date
     @State private var votedGrade: String
@@ -29,11 +31,13 @@ struct LogAscentSheet: View {
     /// Log a brand-new ascent for the given problem. `sent` distinguishes a send
     /// from an attempts-only log; `tries` prefills the attempt count.
     init(sourceCatalogID: String?, problemName: String, problemGrade: String,
-         tries: Int = 1, sent: Bool = true, onComplete: (() -> Void)? = nil) {
+         tries: Int = 1, sent: Bool = true, boardLayoutId: Int = 7,
+         onComplete: (() -> Void)? = nil) {
         self.editing = nil
         self.sourceCatalogID = sourceCatalogID
         self.problemName = problemName
         self.problemGrade = problemGrade
+        self.boardLayoutId = boardLayoutId
         self.onComplete = onComplete
         _date = State(initialValue: Date())
         _votedGrade = State(initialValue: problemGrade)
@@ -49,6 +53,7 @@ struct LogAscentSheet: View {
         self.sourceCatalogID = ascent.sourceCatalogID
         self.problemName = ascent.problemName
         self.problemGrade = ascent.problemGrade
+        self.boardLayoutId = ascent.boardLayoutId
         self.onComplete = nil
         _date = State(initialValue: ascent.date)
         _votedGrade = State(initialValue: ascent.votedGrade)
@@ -133,7 +138,8 @@ struct LogAscentSheet: View {
                                 tries: tries,
                                 stars: stars,
                                 comment: comment,
-                                sent: sent)
+                                sent: sent,
+                                boardLayoutId: boardLayoutId)
             context.insert(ascent)
         }
         onComplete?()
