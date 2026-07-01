@@ -7,9 +7,9 @@ struct MoonBoardApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ProblemListView()
+            RootTabView()
                 .environmentObject(ble)
         }
-        .modelContainer(for: Problem.self)
+        .modelContainer(for: [Problem.self, Ascent.self, FavoriteProblem.self])
     }
 }

@@ -25,9 +25,9 @@ final class Problem {
 /// Font (Fontainebleau) grades offered in the picker.
 enum FontGrade {
     static let all: [String] = [
-        "5+", "6A", "6A+", "6B", "6B+", "6C", "6C+",
+        "6A+", "6B", "6B+", "6C", "6C+",
         "7A", "7A+", "7B", "7B+", "7C", "7C+",
         "8A", "8A+", "8B", "8B+",
     ]
-    static let `default` = "6A"
+    static let `default` = "6A+"
 }
