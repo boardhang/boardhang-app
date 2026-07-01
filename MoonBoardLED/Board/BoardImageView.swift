@@ -52,31 +52,46 @@ struct BoardImageView: View {
         let colStepFrac = (1 - geom.leftMargin - geom.rightMargin) / CGFloat(geom.numColumns)
 
         ZStack {
-            Image(setup.backgroundAsset)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-
-            ForEach(shownHoldSets) { holdSet in
-                Image(setup.asset(for: holdSet))
+            // The static art (background + visible hold-set overlays) is flattened
+            // into ONE cached image, so a list row draws a single layer instead of
+            // stacking 5+. Falls back to layered rendering if the composite fails.
+            if let art = BoardArtCache.image(for: setup, visibleHoldSetIDs: visibleHoldSetIDs) {
+                Image(uiImage: art)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
+            } else {
+                Image(setup.backgroundAsset)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+
+                ForEach(shownHoldSets) { holdSet in
+                    Image(setup.asset(for: holdSet))
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                }
             }
 
-            GeometryReader { geo in
-                let w = geo.size.width
-                let h = geo.size.height
-                let marker = colStepFrac * w * 0.9
-                // Interactive / highlight modes need every cell present (tappable
-                // or highlightable); read-only display only needs the lit holds.
-                if onTap != nil || highlight != nil {
-                    ForEach(0..<geom.numColumns, id: \.self) { col in
-                        ForEach(1...geom.rowTop, id: \.self) { row in
-                            positionedMarker(col: col, row: row, size: marker, w: w, h: h, geom: geom)
+            // Only lay out the marker overlay when there's actually something to
+            // draw. Plain thumbnails (no holds, not interactive, no highlight) skip
+            // the GeometryReader + per-cell work entirely, which keeps big lists
+            // and swipe gestures smooth.
+            if !holds.isEmpty || onTap != nil || highlight != nil {
+                GeometryReader { geo in
+                    let w = geo.size.width
+                    let h = geo.size.height
+                    let marker = colStepFrac * w * 0.9
+                    // Interactive / highlight modes need every cell present (tappable
+                    // or highlightable); read-only display only needs the lit holds.
+                    if onTap != nil || highlight != nil {
+                        ForEach(0..<geom.numColumns, id: \.self) { col in
+                            ForEach(1...geom.rowTop, id: \.self) { row in
+                                positionedMarker(col: col, row: row, size: marker, w: w, h: h, geom: geom)
+                            }
                         }
-                    }
-                } else {
-                    ForEach(holds) { hold in
-                        positionedMarker(col: hold.col, row: hold.row, size: marker, w: w, h: h, geom: geom)
+                    } else {
+                        ForEach(holds) { hold in
+                            positionedMarker(col: hold.col, row: hold.row, size: marker, w: w, h: h, geom: geom)
+                        }
                     }
                 }
             }
