@@ -2,38 +2,43 @@ import SwiftUI
 import SwiftData
 
 /// Full scrollable logbook: every ascent grouped into day-sessions, newest first.
-/// Section headers are the friendly session title ("Tue 24 Jun — 5 problems").
-/// Tapping an ascent opens its problem (swipeable through the other logged
-/// problems); swipe actions edit or delete. Optionally scrolls to a given day.
+/// Filtered by the shared board filter (default: all boards). Tapping an ascent
+/// opens its problem (swipeable through the other logged problems on that board);
+/// swipe actions edit or delete. Optionally scrolls to a given day.
 struct LogbookView: View {
     @Environment(\.modelContext) private var context
-    @Query(sort: \Ascent.date, order: .reverse) private var ascents: [Ascent]
+    @Query(sort: \Ascent.date, order: .reverse) private var allAscents: [Ascent]
     @AppStorage("showClimbPreviews") private var showClimbPreviews = true
-
-    private let catalog = Catalog.shared
+    @AppStorage(BoardFilter.storageKey) private var boardFilterCSV = ""
 
     /// When set, the view scrolls to this day's section on appear.
     var anchorDay: Date?
 
     @State private var editing: Ascent?
 
-    private var sessions: [LogSession] { LogSession.sessions(from: ascents) }
-
-    /// The catalog problem an ascent was logged from, if it still exists.
-    private func catalogProblem(for ascent: Ascent) -> CatalogProblem? {
-        guard let id = ascent.sourceCatalogID else { return nil }
-        return catalog.problems.first { $0.id == id }
+    /// Ascents included by the current board filter.
+    private var ascents: [Ascent] {
+        let selected = BoardFilter.selected(from: boardFilterCSV)
+        return allAscents.filter { selected.contains($0.boardLayoutId) }
     }
 
-    /// Distinct catalog problems across the whole logbook, in logbook order —
-    /// the set you can swipe through from the detail view.
-    private var loggedProblems: [CatalogProblem] {
+    private var sessions: [LogSession] { LogSession.sessions(from: ascents) }
+
+    /// The board + catalog problem an ascent was logged from, if it still exists.
+    private func entry(for ascent: Ascent) -> CatalogIndex.Entry? {
+        CatalogIndex.entry(forCatalogID: ascent.sourceCatalogID)
+    }
+
+    /// Distinct catalog problems for a board across the (filtered) logbook, in
+    /// logbook order — the set you swipe through from that board's detail view.
+    private func loggedProblems(for board: Board) -> [CatalogProblem] {
         var seen = Set<String>()
         var result: [CatalogProblem] = []
         for ascent in ascents {
-            guard let p = catalogProblem(for: ascent), !seen.contains(p.id) else { continue }
-            seen.insert(p.id)
-            result.append(p)
+            guard let e = entry(for: ascent), e.board.id == board.id,
+                  !seen.contains(e.problem.id) else { continue }
+            seen.insert(e.problem.id)
+            result.append(e.problem)
         }
         return result
     }
@@ -84,6 +89,9 @@ struct LogbookView: View {
         .navigationTitle("Logbook")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                BoardFilterMenu()
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showClimbPreviews.toggle() } label: {
                     Image(systemName: showClimbPreviews ? "square.grid.2x2.fill" : "square.grid.2x2")
@@ -95,17 +103,21 @@ struct LogbookView: View {
         }
     }
 
-    /// Tapping a row opens its problem in the swipeable detail pager. Ascents
-    /// whose source problem no longer exists are shown as plain (non-tappable).
+    /// Tapping a row opens its problem in the swipeable detail pager (all hold sets
+    /// shown, regardless of the board's installed sets). Ascents whose source
+    /// problem no longer exists are shown as plain (non-tappable).
     @ViewBuilder
     private func row(for ascent: Ascent) -> some View {
-        if let problem = catalogProblem(for: ascent) {
+        if let e = entry(for: ascent) {
             ZStack(alignment: .leading) {
-                AscentRow(ascent: ascent, isBenchmark: problem.isBenchmark,
-                          method: problem.method, setter: problem.setter,
-                          holds: showClimbPreviews ? problem.holdAssignments : nil)
+                AscentRow(ascent: ascent, isBenchmark: e.problem.isBenchmark,
+                          method: e.problem.method, setter: e.problem.setter,
+                          holds: showClimbPreviews ? e.problem.holdAssignments : nil,
+                          setup: e.board.setup)
                 NavigationLink {
-                    CatalogProblemPager(problems: loggedProblems, current: problem)
+                    CatalogProblemPager(problems: loggedProblems(for: e.board),
+                                        current: e.problem, board: e.board,
+                                        visibleHoldSetIDs: nil)
                 } label: { EmptyView() }
                 .opacity(0)
             }
