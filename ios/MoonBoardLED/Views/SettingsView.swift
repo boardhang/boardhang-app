@@ -80,12 +80,19 @@ struct SettingsView: View {
 /// the app works signed-out.
 private struct AccountSection: View {
     @EnvironmentObject private var auth: AuthManager
-    @State private var showingSignIn = false
-    @State private var showingProfileSetup = false
+    @State private var activeSheet: AccountSheet?
     @State private var confirmingSignOut = false
     @State private var confirmingDelete = false
     @State private var isDeleting = false
     @State private var actionError: String?
+
+    /// One sheet slot for the whole section. Two separate `.sheet(isPresented:)`
+    /// modifiers on one view conflict in SwiftUI ("already presenting" → the sheet
+    /// dismisses itself the moment it opens); a single `.sheet(item:)` avoids that.
+    private enum AccountSheet: Identifiable {
+        case signIn, profileSetup
+        var id: Self { self }
+    }
 
     var body: some View {
         // No backend configured in this build → no auth entry point at all. The rest
@@ -112,14 +119,14 @@ private struct AccountSection: View {
                 switch auth.status {
                 case .signedOut:
                     Button {
-                        showingSignIn = true
+                        activeSheet = .signIn
                     } label: {
                         Label("Sign in", systemImage: "person.crop.circle.badge.plus")
                     }
 
             case .signedInNoProfile:
                 Button {
-                    showingProfileSetup = true
+                    activeSheet = .profileSetup
                 } label: {
                     Label("Finish setting up your profile", systemImage: "person.crop.circle.badge.exclamationmark")
                 }
@@ -163,8 +170,12 @@ private struct AccountSection: View {
                 Text(actionError).foregroundStyle(.red)
             }
         }
-        .sheet(isPresented: $showingSignIn) { SignInView() }
-        .sheet(isPresented: $showingProfileSetup) { ProfileSetupView() }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .signIn: SignInView()
+            case .profileSetup: ProfileSetupView()
+            }
+        }
         .confirmationDialog("Sign out?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await signOut() } }
             Button("Cancel", role: .cancel) {}
