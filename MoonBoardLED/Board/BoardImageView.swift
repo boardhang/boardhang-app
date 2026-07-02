@@ -15,6 +15,9 @@ struct BoardImageView: View {
     var visibleHoldSetIDs: Set<Int>? = nil
     /// Holds to light up on top of the art (a problem's beta).
     var holds: [HoldAssignment] = []
+    /// Positions ("col-row") wrapped in a yellow ring — the active holds filter.
+    /// Drawn as an outer ring so it composes with any typed marker underneath.
+    var selectedHolds: Set<String> = []
     /// Beta off collapses left/right/match to blue.
     var showBeta: Bool = true
     /// Called when a hold is tapped (nil = read-only). When set, every grid
@@ -29,12 +32,14 @@ struct BoardImageView: View {
     init(setup: MoonBoardSetup,
          visibleHoldSetIDs: Set<Int>? = nil,
          holds: [HoldAssignment] = [],
+         selectedHolds: Set<String> = [],
          showBeta: Bool = true,
          onTap: ((Int, Int) -> Void)? = nil,
          highlight: (col: Int, row: Int)? = nil) {
         self.setup = setup
         self.visibleHoldSetIDs = visibleHoldSetIDs
         self.holds = holds
+        self.selectedHolds = selectedHolds
         self.showBeta = showBeta
         self.onTap = onTap
         self.highlight = highlight
@@ -46,24 +51,37 @@ struct BoardImageView: View {
         return setup.holdSets.filter { ids.contains($0.id) }
     }
 
+    /// "col-row" keys to draw in read-only display mode: every lit hold plus any
+    /// filter-selected position, deduplicated.
+    private var displayPositions: [String] {
+        Array(Set(holds.map { "\($0.col)-\($0.row)" }).union(selectedHolds)).sorted()
+    }
+
     var body: some View {
         let geom = setup.geometry
         // Marker size tracks the column spacing so rings sit snugly on the holds.
         let colStepFrac = (1 - geom.leftMargin - geom.rightMargin) / CGFloat(geom.numColumns)
 
         ZStack {
-            // The static art (background + visible hold-set overlays) is flattened
-            // into ONE cached image, so a list row draws a single layer instead of
-            // stacking 5+. Falls back to layered rendering if the composite fails.
+            // Axis labels (A–K along the top, row numbers down the side). The
+            // background PNG is black text on a transparent canvas, so we render
+            // it as a template tinted with the primary label color — black in
+            // light mode, white in dark mode — instead of baking it into the
+            // cached art where it would stay black and vanish in dark mode.
+            Image(setup.backgroundAsset)
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .foregroundStyle(Color.primary)
+
+            // The static hold-set overlays are flattened into ONE cached image, so
+            // a list row draws a single layer instead of stacking 5+. Falls back
+            // to layered rendering if the composite fails.
             if let art = BoardArtCache.image(for: setup, visibleHoldSetIDs: visibleHoldSetIDs) {
                 Image(uiImage: art)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
             } else {
-                Image(setup.backgroundAsset)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-
                 ForEach(shownHoldSets) { holdSet in
                     Image(setup.asset(for: holdSet))
                         .resizable()
@@ -75,7 +93,7 @@ struct BoardImageView: View {
             // draw. Plain thumbnails (no holds, not interactive, no highlight) skip
             // the GeometryReader + per-cell work entirely, which keeps big lists
             // and swipe gestures smooth.
-            if !holds.isEmpty || onTap != nil || highlight != nil {
+            if !holds.isEmpty || !selectedHolds.isEmpty || onTap != nil || highlight != nil {
                 GeometryReader { geo in
                     let w = geo.size.width
                     let h = geo.size.height
@@ -89,8 +107,14 @@ struct BoardImageView: View {
                             }
                         }
                     } else {
-                        ForEach(holds) { hold in
-                            positionedMarker(col: hold.col, row: hold.row, size: marker, w: w, h: h, geom: geom)
+                        // Read-only display: the lit holds plus any filter-selected
+                        // positions not already among them (so the yellow ring shows
+                        // even on a position the problem doesn't light).
+                        ForEach(displayPositions, id: \.self) { key in
+                            let parts = key.split(separator: "-")
+                            if let col = Int(parts.first ?? ""), let row = Int(parts.last ?? "") {
+                                positionedMarker(col: col, row: row, size: marker, w: w, h: h, geom: geom)
+                            }
                         }
                     }
                 }
@@ -114,6 +138,7 @@ struct BoardImageView: View {
         let shownType = assignment?.type.displayed(showBeta: showBeta)
         let shownColor = shownType?.color
         let isHighlighted = highlight.map { $0.col == col && $0.row == row } ?? false
+        let isSelected = selectedHolds.contains("\(col)-\(row)")
         let ringColor: Color = isHighlighted ? .orange : (shownColor ?? .clear)
         let ringWidth: CGFloat = isHighlighted ? 4 : (assignment == nil ? 0 : 3.5)
 
@@ -121,6 +146,14 @@ struct BoardImageView: View {
             .fill((shownColor ?? .clear).opacity(assignment == nil ? 0 : 0.35))
             .frame(width: size, height: size)
             .overlay(Circle().strokeBorder(ringColor, lineWidth: ringWidth))
+            // The active holds filter: a yellow ring sitting just outside the
+            // typed marker, so it reads as "this hold is in your filter" whether
+            // or not a problem lights the hold underneath.
+            .overlay {
+                if isSelected {
+                    Circle().strokeBorder(Color.yellow, lineWidth: 3).padding(-4)
+                }
+            }
             .shadow(color: .black.opacity(assignment == nil && !isHighlighted ? 0 : 0.5), radius: 1)
             .overlay(alignment: .bottom) {
                 if showBeta, let shownType {

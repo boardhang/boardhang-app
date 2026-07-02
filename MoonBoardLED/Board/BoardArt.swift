@@ -1,15 +1,19 @@
 import SwiftUI
 import UIKit
 
-/// Renders and caches a single flattened image of a board's *static* art — the
-/// background plus its visible hold-set overlays — so a list row draws ONE image
-/// instead of stacking a background + up to four transparent overlay layers.
+/// Renders and caches a single flattened image of a board's *static* hold-set
+/// overlays — so a list row draws ONE image instead of stacking up to four
+/// transparent overlay layers.
 ///
 /// The catalog list shows dozens of thumbnails, each previously compositing 5+
 /// image layers; every row shares the same (setup, visible-set) combination, so
 /// the whole list collapses to a single cached bitmap. The composite is drawn at
 /// the art's native pixel size, so there's no fidelity loss versus the layered
 /// path — it's the same PNGs, merged once.
+///
+/// The axis labels (the background PNG) are deliberately *not* baked in here:
+/// `BoardImageView` draws them as a separate template-tinted layer so they can
+/// invert to white in dark mode instead of disappearing.
 enum BoardArtCache {
     private static var cache: [String: UIImage] = [:]
     private static let lock = NSLock()
@@ -41,6 +45,9 @@ enum BoardArtCache {
     }
 
     private static func render(background: String, overlays: [String]) -> UIImage? {
+        // The background PNG is used only to size the canvas; its pixels (the
+        // axis labels) are drawn separately by BoardImageView so they can be
+        // tinted for dark mode.
         guard let bg = UIImage(named: background) else { return nil }
         let size = bg.size
         let format = UIGraphicsImageRendererFormat.default()
@@ -49,7 +56,6 @@ enum BoardArtCache {
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.image { _ in
             let rect = CGRect(origin: .zero, size: size)
-            bg.draw(in: rect)
             // Overlays share the background's canvas (verified: all board art is
             // the same pixel size), so each draws into the full rect, aligned.
             for name in overlays {
