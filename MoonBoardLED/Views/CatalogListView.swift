@@ -5,16 +5,48 @@ import UIKit
 /// Browse the bundled, read-only catalog of official Mini MoonBoard 2025
 /// problems. Separate from the user's own problems — view and light only.
 struct CatalogListView: View {
-    /// Sort orders available in the filter sheet. `default` keeps the catalog's
-    /// own (JSON) order.
-    private enum SortOrder: String, CaseIterable, Identifiable {
-        case `default`    = "Default"
-        case highestRated = "Highest rated"
+    /// A single sort dimension. The same four keys populate both the primary and
+    /// the optional secondary "then by" row; each grade direction is its own key.
+    private enum SortKey: String, CaseIterable, Identifiable {
         case easiest      = "Easiest first"
         case hardest      = "Hardest first"
+        case highestRated = "Highest rated"
+        case mostRepeats  = "Most repeats"
 
         var id: String { rawValue }
+
+        /// Underlying field, so the secondary row can hide whichever key(s) share
+        /// the primary's dimension (no "Highest rated, then Highest rated", and no
+        /// pairing Easiest with Hardest).
+        enum Dimension { case grade, rating, repeats }
+        var dimension: Dimension {
+            switch self {
+            case .easiest, .hardest: return .grade
+            case .highestRated:      return .rating
+            case .mostRepeats:       return .repeats
+            }
+        }
+
+        /// Order two problems on this key (direction baked in).
+        func order(_ a: CatalogProblem, _ b: CatalogProblem,
+                   gradeIndex: (String) -> Int) -> ComparisonResult {
+            switch self {
+            case .easiest:      return Self.cmp(gradeIndex(a.grade), gradeIndex(b.grade))
+            case .hardest:      return Self.cmp(gradeIndex(b.grade), gradeIndex(a.grade))
+            case .highestRated: return Self.cmp(b.stars, a.stars)
+            case .mostRepeats:  return Self.cmp(b.repeats, a.repeats)
+            }
+        }
+
+        private static func cmp<T: Comparable>(_ a: T, _ b: T) -> ComparisonResult {
+            a < b ? .orderedAscending : (a > b ? .orderedDescending : .orderedSame)
+        }
     }
+
+    /// Baseline sort (first launch / Reset): easiest first, most-repeated within a
+    /// grade — replaces the old opaque "Default" with a meaningful order.
+    private static let baselinePrimary: SortKey = .easiest
+    private static let baselineSecondary: SortKey? = .mostRepeats
 
     /// Multi-select status/attribute filters shown in the "Filters" section.
     /// The three status cases (`myAscents`/`notCompleted`/`notLogged`) are
@@ -48,7 +80,10 @@ struct CatalogListView: View {
     /// Selected method filters, "|"-joined. Empty = any. "Standard" means
     /// problems with no special method; other entries are exact method labels.
     @AppStorage("catalogMethods") private var methodsCSV = ""
-    @AppStorage("catalogSortOrder") private var sortOrder: SortOrder = .default
+    /// Two-level sort. Primary is always set; secondary is an optional tiebreaker
+    /// stored as a raw value ("" = None).
+    @AppStorage("catalogSortPrimary") private var sortPrimary: SortKey = .easiest
+    @AppStorage("catalogSortSecondary") private var sortSecondaryRaw = SortKey.mostRepeats.rawValue
     @AppStorage("showClimbPreviews") private var showClimbPreviews = true
     /// Active hold sets installed on this board (shared with Home + the editor).
     @AppStorage private var activeHoldSetsCSV: String
@@ -168,7 +203,7 @@ struct CatalogListView: View {
 
     /// Everything that changes the filtered result — used to reset pagination.
     private var filterSignature: String {
-        "\(search)|\(filtersCSV)|\(methodsCSV)|\(minStars)|\(lowerGrade)|\(upperGrade)|\(sortOrder.rawValue)|\(activeHoldSetsCSV)|\(holdFilterCSV)"
+        "\(search)|\(filtersCSV)|\(methodsCSV)|\(minStars)|\(lowerGrade)|\(upperGrade)|\(sortPrimary.rawValue)|\(sortSecondaryRaw)|\(activeHoldSetsCSV)|\(holdFilterCSV)"
     }
 
     /// Catalog ids the user has actually sent (≥1 ascent with `sent == true`).
@@ -246,16 +281,51 @@ struct CatalogListView: View {
         }
     }
 
+    /// Optional secondary key ("" raw = None).
+    private var sortSecondary: SortKey? { SortKey(rawValue: sortSecondaryRaw) }
+    /// Secondary options: every key whose dimension differs from the primary's.
+    private var secondaryOptions: [SortKey] {
+        SortKey.allCases.filter { $0.dimension != sortPrimary.dimension }
+    }
+    /// True when the sort is untouched from the baseline, so it isn't surfaced as
+    /// an active-filter chip or reflected in the filled FAB.
+    private var sortIsBaseline: Bool {
+        sortPrimary == Self.baselinePrimary && sortSecondary == Self.baselineSecondary
+    }
+    /// Chip label, e.g. "Most repeats – Hardest first"; just the primary when no
+    /// secondary is set.
+    private var sortChipLabel: String {
+        if let s = sortSecondary { return "\(sortPrimary.rawValue) – \(s.rawValue)" }
+        return sortPrimary.rawValue
+    }
+    private func selectPrimary(_ key: SortKey) {
+        sortPrimary = key
+        // Drop a secondary that now duplicates the primary's dimension.
+        if let s = sortSecondary, s.dimension == key.dimension { sortSecondaryRaw = "" }
+    }
+    /// Single-select-with-deselect: tapping the active secondary clears it.
+    private func toggleSecondary(_ key: SortKey) {
+        sortSecondaryRaw = sortSecondary == key ? "" : key.rawValue
+    }
+    private func resetSort() {
+        sortPrimary = Self.baselinePrimary
+        sortSecondaryRaw = Self.baselineSecondary?.rawValue ?? ""
+    }
+
     private func sorted(_ problems: [CatalogProblem]) -> [CatalogProblem] {
-        switch sortOrder {
-        case .default:
-            return problems
-        case .highestRated:
-            return problems.sorted { $0.stars > $1.stars }
-        case .easiest:
-            return problems.sorted { gradeIndex($0.grade) < gradeIndex($1.grade) }
-        case .hardest:
-            return problems.sorted { gradeIndex($0.grade) > gradeIndex($1.grade) }
+        let keys = [sortPrimary] + (sortSecondary.map { [$0] } ?? [])
+        return problems.sorted { a, b in
+            for key in keys {
+                switch key.order(a, b, gradeIndex: gradeIndex) {
+                case .orderedAscending:  return true
+                case .orderedDescending: return false
+                case .orderedSame:       continue
+                }
+            }
+            // Deterministic final tiebreak — Swift's sort isn't stable, so equal-key
+            // problems would otherwise shuffle between renders. Name order is
+            // arbitrary but stable (never offered as a user-facing sort).
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         }
     }
 
@@ -498,15 +568,15 @@ struct CatalogListView: View {
         for method in Self.methodChoices where selectedMethods.contains(method) {
             items.append(.init(label: method) { toggleMethod(method) })
         }
-        if sortOrder != .default {
-            items.append(.init(label: sortOrder.rawValue) { sortOrder = .default })
+        if !sortIsBaseline {
+            items.append(.init(label: sortChipLabel) { resetSort() })
         }
         return items
     }
 
     private var filtersActive: Bool {
         gradeRangeActive || minStars > 0 || !filtersCSV.isEmpty
-            || !methodsCSV.isEmpty || sortOrder != .default || holdFilterActive
+            || !methodsCSV.isEmpty || !sortIsBaseline || holdFilterActive
     }
 
     private static let fabSpring = Animation.spring(response: 0.35, dampingFraction: 0.78)
@@ -674,6 +744,26 @@ struct CatalogListView: View {
         .presentationDetents([.medium, .large])
     }
 
+    /// Horizontal inset matching a grouped-list row's default content margin, so
+    /// the edge-to-edge sort rows still align with the sheet's other rows at rest.
+    private let rowInset: CGFloat = 20
+
+    /// A sort-selection pill used in the filter sheet's "Sort by" / "Then by"
+    /// rows: accent-filled when selected, neutral otherwise.
+    @ViewBuilder
+    private func sortPill(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(on ? Color.white : Color.primary)
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(on ? AnyShapeStyle(Color.accentColor)
+                               : AnyShapeStyle(Color(.secondarySystemFill)),
+                            in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     private var filterSheet: some View {
         NavigationStack {
             Form {
@@ -712,12 +802,40 @@ struct CatalogListView: View {
                 } footer: {
                     Text("Tap holds on the board to show only problems that use them.")
                 }
-                Section("Sort") {
-                    Picker("Sort by", selection: $sortOrder) {
-                        ForEach(SortOrder.allCases) { order in
-                            Text(order.rawValue).tag(order)
+                Section("Sort by") {
+                    // Zero the row's horizontal insets so the pill rows can scroll
+                    // edge-to-edge (clipping at the card edge, not the padding line);
+                    // the content re-adds the inset so it still lines up at rest.
+                    VStack(alignment: .leading, spacing: 12) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(SortKey.allCases) { key in
+                                    sortPill(key.rawValue, on: sortPrimary == key) {
+                                        selectPrimary(key)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, rowInset)
+                        }
+                        Divider().padding(.horizontal, rowInset)
+                        // Optional tiebreaker. Tapping the selected pill again
+                        // clears it (no key = the old "None").
+                        Text("Then by")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, rowInset)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(secondaryOptions) { key in
+                                    sortPill(key.rawValue, on: sortSecondary == key) {
+                                        toggleSecondary(key)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, rowInset)
                         }
                     }
+                    .listRowInsets(EdgeInsets(top: 11, leading: 0, bottom: 11, trailing: 0))
                 }
                 Section("Filters") {
                     ForEach(CatalogFilter.allCases) { filter in
@@ -762,7 +880,7 @@ struct CatalogListView: View {
                         minStars = 0
                         filtersCSV = ""
                         methodsCSV = ""
-                        sortOrder = .default
+                        resetSort()
                         holdFilterCSV = ""
                     }
                     .disabled(!filtersActive)
