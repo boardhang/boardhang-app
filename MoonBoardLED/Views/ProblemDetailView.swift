@@ -58,29 +58,9 @@ struct ProblemDetailView: View {
             .padding(.horizontal)
 
             HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    if pendingTries > 0 {
-                        Button {
-                            pendingTries = max(pendingTries - 1, 0)
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .transition(.scale.combined(with: .opacity))
-                    }
-
-                    Button {
-                        pendingTries += 1
-                    } label: {
-                        Label(pendingTries > 0 ? "Log try · \(pendingTries)" : "Log try",
-                              systemImage: "plus.circle.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .animation(.easeInOut(duration: 0.15), value: pendingTries > 0)
+                TryStepper(count: pendingTries,
+                           onRemove: { pendingTries = max(pendingTries - 1, 0) },
+                           onAdd: { pendingTries += 1 })
 
                 Button {
                     showingLog = true
@@ -89,6 +69,7 @@ struct ProblemDetailView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
             .padding(.horizontal)
 
@@ -135,17 +116,37 @@ struct ProblemDetailView: View {
         }
     }
 
-    /// Save any pending tries as an attempt when leaving the screen.
+    /// Save any pending tries as an attempt when leaving the screen. Tries logged
+    /// on this problem earlier the same day are merged into that existing attempt
+    /// rather than creating a second entry.
     private func flushPending() {
         guard pendingTries > 0 else { return }
-        let ascent = Ascent(sourceCatalogID: nil,
-                            problemName: problem.name,
-                            problemGrade: problem.grade,
-                            votedGrade: problem.grade,
-                            tries: pendingTries,
-                            sent: false)
-        context.insert(ascent)
+        let tries = pendingTries
         pendingTries = 0
+        if let existing = todaysAttempt() {
+            existing.tries += tries
+        } else {
+            context.insert(Ascent(sourceCatalogID: nil,
+                                  problemName: problem.name,
+                                  problemGrade: problem.grade,
+                                  votedGrade: problem.grade,
+                                  tries: tries,
+                                  sent: false,
+                                  boardLayoutId: board.id))
+        }
+    }
+
+    /// The un-sent attempt logged today for this user problem, if any.
+    private func todaysAttempt() -> Ascent? {
+        let name = problem.name
+        let descriptor = FetchDescriptor<Ascent>(
+            predicate: #Predicate { $0.sent == false && $0.problemName == name }
+        )
+        guard let matches = try? context.fetch(descriptor) else { return nil }
+        let cal = Calendar.current
+        return matches.first {
+            $0.sourceCatalogID == nil && cal.isDate($0.date, inSameDayAs: Date())
+        }
     }
 
     private func deleteProblem() {
