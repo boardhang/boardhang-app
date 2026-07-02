@@ -40,30 +40,10 @@ export function buildMessage(holds: HoldAssignment[], opts: MessageOptions): str
   return 'l#' + tokens.join(',') + '#'
 }
 
-// --- Minimal Web Bluetooth types (kept inline to avoid an extra dependency). ---
-type BluetoothRemoteGATTCharacteristic = {
-  writeValueWithoutResponse(value: Uint8Array): Promise<void>
-}
-type BluetoothRemoteGATTService = {
-  getCharacteristic(uuid: string): Promise<BluetoothRemoteGATTCharacteristic>
-}
-type BluetoothRemoteGATTServer = {
-  connected: boolean
-  connect(): Promise<BluetoothRemoteGATTServer>
-  disconnect(): void
-  getPrimaryService(uuid: string): Promise<BluetoothRemoteGATTService>
-}
-type BluetoothDevice = {
-  name?: string
-  gatt?: BluetoothRemoteGATTServer
-  addEventListener(type: 'gattserverdisconnected', listener: () => void): void
-  removeEventListener(type: 'gattserverdisconnected', listener: () => void): void
-}
-type RequestDeviceOptions = { filters: Array<{ services: string[] }> }
-type Bluetooth = { requestDevice(options: RequestDeviceOptions): Promise<BluetoothDevice> }
+// Web Bluetooth API types come from @types/web-bluetooth (dev dependency).
 
 function getBluetooth(): Bluetooth {
-  const bt = (navigator as unknown as { bluetooth?: Bluetooth }).bluetooth
+  const bt = navigator.bluetooth
   if (!bt) {
     throw new Error(
       'Web Bluetooth is not available. Use desktop Chrome/Edge over localhost/HTTPS, ' +
@@ -153,14 +133,15 @@ export class MoonBoardClient {
     }
     const bytes = asciiEncode(message)
     for (let offset = 0; offset < bytes.length; offset += MAX_CHUNK_LENGTH) {
-      const chunk = bytes.subarray(offset, offset + MAX_CHUNK_LENGTH)
+      // slice() copies into a fresh ArrayBuffer, satisfying BufferSource.
+      const chunk = bytes.slice(offset, offset + MAX_CHUNK_LENGTH)
       await characteristic.writeValueWithoutResponse(chunk)
     }
   }
 }
 
-function asciiEncode(message: string): Uint8Array {
-  const bytes = new Uint8Array(message.length)
+function asciiEncode(message: string): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(new ArrayBuffer(message.length))
   for (let i = 0; i < message.length; i++) {
     bytes[i] = message.charCodeAt(i) & 0x7f
   }
