@@ -201,9 +201,24 @@ struct CatalogListView: View {
     private static let pageSize = 30
     @State private var visibleLimit = CatalogListView.pageSize
 
+    /// The filtered + sorted result, computed off the main thread (filtering and
+    /// sorting ~4,889 problems in `body` froze the screen during the navigation
+    /// push). Populated by the compute task below; the list reads this directly.
+    @State private var displayed: [CatalogProblem] = []
+    /// Whether the first async computation has finished, so we can show a spinner
+    /// until the list is actually ready instead of a blocked/blank screen.
+    @State private var hasComputed = false
+
     /// Everything that changes the filtered result — used to reset pagination.
     private var filterSignature: String {
         "\(search)|\(filtersCSV)|\(methodsCSV)|\(minStars)|\(lowerGrade)|\(upperGrade)|\(sortPrimary.rawValue)|\(sortSecondaryRaw)|\(activeHoldSetsCSV)|\(holdFilterCSV)"
+    }
+
+    /// Drives the off-main recompute task: the filter inputs plus whether the
+    /// catalog has loaded and the ascent/favorite-derived sets that a few filters
+    /// key on (their counts change when you log an ascent or toggle a favorite).
+    private var computeSignature: String {
+        "\(loadedCatalog != nil)|\(filterSignature)|\(sentIDs.count)|\(loggedIDs.count)|\(favoriteIDs.count)"
     }
 
     /// Catalog ids the user has actually sent (≥1 ascent with `sent == true`).
@@ -225,7 +240,11 @@ struct CatalogListView: View {
         clampedLower > 0 || clampedUpper < gradeMaxIndex
     }
 
-    private var filtered: [CatalogProblem] {
+    /// Snapshot all filter inputs, then filter + sort off the main thread.
+    /// Everything here is a value type (or the pre-resolved `membership`
+    /// instance), so it's safe to hand to a detached task — see the compute task.
+    private func computeDisplayed() async -> [CatalogProblem] {
+        let problems = catalog.problems
         let sent = sentIDs
         let logged = loggedIDs
         let favs = favoriteIDs
@@ -234,21 +253,43 @@ struct CatalogListView: View {
         let subset = holdSetSubsetActive
         let selectedMethodSet = selectedMethods
         let holdSet = selectedHolds
-        // Hoist grade-range state OUT of the per-problem loop. Each of these is
-        // built from `gradeList`, which scans all ~4,889 grades — recomputing it
-        // per problem made filtering O(n²) (hundreds of ms release, seconds in
-        // debug, on every render/keystroke). Compute once, index by grade here.
         let grades = gradeList
-        let gradeIndexByValue = Dictionary(grades.enumerated().map { ($0.element, $0.offset) },
-                                           uniquingKeysWith: { a, _ in a })
         let lo = clampedLower
         let hi = clampedUpper
-        let matches = catalog.problems.filter { p in
+        let minStarsSnapshot = minStars
+        let searchSnapshot = search
+        // Resolve the membership instance on the main actor (its loader touches a
+        // static cache); the instance's reads are pure and thread-safe.
+        let membershipSnapshot = membership
+        let keys = [sortPrimary] + (sortSecondary.map { [$0] } ?? [])
+
+        return await Task.detached(priority: .userInitiated) {
+            Self.filter(problems: problems, grades: grades, lo: lo, hi: hi,
+                        minStars: minStarsSnapshot, selectedMethods: selectedMethodSet,
+                        subset: subset, membership: membershipSnapshot, activeSets: activeSets,
+                        holdSet: holdSet, selected: selected, sent: sent, logged: logged,
+                        favs: favs, search: searchSnapshot, keys: keys)
+        }.value
+    }
+
+    /// Pure filter + sort over the catalog. Static so it carries no `self` and can
+    /// run on a background thread. Grade indexing is hoisted out of the per-problem
+    /// loop (rebuilding it per problem made this O(n²)).
+    private static func filter(problems: [CatalogProblem], grades: [String],
+                               lo: Int, hi: Int, minStars: Int,
+                               selectedMethods: Set<String>, subset: Bool,
+                               membership: HoldSetMembership, activeSets: Set<Int>,
+                               holdSet: Set<String>, selected: Set<CatalogFilter>,
+                               sent: Set<String>, logged: Set<String>, favs: Set<String>,
+                               search: String, keys: [SortKey]) -> [CatalogProblem] {
+        let gradeIndexByValue = Dictionary(grades.enumerated().map { ($0.element, $0.offset) },
+                                           uniquingKeysWith: { a, _ in a })
+        let matches = problems.filter { p in
             // Unknown grades (not in this board's list) are always shown.
             let gradeOK = gradeIndexByValue[p.grade].map { $0 >= lo && $0 <= hi } ?? true
             return gradeOK &&
             p.stars >= minStars &&
-            (selectedMethodSet.isEmpty || selectedMethodSet.contains(p.method ?? "Any marked holds")) &&
+            (selectedMethods.isEmpty || selectedMethods.contains(p.method ?? "Any marked holds")) &&
             (!subset || membership.isClimbable(holds: p.holds, activeSetIDs: activeSets)) &&
             (holdSet.isEmpty || holdSet.isSubset(of: Set(p.holds.map { "\($0.c)-\($0.r)" }))) &&
             matchesFilters(p, selected: selected, sent: sent, logged: logged, favs: favs) &&
@@ -256,16 +297,16 @@ struct CatalogListView: View {
              || p.name.localizedCaseInsensitiveContains(search)
              || p.setter.localizedCaseInsensitiveContains(search))
         }
-        return sorted(matches)
+        return sort(matches, keys: keys)
     }
 
     /// Faceted match: the selected status filters are OR'd together, while
     /// Benchmarks and Favorites each apply as an additional AND constraint.
-    private func matchesFilters(_ p: CatalogProblem,
-                                selected: Set<CatalogFilter>,
-                                sent: Set<String>,
-                                logged: Set<String>,
-                                favs: Set<String>) -> Bool {
+    private static func matchesFilters(_ p: CatalogProblem,
+                                       selected: Set<CatalogFilter>,
+                                       sent: Set<String>,
+                                       logged: Set<String>,
+                                       favs: Set<String>) -> Bool {
         if selected.contains(.benchmarks) && !p.isBenchmark { return false }
         if selected.contains(.favorites) && !favs.contains(p.id) { return false }
 
@@ -312,11 +353,10 @@ struct CatalogListView: View {
         sortSecondaryRaw = Self.baselineSecondary?.rawValue ?? ""
     }
 
-    private func sorted(_ problems: [CatalogProblem]) -> [CatalogProblem] {
-        let keys = [sortPrimary] + (sortSecondary.map { [$0] } ?? [])
-        return problems.sorted { a, b in
+    private static func sort(_ problems: [CatalogProblem], keys: [SortKey]) -> [CatalogProblem] {
+        problems.sorted { a, b in
             for key in keys {
-                switch key.order(a, b, gradeIndex: gradeIndex) {
+                switch key.order(a, b, gradeIndex: FontGrade.index(of:)) {
                 case .orderedAscending:  return true
                 case .orderedDescending: return false
                 case .orderedSame:       continue
@@ -329,22 +369,30 @@ struct CatalogListView: View {
         }
     }
 
-    /// Position of a grade on the canonical scale; unknown grades sort to the end.
-    private func gradeIndex(_ grade: String) -> Int {
-        FontGrade.index(of: grade)
-    }
-
     var body: some View {
-            // Compute the filtered/sorted list and lookup sets ONCE per render —
-            // never per row (per-row rebuilds of these made the list O(n²)/laggy).
-            let problems = filtered
+            // Read the pre-computed list (filtered/sorted off the main thread) and
+            // build the lookup sets ONCE per render — never per row (per-row
+            // rebuilds of these made the list O(n²)/laggy).
+            let problems = displayed
             let shown = visibleLimit >= problems.count ? problems : Array(problems.prefix(visibleLimit))
             let sent = sentIDs
             let favs = favoriteIDs
             let renderIDs = renderHoldSetIDs
             return Group {
-                if loadedCatalog == nil {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Spinner until the catalog has decoded AND the first filter/sort
+                // has finished — so tapping a board never lands on a frozen screen.
+                if loadedCatalog == nil || !hasComputed {
+                    ProgressView {
+                        VStack(spacing: 4) {
+                            Text("Loading \(board.name) problems")
+                                .font(.headline)
+                            Text("Getting the list ready — just a moment.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if catalog.problems.isEmpty {
                     ContentUnavailableView {
                         Label("No catalog bundled", systemImage: "tray")
@@ -447,6 +495,18 @@ struct CatalogListView: View {
                 loadedCatalog = await Task.detached(priority: .userInitiated) {
                     Catalog.load(resource: resource)
                 }.value
+            }
+            // Recompute the filtered/sorted list off the main thread whenever the
+            // catalog loads or a filter/sort/search changes. `.task(id:)` cancels
+            // the prior run, and we drop its result if cancelled so a stale filter
+            // can't overwrite a newer one. The old list stays on screen while a
+            // recompute is in flight (no spinner flicker after the first load).
+            .task(id: computeSignature) {
+                guard loadedCatalog != nil else { return }
+                let result = await computeDisplayed()
+                if Task.isCancelled { return }
+                displayed = result
+                hasComputed = true
             }
             .navigationTitle(board.name)
             .navigationBarTitleDisplayMode(.inline)

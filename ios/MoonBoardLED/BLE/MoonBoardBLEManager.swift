@@ -55,6 +55,7 @@ final class MoonBoardBLEManager: NSObject, ObservableObject {
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
     private var writeChar: CBCharacteristic?
+    
 
     /// Pending message that arrived before the characteristic was ready (e.g. user
     /// hit "Light up" mid-connect). Sent as soon as the link is ready.
