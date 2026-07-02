@@ -23,10 +23,10 @@ catalog — see "Importing official problems" below.
 
 - **Xcode 26.0.1, Swift 5 language mode** (`SWIFT_VERSION = 5.0`), **iOS 17** target.
 - The `.xcodeproj` uses an Xcode-16 **filesystem-synchronized group** — source files in
-  `MoonBoardLED/` are auto-included; you do **not** add them to a Sources build phase.
+  `ios/MoonBoardLED/` are auto-included; you do **not** add them to a Sources build phase.
 - Build check (no device/signing needed):
   ```
-  xcodebuild -project MoonBoardLED.xcodeproj -scheme MoonBoardLED \
+  xcodebuild -project ios/MoonBoardLED.xcodeproj -scheme MoonBoardLED \
     -destination 'generic/platform=iOS Simulator' -configuration Debug \
     build CODE_SIGNING_ALLOWED=NO
   ```
@@ -72,7 +72,7 @@ at a time, highlights the expected hold, has the flip toggle). The formula was d
 from the firmware's `additionalledmapping`, but only hardware testing confirms it for a
 given wiring.
 
-## Architecture / files (all under `MoonBoardLED/`)
+## Architecture / files (all under `ios/MoonBoardLED/`)
 
 - `MoonBoardApp.swift` — app entry; `@StateObject` BLE manager; `.modelContainer(for: Problem.self)`.
 - `Models/HoldType.swift` — enum `start/left/right/match/end`; `protocolLetter`, `color`,

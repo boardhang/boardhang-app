@@ -47,7 +47,7 @@ LED index along the serpentine strip. Mapping lives in `BoardGeometry.ledIndex`.
 ## Project layout
 
 ```
-MoonBoardLED/
+ios/MoonBoardLED/
   MoonBoardApp.swift          app entry + SwiftData container
   Models/HoldType.swift       hold roles, tap cycle, HoldAssignment
   Models/Problem.swift        SwiftData model + Font grades
