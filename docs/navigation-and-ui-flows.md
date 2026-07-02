@@ -1,0 +1,124 @@
+# Navigation & UI Flows
+
+The app's navigation shell, the "active board" concept that drives every screen, and the main UI
+flows (add/edit board, filter catalog, recently-viewed). Read this before changing tab wiring,
+Home board management, or catalog filter state — these are cross-cutting and easy to break.
+
+**Key files:** `MoonBoardApp.swift`, `RootTabView.swift`, `HomeView.swift`, `AddBoardFlow.swift`,
+`HoldSetEditorView.swift`, `CatalogListView.swift`, `CatalogProblemDetailView.swift`,
+`HoldFilterPickerView.swift`, `SettingsView.swift`.
+
+## Navigation shell
+
+`MoonBoardApp` creates the single `MoonBoardBLEManager` (`@StateObject` → `.environmentObject`),
+attaches the SwiftData `.modelContainer`, and shows `RootTabView` in a `WindowGroup`.
+
+`RootTabView` is a **three-tab** bottom nav (native `Tab` on iOS 18+, fallback below):
+- **Home** — board management + logbook.
+- **Settings** — global display & LED config.
+- **Search** — the active board's problem catalog (`CatalogListView` inside a `NavigationStack`).
+
+### TabRouter (cross-tab navigation)
+
+```swift
+@Observable final class TabRouter {
+    var selection: RootTab = .home
+    var listResetToken = 0   // bump to pop the Search catalog back to its list
+}
+```
+
+Injected via `.environment(router)` so any descendant can switch tabs programmatically (e.g. Home
+activating a board jumps to Search). It's **session-only** — never persisted, so the app always
+launches on Home. `listResetToken` is incremented when a board is tapped while already active,
+signaling `CatalogListView` to dismiss any open problem and return to the list.
+
+The `SearchTab` is **keyed by the active board's id** (`.id(activeBoard.id)`), so switching the
+active board fully rebuilds it. Each board's angle comes from `@AppStorage(board.angleKey)`.
+
+## The active-board concept
+
+*Which board Search browses and Home marks "Active".* Stored globally at
+`@AppStorage("activeBoardId")` (`ActiveBoard.storageKey`, default Mini 2025 = 7). Resolved in
+`RootTabView.activeBoard`: match it within the added-boards list, else fall back to the first added
+board (so deleting the active board degrades gracefully). See
+[multi-board-model.md](multi-board-model.md) for `AddedBoards` and how boards are registered.
+
+- **Read by**: Home (green "Active" marker), Search (which catalog to show), Logbook/pyramid
+  (indirectly, via board filter).
+- **Written by**: Home only — on activate, and reassigned to the MRU front when the active board is
+  deleted; the first board added becomes active, later adds don't change it.
+
+## Key flows
+
+### Add board (`AddBoardFlow`) — two steps
+
+Triggered by Home's "Add board". Sheet shows available boards → tap one → `ConfigureStep` (which
+reuses `BoardConfigForm`) → "Add board" fires `onAdd(board)`. Home then: sets it active if it's the
+first, promotes it to the MRU front of `addedBoards`, dismisses. Note angle/hold-set choices in
+`BoardConfigForm` are written to `@AppStorage` **live**; only the board's *membership* in
+`AddedBoards` is committed on confirm.
+
+### Edit board config (`HoldSetEditorView` → `BoardConfigForm`)
+
+Triggered by swipe-to-edit on a Home board row. `BoardConfigForm` (shared with the add flow) mutates
+`@AppStorage(board.activeHoldSetsKey)` and `@AppStorage(board.angleKey)` with a live board preview.
+Changes save immediately; "Done" just dismisses. Deactivating a hold set makes the catalog re-filter
+(problems needing that set disappear), and the catalog **prunes** any hold-filter positions that no
+longer sit on an active set so the filter can't reference orphaned holds.
+
+### Filter the catalog (`CatalogListView`)
+
+A floating **FAB** (bottom-right): **tap** opens the full filter sheet; **long-press** fans the
+status/attribute filters out in a radial menu. The sheet covers grade range (two-thumb slider),
+min stars, status/attribute toggles (benchmarks, my ascents, not completed, not logged, favorites),
+method, sort order, and a full-screen `HoldFilterPickerView` for the holds filter. Active filters
+render as dismissible chips above the list. Changing the filter "signature" resets pagination.
+Hold-set filtering itself is driven by the board config (above), via
+`HoldSetMembership.isClimbable`.
+
+### Recently-viewed (`CatalogListView` + `CatalogProblemPager`)
+
+Swiping to a problem **in the catalog** (not the logbook) records it via `recordRecent`: move-to-
+front, dedup, capped at 5, stored per board+angle. `CatalogProblemPager.Source` distinguishes
+`.catalog(angle:)` (records recents) from `.logbook` (recentKey nil → never records). A pinned
+"Recently viewed" section sits above the list (2 shown by default, expandable, with Clear) and
+**ignores all filters** — it resolves stored ids against the full catalog.
+
+## Settings (`SettingsView`)
+
+Global-only config: appearance (System/Light/Dark), "show beta" (all 5 hold types vs. 3),
+auto-light-on-swipe, show climb previews, and LED connection status (which opens `ConnectionView`;
+calibration lives there now, not in Settings — see [ble-hardware.md](ble-hardware.md)).
+
+## `@AppStorage` state key catalog
+
+**Global:**
+
+| Key | Type | Purpose |
+| --- | --- | --- |
+| `activeBoardId` | Int | active board (Search / Home marker) |
+| `addedBoards` | CSV(Int), MRU | boards the user has added |
+| `logbookBoardFilter` | CSV(Int) | which boards' ascents to show (empty = all added) |
+| `appAppearance` | enum | theme |
+| `showBeta` | Bool | show all 5 hold types |
+| `autoLightOnSwipe` | Bool | auto-light while swiping catalog |
+| `showClimbPreviews` | Bool | board thumbnail in list rows |
+| `catalogMinStars` | Int | min rating filter |
+| `catalogFilters` | CSV | status/attribute filters |
+| `catalogMethods` | CSV | method filters |
+| `catalogSortOrder` | enum | sort order |
+
+**Per board (`_<boardId>`):** `activeHoldSets_<id>`, `flipped_<id>`, `angle_<id>`,
+`catalogHoldFilter_<id>` (CSV of `"col-row"`, angle-independent).
+
+**Per board+angle (`_<boardId>_<angle>`):** `catalogLowerGrade_…`, `catalogUpperGrade_…`,
+`catalogRecentProblems_…` (CSV of problem ids, max 5, MRU).
+
+## Gotchas summary
+
+- `TabRouter` is session-only; app always starts on Home. Use it (not global state) for cross-tab jumps.
+- `SearchTab` is keyed by board id — changing the active board rebuilds it entirely.
+- Active board is written by Home only; everything else reads it. Deleting it falls back to MRU front.
+- Deleting/editing a board cascades: clears/updates its per-board keys and prunes the catalog hold filter.
+- Recently-viewed is recorded only from the catalog source and ignores filters when displayed.
+- Grade range is clamped to the board's actual grade list; catalogs load async off the main thread.
