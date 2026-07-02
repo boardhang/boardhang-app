@@ -60,9 +60,15 @@ final class MoonBoardBLEManager: NSObject, ObservableObject {
     /// hit "Light up" mid-connect). Sent as soon as the link is ready.
     private var pendingMessage: String?
 
+    /// Set when the user taps Disconnect, so we don't immediately auto-reconnect
+    /// (auto-reconnect is only for unexpected drops). Stays set — suppressing
+    /// reconnect across Bluetooth power cycles too — until the user explicitly
+    /// connects again.
+    private var userInitiatedDisconnect = false
+
     /// The firmware's RX characteristic accepts at most 20 bytes per write
     /// (BLE_ATTRIBUTE_MAX_VALUE_LENGTH in ArduinoMultiUserHardwareBLESerial). It
-    /// silently truncates anything larger, which would drop every hold past the
+    /// silently truncates anything larger, which would drop emovvery hold past the
     /// first ~4. So every message MUST be split into ≤20-byte writes; the firmware
     /// reassembles them in its 256-byte receive buffer.
     private static let maxChunkLength = 20
@@ -87,7 +93,10 @@ final class MoonBoardBLEManager: NSObject, ObservableObject {
     func startScan() {
         guard central.state == .poweredOn else { return }
         discovered = []
-        state = .scanning
+        // Don't clobber a live connection: scanning to find *other* boards must
+        // not flip us out of .connected (reopening the connect sheet re-scans, and
+        // the UI reads this state to decide whether it's still connected).
+        if !isConnected { state = .scanning }
         // Filter by the NUS service UUID so we find the board even if it was renamed.
         central.scanForPeripherals(withServices: [Self.serviceUUID], options: nil)
     }
@@ -99,6 +108,7 @@ final class MoonBoardBLEManager: NSObject, ObservableObject {
 
     func connect(_ device: DiscoveredDevice) {
         central.stopScan()
+        userInitiatedDisconnect = false
         state = .connecting
         peripheral = device.peripheral
         device.peripheral.delegate = self
@@ -106,12 +116,14 @@ final class MoonBoardBLEManager: NSObject, ObservableObject {
     }
 
     func disconnect() {
+        userInitiatedDisconnect = true
         if let p = peripheral { central.cancelPeripheralConnection(p) }
     }
 
     /// Try to reconnect to the last device we used, without showing a picker.
     private func attemptAutoReconnect() {
-        guard central.state == .poweredOn,
+        guard !userInitiatedDisconnect,
+              central.state == .poweredOn,
               let uuidString = UserDefaults.standard.string(forKey: Self.lastDeviceKey),
               let uuid = UUID(uuidString: uuidString) else { return }
         if let known = central.retrievePeripherals(withIdentifiers: [uuid]).first {
