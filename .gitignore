@@ -16,5 +16,6 @@ xcuserdata/
 Packages/
 Package.resolved
 
-# PWA Supabase credentials — real config is local-only; commit only the *.example.
+# Supabase credentials — real config is local-only; commit only the *.example / *.example templates.
 web/.env
+ios/MoonBoardLED/Supabase.xcconfig
