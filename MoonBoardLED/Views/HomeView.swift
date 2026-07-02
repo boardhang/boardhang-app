@@ -16,7 +16,6 @@ struct HomeView: View {
     @Environment(TabRouter.self) private var router
 
     private var addedBoards: [Board] { AddedBoards.boards(from: addedCSV) }
-    private var availableBoards: [Board] { AddedBoards.available(from: addedCSV) }
 
     private var filteredAscents: [Ascent] {
         let selected = BoardFilter.selected(from: boardFilterCSV)
@@ -57,13 +56,11 @@ struct HomeView: View {
                             }
                         }
 
-                        // Shown until every supported board has been added.
-                        if !availableBoards.isEmpty {
-                            Button {
-                                addingBoard = true
-                            } label: {
-                                Label("Add board", systemImage: "plus.circle")
-                            }
+                        // Add another board or edit/remove the ones you have.
+                        Button {
+                            addingBoard = true
+                        } label: {
+                            Label("Add / edit board", systemImage: "plus.circle")
                         }
                     }
                 }
@@ -111,7 +108,7 @@ struct HomeView: View {
             }
             .navigationTitle("")
             .sheet(isPresented: $addingBoard) {
-                AddBoardFlow(available: availableBoards, onAdd: add)
+                AddBoardFlow()
             }
             // Warm each added board's catalog in the background while Home is on
             // screen, so tapping a board opens its list instantly instead of showing
@@ -136,16 +133,6 @@ struct HomeView: View {
         // Always land on the list, even when re-tapping the already-active board
         // (no `.id` rebuild happens then, so signal the live catalog to pop).
         router.listResetToken += 1
-    }
-
-    /// Commit a board chosen in the add flow: add it to the front of the MRU order
-    /// and dismiss the sheet. The first board added becomes active; later adds leave
-    /// the active board unchanged.
-    private func add(_ board: Board) {
-        let wasEmpty = AddedBoards.ids(from: addedCSV).isEmpty
-        addedCSV = AddedBoards.promoting(board.id, in: addedCSV)
-        if wasEmpty { activeBoardId = board.id }
-        addingBoard = false
     }
 
     /// Remove a board from the added set. Logged ascents are untouched — the logbook
@@ -197,7 +184,7 @@ struct AllBoardsView: View {
         .navigationTitle("My boards")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $addingBoard) {
-            AddBoardFlow(available: availableBoards, onAdd: add)
+            AddBoardFlow()
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -216,13 +203,6 @@ struct AllBoardsView: View {
         router.listResetToken += 1
     }
 
-    private func add(_ board: Board) {
-        let wasEmpty = AddedBoards.ids(from: addedCSV).isEmpty
-        addedCSV = AddedBoards.promoting(board.id, in: addedCSV)
-        if wasEmpty { activeBoardId = board.id }
-        addingBoard = false
-    }
-
     private func delete(_ board: Board) {
         var ids = AddedBoards.ids(from: addedCSV)
         ids.removeAll { $0 == board.id }
@@ -237,12 +217,16 @@ struct AllBoardsView: View {
 /// board's active hold sets), name, an "active hold sets · angle" subtitle, and an
 /// "Active" marker. Tapping the row body activates the board and opens its catalog;
 /// swipe reveals Edit (angle + hold sets) and Delete (remove from added boards).
-private struct BoardRow: View {
+struct BoardRow: View {
     let board: Board
     let isActive: Bool
     /// When true, the row surfaces inline Edit/Delete buttons (driven by the "My
     /// boards" screen's Edit toggle) and stops activating on tap.
     let isEditing: Bool
+    /// When true, tapping the row body opens the board's config editor instead of
+    /// calling `onTap`. Used by the "Configure board" sheet, where a tap means
+    /// "edit this board" rather than "activate it".
+    let tapOpensEditor: Bool
     let onTap: () -> Void
     let onDelete: () -> Void
     @AppStorage private var activeCSV: String
@@ -250,10 +234,12 @@ private struct BoardRow: View {
     @State private var showingEditor = false
 
     init(board: Board, isActive: Bool, isEditing: Bool = false,
+         tapOpensEditor: Bool = false,
          onTap: @escaping () -> Void, onDelete: @escaping () -> Void) {
         self.board = board
         self.isActive = isActive
         self.isEditing = isEditing
+        self.tapOpensEditor = tapOpensEditor
         self.onTap = onTap
         self.onDelete = onDelete
         _activeCSV = AppStorage(wrappedValue: "", board.activeHoldSetsKey)
@@ -312,8 +298,12 @@ private struct BoardRow: View {
             }
         }
         // Row body activates the board + opens its catalog (disabled while editing).
+        // In the Configure sheet (`tapOpensEditor`) a tap opens the editor instead.
         .contentShape(Rectangle())
-        .onTapGesture { if !isEditing { onTap() } }
+        .onTapGesture {
+            guard !isEditing else { return }
+            if tapOpensEditor { showingEditor = true } else { onTap() }
+        }
         // Swipe to edit the board (angle + installed hold sets) or delete it.
         .swipeActions(edge: .trailing) {
             Button(role: .destructive, action: onDelete) {
