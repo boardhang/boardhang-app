@@ -3,6 +3,7 @@ import './App.css'
 import { MoonBoardClient } from './ble/moonboard'
 import type { ConnectionState } from './ble/moonboard'
 import { mini2025 } from './board/config'
+import { AccountMenu } from './components/AccountMenu'
 import { BoardGrid, nextType } from './components/BoardGrid'
 import { ConnectBar } from './components/ConnectBar'
 import type { HoldAssignment } from './types'
@@ -77,7 +78,10 @@ function App() {
 
   return (
     <div className="app">
-      <h1>MoonBoard LED</h1>
+      <header className="app-header">
+        <h1>MoonBoard LED</h1>
+        <AccountMenu />
+      </header>
       <ConnectBar
         state={state}
         deviceName={deviceName}
