@@ -52,6 +52,27 @@ BOARDS = [
         (30, "Wooden Holds B", "woodenholdsb"),
         (31, "Wooden Holds C", "woodenholdsc"),
     ]),
+    ("moonboard2016", STD, "MoonBoard2016HoldSets", [
+        (2, "Hold Set A", "holdseta"),
+        (3, "Hold Set B", "holdsetb"),
+        (4, "Original School Holds", "originalschoolholds"),
+    ]),
+    ("moonboardmasters2017", STD, "MoonBoardMasters2017HoldSets", [
+        (11, "Hold Set A", "holdseta"),
+        (12, "Hold Set B", "holdsetb"),
+        (13, "Hold Set C", "holdsetc"),
+        (14, "Original School Holds", "originalschoolholds"),
+        (15, "Screw-on Feet", "screw-onfeet"),
+        (16, "Wooden Holds", "woodenholds"),
+    ]),
+    ("moonboard2024", STD, "MoonBoard2024HoldSets", [
+        (5, "Hold Set D", "holdsetd"),
+        (6, "Hold Set E", "holdsete"),
+        (7, "Hold Set F", "holdsetf"),
+        (8, "Wooden Holds", "woodenholds"),
+        (9, "Wooden Holds B", "woodenholdsb"),
+        (10, "Wooden Holds C", "woodenholdsc"),
+    ]),
     ("moonboardmasters2019", STD, "MoonBoardMasters2019HoldSets", [
         (17, "Hold Set A", "holdseta"),
         (18, "Hold Set B", "holdsetb"),
