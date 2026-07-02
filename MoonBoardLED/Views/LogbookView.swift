@@ -10,6 +10,7 @@ struct LogbookView: View {
     @Query(sort: \Ascent.date, order: .reverse) private var allAscents: [Ascent]
     @AppStorage("showClimbPreviews") private var showClimbPreviews = true
     @AppStorage(BoardFilter.storageKey) private var boardFilterCSV = ""
+    @AppStorage(AddedBoards.storageKey) private var addedCSV = ""
 
     /// When set, the view scrolls to this day's section on appear.
     var anchorDay: Date?
@@ -19,7 +20,7 @@ struct LogbookView: View {
     /// Ascents included by the current board filter.
     private var ascents: [Ascent] {
         let selected = BoardFilter.selected(from: boardFilterCSV)
-        return allAscents.filter { selected.contains($0.boardLayoutId) }
+        return allAscents.filter { selected.contains($0.effectiveBoardLayoutId) }
     }
 
     private var sessions: [LogSession] { LogSession.sessions(from: ascents) }
@@ -89,8 +90,11 @@ struct LogbookView: View {
         .navigationTitle("Logbook")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                BoardFilterMenu()
+            // Only worth filtering when there's more than one board.
+            if AddedBoards.boards(from: addedCSV).count > 1 {
+                ToolbarItem(placement: .topBarLeading) {
+                    BoardFilterMenu()
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showClimbPreviews.toggle() } label: {
@@ -116,7 +120,7 @@ struct LogbookView: View {
                           setup: e.board.setup)
                 NavigationLink {
                     CatalogProblemPager(problems: loggedProblems(for: e.board),
-                                        current: e.problem, board: e.board,
+                                        current: e.problem, board: e.board, source: .logbook,
                                         visibleHoldSetIDs: nil)
                 } label: { EmptyView() }
                 .opacity(0)
