@@ -13,15 +13,19 @@ struct CatalogProblemDetailView: View {
     /// Hold sets to show (nil = all). The catalog passes the board's active sets;
     /// the logbook leaves it nil so ascents always show the full board.
     var visibleHoldSetIDs: Set<Int>? = nil
+    /// Positions ("col-row") ringed yellow — the active holds filter, if any.
+    var selectedHolds: Set<String> = []
 
     /// Past ascents of this exact catalog problem, to show the "Sent" indicator.
     @Query private var ascents: [Ascent]
     @Query private var favorites: [FavoriteProblem]
 
-    init(problem: CatalogProblem, setup: MoonBoardSetup = .mini2025, visibleHoldSetIDs: Set<Int>? = nil) {
+    init(problem: CatalogProblem, setup: MoonBoardSetup = .mini2025,
+         visibleHoldSetIDs: Set<Int>? = nil, selectedHolds: Set<String> = []) {
         self.problem = problem
         self.setup = setup
         self.visibleHoldSetIDs = visibleHoldSetIDs
+        self.selectedHolds = selectedHolds
         let id: String? = problem.id
         _ascents = Query(filter: #Predicate<Ascent> { $0.sourceCatalogID == id })
         let favID = problem.id
@@ -40,7 +44,7 @@ struct CatalogProblemDetailView: View {
                 .padding(.horizontal)
 
             BoardImageView(setup: setup, visibleHoldSetIDs: visibleHoldSetIDs,
-                           holds: holds, showBeta: showBeta)
+                           holds: holds, selectedHolds: selectedHolds, showBeta: showBeta)
                 .padding(.horizontal, 8)
             Spacer(minLength: 0)
         }
@@ -123,11 +127,24 @@ struct CatalogProblemPager: View {
     @AppStorage("showBeta") private var showBeta = true
     @AppStorage("autoLightOnSwipe") private var autoLightOnSwipe = false
 
+    /// Where this pager was opened from. Determines whether swiping records a
+    /// "Recently viewed" problem: browsing a board's catalog does, the logbook
+    /// (which spans boards/angles) doesn't.
+    enum Source {
+        case catalog(angle: Int)
+        case logbook
+    }
+
     let problems: [CatalogProblem]
     /// Board these problems belong to (LED row count, per-board flip, logging).
     let board: Board
     /// Hold sets to show (nil = all). Threaded to each detail view.
     var visibleHoldSetIDs: Set<Int>? = nil
+    /// Positions ("col-row") ringed yellow — the active holds filter, if any.
+    var selectedHolds: Set<String> = []
+    /// UserDefaults key under which to record the last problem shown, or nil when
+    /// this pager shouldn't record (logbook). Derived from `Source`.
+    private let recentKey: String?
     @State private var currentID: String?
     @State private var showingLog = false
     /// Un-saved tries tapped via "Add try", and the problem they belong to.
@@ -139,11 +156,16 @@ struct CatalogProblemPager: View {
     /// disconnect). Drives the lightbulb's "active" state.
     @State private var litProblemID: String?
 
-    init(problems: [CatalogProblem], current: CatalogProblem, board: Board,
-         visibleHoldSetIDs: Set<Int>? = nil) {
+    init(problems: [CatalogProblem], current: CatalogProblem, board: Board, source: Source,
+         visibleHoldSetIDs: Set<Int>? = nil, selectedHolds: Set<String> = []) {
         self.problems = problems
         self.board = board
         self.visibleHoldSetIDs = visibleHoldSetIDs
+        self.selectedHolds = selectedHolds
+        switch source {
+        case .catalog(let angle): self.recentKey = "catalogRecentProblems_\(board.id)_\(angle)"
+        case .logbook:            self.recentKey = nil
+        }
         _flipped = AppStorage(wrappedValue: false, board.flippedKey)
         _currentID = State(initialValue: current.id)
     }
@@ -162,7 +184,8 @@ struct CatalogProblemPager: View {
                 LazyHStack(spacing: 0) {
                     ForEach(problems) { problem in
                         CatalogProblemDetailView(problem: problem, setup: board.setup,
-                                                 visibleHoldSetIDs: visibleHoldSetIDs)
+                                                 visibleHoldSetIDs: visibleHoldSetIDs,
+                                                 selectedHolds: selectedHolds)
                             .frame(width: geo.size.width)
                             .id(problem.id)
                     }
@@ -179,10 +202,14 @@ struct CatalogProblemPager: View {
         .onChange(of: ble.isConnected) { _, connected in
             if !connected { litProblemID = nil }
         }
-        .onChange(of: currentID) { _, _ in
+        .onChange(of: currentID) { _, id in
             flushPending()
+            recordRecent(id)   // remember the last problem shown here
             if autoLightOnSwipe && ble.isConnected { lightUp() }
         }
+        // The initial `currentID` (set via State(initialValue:)) doesn't fire
+        // onChange, so record the first-shown problem here too.
+        .onAppear { recordRecent(currentID) }
         .onDisappear { flushPending() }
         .sheet(isPresented: $showingLog) {
             if let p = currentProblem {
@@ -230,28 +257,7 @@ struct CatalogProblemPager: View {
 
             // Row 2: logging.
             HStack(spacing: 16) {
-                HStack(spacing: 8) {
-                    if currentTries > 0 {
-                        Button { removeTry() } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .transition(.scale.combined(with: .opacity))
-                    }
-
-                    Button { addTry() } label: {
-                        Label(currentTries > 0 ? "Log try · \(currentTries)" : "Log try",
-                              systemImage: "plus.circle.fill")
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .tint(.primary)
-                }
-                .animation(.easeInOut(duration: 0.15), value: currentTries > 0)
+                TryStepper(count: currentTries, onRemove: removeTry, onAdd: addTry)
 
                 Button { showingLog = true } label: {
                     Label("Log ascent", systemImage: "checkmark.circle.fill")
@@ -315,6 +321,24 @@ struct CatalogProblemPager: View {
     }
 
     /// Save any pending tries for `pendingProblemID` as an attempt, then reset.
+    /// Tries logged on the same problem earlier the same day are merged into that
+    /// existing attempt rather than creating a second entry.
+    /// Number of problems kept in the per-board+angle "recently viewed" history.
+    private static let recentLimit = 5
+
+    /// Prepend the shown problem to this board+angle's "recently viewed" history
+    /// (move-to-front, de-duplicated, capped). No-op when opened outside a board
+    /// browse (`recentKey == nil`), e.g. from the logbook.
+    private func recordRecent(_ id: String?) {
+        guard let recentKey, let id else { return }
+        var ids = (UserDefaults.standard.string(forKey: recentKey)?
+            .split(separator: "|").map(String.init)) ?? []
+        ids.removeAll { $0 == id }
+        ids.insert(id, at: 0)
+        UserDefaults.standard.set(ids.prefix(Self.recentLimit).joined(separator: "|"),
+                                  forKey: recentKey)
+    }
+
     private func flushPending() {
         guard pendingTries > 0, let id = pendingProblemID,
               let p = problems.first(where: { $0.id == id }) else {
@@ -322,15 +346,32 @@ struct CatalogProblemPager: View {
             pendingProblemID = nil
             return
         }
-        let ascent = Ascent(sourceCatalogID: p.id,
-                            problemName: p.name,
-                            problemGrade: p.grade,
-                            votedGrade: p.grade,
-                            tries: pendingTries,
-                            sent: false)
-        context.insert(ascent)
+        let tries = pendingTries
         pendingTries = 0
         pendingProblemID = nil
+
+        if let existing = todaysAttempt(catalogID: p.id) {
+            existing.tries += tries
+        } else {
+            context.insert(Ascent(sourceCatalogID: p.id,
+                                  problemName: p.name,
+                                  problemGrade: p.grade,
+                                  votedGrade: p.grade,
+                                  tries: tries,
+                                  sent: false,
+                                  boardLayoutId: board.id))
+        }
+    }
+
+    /// The un-sent attempt logged today for this catalog problem, if any.
+    private func todaysAttempt(catalogID: String) -> Ascent? {
+        let target: String? = catalogID
+        let descriptor = FetchDescriptor<Ascent>(
+            predicate: #Predicate { $0.sent == false && $0.sourceCatalogID == target }
+        )
+        guard let matches = try? context.fetch(descriptor) else { return nil }
+        let cal = Calendar.current
+        return matches.first { cal.isDate($0.date, inSameDayAs: Date()) }
     }
 
     /// Whether the on-screen problem is currently favorited.
