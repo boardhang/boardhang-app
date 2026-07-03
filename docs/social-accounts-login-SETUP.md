@@ -17,15 +17,26 @@ Sign in with Apple, cloud logbook sync, friends, and shared lists are later plan
    - **Project URL** — you only need the host, e.g. `abcdefghijklmno.supabase.co`.
    - **anon / public** key (a long `eyJ…` JWT). This is public-safe (RLS-protected).
 
-## 2. Run the database migration
+## 2. Run the database migrations
 
-Creates the `profiles` table, RLS policies, the handle format/uniqueness constraint, and
-the `delete_user()` account-deletion RPC.
+Run these **in order** (0001 before 0002).
+
+**`0001_profiles.sql`** — creates the `profiles` table, RLS policies, the handle
+format/uniqueness constraint, and the `delete_user()` account-deletion RPC.
+
+**`0002_logbook_sync.sql`** — cloud logbook sync (later milestone): creates the
+`ascents` and `user_problems` tables, owner-scoped RLS, the server-authoritative
+`updated_at` trigger, soft-delete tombstones, and the ascent→problem FK. Needs no
+`delete_user()` change — both tables cascade off `auth.users`, so the existing RPC
+sweeps them on account deletion. Apply this once the app build includes the logbook
+sync feature (branch `feat/cloud-logbook-sync`); it's harmless to apply earlier.
 
 - **Easiest:** open **SQL Editor** in the dashboard, paste the entire contents of
-  [`supabase/migrations/0001_profiles.sql`](../supabase/migrations/0001_profiles.sql),
-  and **Run**.
-- **Or with the CLI:** `supabase link --project-ref <ref>` then `supabase db push`.
+  [`supabase/migrations/0001_profiles.sql`](../supabase/migrations/0001_profiles.sql)
+  and **Run**, then do the same with
+  [`supabase/migrations/0002_logbook_sync.sql`](../supabase/migrations/0002_logbook_sync.sql).
+- **Or with the CLI:** `supabase link --project-ref <ref>` then `supabase db push`
+  (applies every migration in `supabase/migrations/` in order).
 
 ## 3. Enable auth providers
 
