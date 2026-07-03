@@ -7,6 +7,7 @@ struct ProblemEditView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var ble: MoonBoardBLEManager
+    @EnvironmentObject private var sync: LogbookSyncManager
     @AppStorage(Board.mini2025.flippedKey) private var flipped = false
     @AppStorage("showBeta") private var showBeta = true
 
@@ -194,10 +195,13 @@ struct ProblemEditView: View {
             existing.name = name.trimmingCharacters(in: .whitespaces)
             existing.grade = grade
             existing.holds = holds
+            existing.markDirty()
         } else {
             let p = Problem(name: name.trimmingCharacters(in: .whitespaces), grade: grade, holds: holds)
+            p.markDirty()
             context.insert(p)
         }
+        sync.pushSoon()
         dismiss()
     }
 }

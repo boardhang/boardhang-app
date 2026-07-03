@@ -28,7 +28,7 @@ struct GradePyramidView: View {
     /// Attempts-only logs (`sent == false`) are excluded entirely.
     private var uniqueSends: [Ascent] {
         var earliest: [String: Ascent] = [:]
-        for ascent in ascents where ascent.sent {
+        for ascent in ascents where ascent.sent && !ascent.tombstoned {
             let key = ascent.sourceCatalogID ?? "name:\(ascent.problemName)"
             if let existing = earliest[key] {
                 if ascent.date < existing.date { earliest[key] = ascent }

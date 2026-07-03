@@ -7,7 +7,9 @@ import SwiftData
 /// swipe actions edit or delete. Optionally scrolls to a given day.
 struct LogbookView: View {
     @Environment(\.modelContext) private var context
-    @Query(sort: \Ascent.date, order: .reverse) private var allAscents: [Ascent]
+    @EnvironmentObject private var sync: LogbookSyncManager
+    @Query(filter: #Predicate<Ascent> { !$0.tombstoned },
+           sort: \Ascent.date, order: .reverse) private var allAscents: [Ascent]
     @AppStorage("showClimbPreviews") private var showClimbPreviews = true
     @AppStorage(BoardFilter.storageKey) private var boardFilterCSV = ""
     @AppStorage(AddedBoards.storageKey) private var addedCSV = ""
@@ -74,7 +76,11 @@ struct LogbookView: View {
                                     row(for: ascent)
                                         .swipeActions(edge: .trailing) {
                                             Button(role: .destructive) {
-                                                context.delete(ascent)
+                                                // Soft-delete: tombstone so the delete
+                                                // propagates across devices (R6).
+                                                ascent.tombstoned = true
+                                                ascent.markDirty()
+                                                sync.pushSoon()
                                             } label: {
                                                 Label("Delete", systemImage: "trash")
                                             }

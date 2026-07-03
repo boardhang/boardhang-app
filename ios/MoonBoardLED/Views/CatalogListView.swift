@@ -66,7 +66,7 @@ struct CatalogListView: View {
     let board: Board
     let angle: Int
 
-    @Query private var ascents: [Ascent]
+    @Query(filter: #Predicate<Ascent> { !$0.tombstoned }) private var ascents: [Ascent]
     @Query private var favorites: [FavoriteProblem]
     // Filters persist across visits (and launches) so they don't reset every
     // time the catalog is re-opened from Home. Search is intentionally transient.

@@ -6,7 +6,8 @@ import SwiftData
 /// pyramid + latest sessions), both filtered by the shared board filter.
 /// Connecting to the board happens from the lightbulb on the problem detail screen.
 struct HomeView: View {
-    @Query(sort: \Ascent.date, order: .reverse) private var ascents: [Ascent]
+    @Query(filter: #Predicate<Ascent> { !$0.tombstoned },
+           sort: \Ascent.date, order: .reverse) private var ascents: [Ascent]
     @AppStorage(BoardFilter.storageKey) private var boardFilterCSV = ""
     @AppStorage(ActiveBoard.storageKey) private var activeBoardId = ActiveBoard.default
     @AppStorage(AddedBoards.storageKey) private var addedCSV = ""

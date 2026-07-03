@@ -6,7 +6,9 @@ import SwiftData
 struct ProblemListView: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var ble: MoonBoardBLEManager
-    @Query(sort: \Problem.createdAt, order: .reverse) private var problems: [Problem]
+    @EnvironmentObject private var sync: LogbookSyncManager
+    @Query(filter: #Predicate<Problem> { !$0.tombstoned },
+           sort: \Problem.createdAt, order: .reverse) private var problems: [Problem]
 
     @State private var showingEditor = false
     @State private var showingConnection = false
@@ -84,6 +86,11 @@ struct ProblemListView: View {
     }
 
     private func delete(_ offsets: IndexSet) {
-        for i in offsets { context.delete(problems[i]) }
+        // Soft-delete: tombstone so the delete propagates across devices (R6).
+        for i in offsets {
+            problems[i].tombstoned = true
+            problems[i].markDirty()
+        }
+        sync.pushSoon()
     }
 }

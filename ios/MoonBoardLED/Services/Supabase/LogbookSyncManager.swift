@@ -36,6 +36,12 @@ final class LogbookSyncManager: ObservableObject {
 
     // MARK: - Public entry points
 
+    /// Fire-and-forget sync after a local write (push-on-write cadence). No-op when
+    /// signed out; if offline, the row stays dirty and rides the next foreground pull.
+    func pushSoon() {
+        Task { await syncNow() }
+    }
+
     /// One push+pull cycle. No-op when signed out / unconfigured. Safe to call often
     /// (foreground, after a write); re-entrancy guarded.
     func syncNow() async {

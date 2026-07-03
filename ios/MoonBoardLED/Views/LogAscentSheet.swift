@@ -6,12 +6,15 @@ import SwiftData
 struct LogAscentSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var sync: LogbookSyncManager
 
     /// When editing, the ascent being changed. nil = logging a new one.
     private let editing: Ascent?
 
     /// Snapshot of the problem being logged (only needed when creating).
     private let sourceCatalogID: String?
+    /// Stable link to a user-created problem, when logging one (nil for catalog).
+    private let userProblemID: UUID?
     private let problemName: String
     private let problemGrade: String
     /// Board this ascent is logged on (only used when creating).
@@ -30,11 +33,13 @@ struct LogAscentSheet: View {
 
     /// Log a brand-new ascent for the given problem. `sent` distinguishes a send
     /// from an attempts-only log; `tries` prefills the attempt count.
-    init(sourceCatalogID: String?, problemName: String, problemGrade: String,
+    init(sourceCatalogID: String?, userProblemID: UUID? = nil,
+         problemName: String, problemGrade: String,
          tries: Int = 1, sent: Bool = true, boardLayoutId: Int = 7,
          onComplete: (() -> Void)? = nil) {
         self.editing = nil
         self.sourceCatalogID = sourceCatalogID
+        self.userProblemID = userProblemID
         self.problemName = problemName
         self.problemGrade = problemGrade
         self.boardLayoutId = boardLayoutId
@@ -51,6 +56,7 @@ struct LogAscentSheet: View {
     init(editing ascent: Ascent) {
         self.editing = ascent
         self.sourceCatalogID = ascent.sourceCatalogID
+        self.userProblemID = ascent.userProblemID
         self.problemName = ascent.problemName
         self.problemGrade = ascent.problemGrade
         self.boardLayoutId = ascent.boardLayoutId
@@ -129,6 +135,7 @@ struct LogAscentSheet: View {
             editing.stars = stars
             editing.comment = comment
             editing.sent = sent
+            editing.markDirty()
         } else {
             let ascent = Ascent(date: date,
                                 sourceCatalogID: sourceCatalogID,
@@ -139,9 +146,12 @@ struct LogAscentSheet: View {
                                 stars: stars,
                                 comment: comment,
                                 sent: sent,
-                                boardLayoutId: boardLayoutId)
+                                boardLayoutId: boardLayoutId,
+                                userProblemID: userProblemID)
+            ascent.markDirty()
             context.insert(ascent)
         }
+        sync.pushSoon()
         onComplete?()
         dismiss()
     }
