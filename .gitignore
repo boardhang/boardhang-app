@@ -18,3 +18,6 @@ Package.resolved
 
 # Supabase credentials — real config is local-only; commit only the *.example.
 ios/MoonBoardLED/Supabase.xcconfig
+
+# Compound Engineering machine-local config
+.compound-engineering/*.local.yaml
