@@ -21,6 +21,11 @@ final class ListsManager: ObservableObject {
     /// joined list. The UI clears it once consumed.
     @Published var pendingOpenListId: UUID?
 
+    /// A share-link invite awaiting the user's consent. Set when a `join?token=` deep link
+    /// resolves to a real list; the UI shows a confirmation (join exposes your sent/tried
+    /// sets) and only joins on accept. Nil = no pending invite.
+    @Published var pendingInvite: ListInvitePreview?
+
     /// The list whose group lens the main catalog is showing, if any. Set by "Browse
     /// together"; session-scoped (not persisted), mirroring the active-board selection.
     /// When nil, the catalog is in solo mode. The catalog additionally board-scopes this
@@ -179,11 +184,49 @@ final class ListsManager: ObservableObject {
             .execute()
     }
 
-    // MARK: - Join
+    // MARK: - Join (consent-gated)
+
+    /// Resolves a share-link token to a read-only preview (list name + inviter) and stashes
+    /// it as `pendingInvite` for the confirmation prompt — WITHOUT joining. An unknown or
+    /// expired token resolves to nothing and is silently ignored (a bad link is a no-op).
+    func previewInvite(token: UUID) async {
+        guard let client else { return }
+        do {
+            let rows: [ListPreviewRow] = try await client
+                .rpc("preview_list_by_token", params: ["p_token": token])
+                .execute()
+                .value
+            if let row = rows.first {
+                pendingInvite = ListInvitePreview(
+                    token: token,
+                    listId: row.list_id,
+                    name: row.name,
+                    ownerHandle: row.owner_handle
+                )
+            }
+        } catch {
+            // Bad/expired link — nothing to prompt.
+        }
+    }
+
+    /// Accepts the pending invite: joins the list (the consent step), then navigates to it.
+    func acceptPendingInvite() async {
+        guard let invite = pendingInvite else { return }
+        pendingInvite = nil
+        if let id = try? await join(token: invite.token) {
+            pendingOpenListId = id
+        }
+    }
+
+    /// Declines the pending invite — no membership, no exposure.
+    func cancelPendingInvite() {
+        pendingInvite = nil
+    }
 
     /// Trades a share-link invite token for membership via the join RPC (which inserts
     /// the caller as a member — a not-yet-member can't do that directly under RLS).
-    /// Idempotent server-side. Returns the joined list's id.
+    /// Idempotent server-side. Returns the joined list's id. Callers should route through
+    /// `previewInvite` + `acceptPendingInvite` so the user consents first.
     @discardableResult
     func join(token: UUID) async throws -> UUID {
         let client = try requireClient()
@@ -233,6 +276,7 @@ final class ListsManager: ObservableObject {
         pile = []
         groupStatus = [:]
         pendingOpenListId = nil
+        pendingInvite = nil
         activeListId = nil
     }
 
@@ -263,6 +307,16 @@ final class ListsManager: ObservableObject {
         guard let id = client?.auth.currentUser?.id else { throw ListsError.notSignedIn }
         return id
     }
+}
+
+/// A pending share-link invite awaiting consent: enough to show a meaningful prompt
+/// (which list, who invited you) plus the token to join with on accept.
+struct ListInvitePreview: Identifiable, Equatable {
+    let token: UUID
+    let listId: UUID
+    let name: String
+    let ownerHandle: String
+    var id: UUID { listId }
 }
 
 /// One member's folded status for a list: which catalog problems they've sent and which

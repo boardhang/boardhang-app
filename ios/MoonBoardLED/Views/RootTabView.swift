@@ -122,12 +122,26 @@ struct RootTabView: View {
         // link, join then jump to the Lists tab and open the joined list.
         .onOpenURL { url in
             guard let token = ListInviteLink.token(from: url) else { return }
+            // Consent gate: resolve the invite to a preview and prompt, rather than
+            // silently joining (which would immediately expose the user's sent/tried sets).
             Task {
-                if let id = try? await lists.join(token: token) {
-                    router.selection = .lists
-                    lists.pendingOpenListId = id
-                }
+                await lists.previewInvite(token: token)
+                if lists.pendingInvite != nil { router.selection = .lists }
             }
+        }
+        .alert(
+            "Join this list?",
+            isPresented: Binding(
+                get: { lists.pendingInvite != nil },
+                set: { if !$0 { lists.cancelPendingInvite() } }
+            ),
+            presenting: lists.pendingInvite
+        ) { _ in
+            Button("Join") { Task { await lists.acceptPendingInvite() } }
+            Button("Cancel", role: .cancel) { lists.cancelPendingInvite() }
+        } message: { invite in
+            let name = invite.name.isEmpty ? "this list" : invite.name
+            Text("Join \(name), invited by @\(invite.ownerHandle)? Members can see which problems you've sent and tried.")
         }
     }
 }

@@ -50,6 +50,15 @@ struct MemberStatusRow: Codable, Equatable {
     var sent: Bool
 }
 
+/// One row of the `preview_list_by_token` RPC: a not-yet-member's read-only preview of a
+/// list they hold an invite link for (name + inviter), used to show a consent prompt
+/// before joining.
+struct ListPreviewRow: Codable, Equatable {
+    var list_id: UUID
+    var name: String
+    var owner_handle: String
+}
+
 // MARK: - Write shapes
 
 /// Insert shape for a new list. id / invite_token / timestamps are server-defaulted;
