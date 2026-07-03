@@ -298,6 +298,10 @@ struct CatalogListView: View {
         }
     }
 
+    /// Catalog ids already in the active list's pile (U3), so a swipe-add on an
+    /// already-added problem is suppressed.
+    private var pileIDs: Set<String> { Set(lists.pile.map(\.source_catalog_id)) }
+
     /// Snapshot all filter inputs, then filter + sort off the main thread.
     /// Everything here is a value type (or the pre-resolved `membership`
     /// instance), so it's safe to hand to a detached task — see the compute task.
@@ -581,6 +585,25 @@ struct CatalogListView: View {
                                     // Load the next page when the last visible row shows.
                                     if problem.id == shown.last?.id && shown.count < problems.count {
                                         visibleLimit += Self.pageSize
+                                    }
+                                }
+                                // Group lens: swipe-left to add this problem to the shared
+                                // pile (U3). Only present in lens mode and only when the
+                                // problem isn't already in the pile; solo rows are unaffected.
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    if lensActive, let list = activeList, !pileIDs.contains(problem.id) {
+                                        Button {
+                                            Task {
+                                                try? await lists.addProblem(
+                                                    listId: list.id,
+                                                    sourceCatalogID: problem.id,
+                                                    boardLayoutId: board.id
+                                                )
+                                            }
+                                        } label: {
+                                            Label("Add", systemImage: "plus")
+                                        }
+                                        .tint(.green)
                                     }
                                 }
                             }
