@@ -23,28 +23,10 @@
 -- RLS: a member may read a list, its members, and its problem pile; a non-member sees
 -- nothing. All three tables FK to auth.users / lists ON DELETE CASCADE, so the existing
 -- public.delete_user() RPC (0001) sweeps them on account deletion — no RPC change.
-
--- ─────────────────────────────────────────────────────────────────────────────
--- Membership helper. RLS on list_members that itself queried list_members would
--- recurse; a SECURITY DEFINER function runs as its owner (bypassing RLS on the inner
--- read), which breaks the cycle. This is the standard Supabase pattern for
--- membership-scoped policies. STABLE (no writes); pinned search_path (advisor
--- hardening). The policies below all route co-membership checks through this.
-create or replace function public.is_list_member(l uuid, u uuid)
-    returns boolean
-    language sql
-    security definer
-    set search_path = ''
-    stable
-as $$
-    select exists (
-        select 1 from public.list_members
-        where list_id = l and user_id = u
-    );
-$$;
-
-revoke all on function public.is_list_member(uuid, uuid) from public;
-grant execute on function public.is_list_member(uuid, uuid) to authenticated;
+--
+-- NOTE on statement order: the membership helper is a `language sql` function whose body
+-- is validated at CREATE time (check_function_bodies), so the tables it queries MUST
+-- exist first. Hence: tables → helper → owner-seat trigger → RLS policies.
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- lists: the container. One board per list (board_layout_id, resolved app-side via
@@ -88,28 +70,6 @@ comment on table public.list_members is
 
 create index if not exists list_members_user_idx on public.list_members (user_id);
 
--- Seat the creator as the first member. SECURITY DEFINER so it can insert into
--- list_members regardless of that table's RLS (which has no member-facing INSERT
--- policy). Without this, the owner could not satisfy is_list_member() and would be
--- locked out of the list they just made.
-create or replace function public.add_owner_as_member()
-    returns trigger
-    language plpgsql
-    security definer
-    set search_path = ''
-as $$
-begin
-    insert into public.list_members (list_id, user_id)
-    values (new.id, new.owner_id)
-    on conflict do nothing;
-    return new;
-end;
-$$;
-
-create trigger lists_add_owner_member
-    after insert on public.lists
-    for each row execute function public.add_owner_as_member();
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- list_problems: the shared pile. A catalog problem someone added to the list
 -- (source_catalog_id resolves against the local bundle, like ascents). All members are
@@ -138,6 +98,52 @@ create unique index if not exists list_problems_list_catalog_key
 create trigger list_problems_set_updated_at
     before insert or update on public.list_problems
     for each row execute function public.set_updated_at();
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Membership helper. RLS on list_members that itself queried list_members would
+-- recurse; a SECURITY DEFINER function runs as its owner (bypassing RLS on the inner
+-- read), which breaks the cycle. This is the standard Supabase pattern for
+-- membership-scoped policies. STABLE (no writes); pinned search_path (advisor
+-- hardening). The policies below all route co-membership checks through this. Defined
+-- AFTER list_members exists so its `language sql` body validates.
+create or replace function public.is_list_member(l uuid, u uuid)
+    returns boolean
+    language sql
+    security definer
+    set search_path = ''
+    stable
+as $$
+    select exists (
+        select 1 from public.list_members
+        where list_id = l and user_id = u
+    );
+$$;
+
+revoke all on function public.is_list_member(uuid, uuid) from public;
+grant execute on function public.is_list_member(uuid, uuid) to authenticated;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Seat the creator as the first member. SECURITY DEFINER so it can insert into
+-- list_members regardless of that table's RLS (which has no member-facing INSERT
+-- policy). Without this, the owner could not satisfy is_list_member() and would be
+-- locked out of the list they just made.
+create or replace function public.add_owner_as_member()
+    returns trigger
+    language plpgsql
+    security definer
+    set search_path = ''
+as $$
+begin
+    insert into public.list_members (list_id, user_id)
+    values (new.id, new.owner_id)
+    on conflict do nothing;
+    return new;
+end;
+$$;
+
+create trigger lists_add_owner_member
+    after insert on public.lists
+    for each row execute function public.add_owner_as_member();
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Row-Level Security. Membership (via is_list_member) is the gate on all three tables;
