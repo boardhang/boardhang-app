@@ -30,6 +30,10 @@ final class ListsManager: ObservableObject {
 
     var isConfigured: Bool { client != nil }
 
+    /// The signed-in user's id, or nil when signed out / unconfigured. Used by the UI to
+    /// show owner-only actions (RLS is the real enforcement).
+    var myUserID: UUID? { client?.auth.currentUser?.id }
+
     /// nil when the app is built without Supabase config — see SupabaseClientProvider.
     private let client = SupabaseClientProvider.shared
 
