@@ -22,6 +22,12 @@ final class ListsManager: ObservableObject {
     @Published private(set) var members: [Profile] = []
     @Published private(set) var pile: [ListProblemRow] = []
 
+    /// The current list's group status, keyed by member id: each member's set of sent
+    /// and tried catalog ids (that board). Powers the per-person badges and the group
+    /// filter (U8). Refreshed on list-open and pull-to-refresh (refresh-first, no
+    /// realtime). Empty until `refreshGroupStatus` runs.
+    @Published private(set) var groupStatus: [UUID: MemberStatus] = [:]
+
     var isConfigured: Bool { client != nil }
 
     /// nil when the app is built without Supabase config — see SupabaseClientProvider.
@@ -137,6 +143,45 @@ final class ListsManager: ObservableObject {
             .execute()
     }
 
+    // MARK: - Group status
+
+    /// Fetches every member's send/try status for the list via the minimal-projection
+    /// RPC and folds it into per-member sets. The RPC is membership-gated and returns
+    /// ONLY (user_id, source_catalog_id, sent) — no other logbook field crosses. tried =
+    /// every catalog id the member has a row for; sent = those with sent == true.
+    func refreshGroupStatus(listId: UUID) async throws {
+        let client = try requireClient()
+        let rows: [MemberStatusRow] = try await client
+            .rpc("list_member_status", params: ["p_list_id": listId])
+            .execute()
+            .value
+        groupStatus = ListsManager.fold(rows)
+    }
+
+    /// Pure fold of RPC rows into per-member (sent, tried) sets. Static + pure so it's
+    /// unit-checkable without a live client.
+    static func fold(_ rows: [MemberStatusRow]) -> [UUID: MemberStatus] {
+        var out: [UUID: MemberStatus] = [:]
+        for row in rows {
+            var status = out[row.user_id] ?? MemberStatus()
+            status.tried.insert(row.source_catalog_id)
+            if row.sent { status.sent.insert(row.source_catalog_id) }
+            out[row.user_id] = status
+        }
+        return out
+    }
+
+    /// Resets all cached state. Call on sign-out / account switch so one account's lists
+    /// and group status never render under another (mirrors the sync layer's
+    /// cross-account guard — even cloud-only state must not leak across a session).
+    func clear() {
+        myLists = []
+        currentList = nil
+        members = []
+        pile = []
+        groupStatus = [:]
+    }
+
     // MARK: - Membership
 
     /// Leaves a list (deletes the caller's own membership; RLS allows only `user_id =
@@ -164,6 +209,13 @@ final class ListsManager: ObservableObject {
         guard let id = client?.auth.currentUser?.id else { throw ListsError.notSignedIn }
         return id
     }
+}
+
+/// One member's folded status for a list: which catalog problems they've sent and which
+/// they've tried (that board). `sent` is a subset of `tried`.
+struct MemberStatus: Equatable {
+    var sent: Set<String> = []
+    var tried: Set<String> = []
 }
 
 enum ListsError: LocalizedError {
