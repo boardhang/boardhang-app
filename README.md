@@ -27,8 +27,7 @@ and does not modify the firmware.
 
 ## Run it on your iPhone
 
-1. Open **`ios/MoonBoardLED.xcodeproj`** in Xcode. (The `MoonBoardLED.xcodeproj/` at the repo
-   root is a stale empty shell — don't use it.)
+1. Open **`ios/MoonBoardLED.xcodeproj`** in Xcode.
 2. Select the **MoonBoardLED** scheme and your iPhone as the run destination.
 3. In **Signing & Capabilities**, pick your personal Apple ID team (a free account works).
    Xcode auto-generates a provisioning profile; change the bundle ID if Xcode reports a conflict.
