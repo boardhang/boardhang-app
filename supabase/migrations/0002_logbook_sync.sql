@@ -31,6 +31,7 @@
 create or replace function public.set_updated_at()
     returns trigger
     language plpgsql
+    set search_path = ''   -- pin search_path (advisor hardening; now() is in pg_catalog)
 as $$
 begin
     new.updated_at := now();
@@ -60,7 +61,7 @@ create index if not exists user_problems_user_updated_idx
     on public.user_problems (user_id, updated_at);
 
 create trigger user_problems_set_updated_at
-    before update on public.user_problems
+    before insert or update on public.user_problems
     for each row execute function public.set_updated_at();
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -97,7 +98,7 @@ create index if not exists ascents_user_updated_idx
     on public.ascents (user_id, updated_at);
 
 create trigger ascents_set_updated_at
-    before update on public.ascents
+    before insert or update on public.ascents
     for each row execute function public.set_updated_at();
 
 -- Defensive backstop for deterministic attempt ids: at most one live unsent attempt

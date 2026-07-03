@@ -25,21 +25,30 @@ enum AscentSyncID {
 
     /// Deterministic id for the unsent attempt row of `problemIdentity` on `day`.
     ///
+    /// **Deliberately excludes the user id.** The row is already user-scoped by the
+    /// `user_id` column, RLS, and the server's partial unique index — so the id only
+    /// needs to be stable per (problem, day). Folding the user id in would fork the id
+    /// across the signed-out (`"local"`)→signed-in boundary: the same problem/day would
+    /// get two ids sharing one natural-key slot, colliding on the partial unique index
+    /// and wedging the whole ascent push batch (23505). Keeping it user-independent
+    /// makes the pre-sign-in attempt and the signed-in attempt the *same* row.
+    ///
     /// - Parameters:
-    ///   - userID: the signed-in user's id, or nil when signed-out. Included so two
-    ///     different users on one device never collide; signed-out uses a fixed sentinel
-    ///     so the id stays stable if the same local row is later attributed on sign-in.
     ///   - problemIdentity: the stable problem key — `sourceCatalogID` for catalog
     ///     problems or the user `Problem.id` string for user problems. **Never** the
     ///     editable `problemName` (would fork the row on rename).
     ///   - day: the ascent's date; bucketed to a **UTC** calendar day to match the
     ///     server's partial unique index (R-M5).
-    static func attemptID(userID: UUID?, problemIdentity: String, day: Date) -> UUID {
+    static func attemptID(problemIdentity: String, day: Date) -> UUID {
         let dayKey = utcDayFormatter.string(from: day)
-        let owner = userID?.uuidString ?? "local"
-        let name = "\(owner)|\(problemIdentity)|\(dayKey)|unsent"
+        let name = "\(problemIdentity)|\(dayKey)|unsent"
         return uuidV5(namespace: namespace, name: name)
     }
+
+    /// The UTC calendar day an ascent's date falls in — the bucket the deterministic id
+    /// and the server index both use. Views should match same-day attempts on THIS, not
+    /// `Calendar.current`, so a single device stays consistent with the sync key (#12).
+    static func utcDay(of date: Date) -> String { utcDayFormatter.string(from: date) }
 
     // MARK: - UUIDv5 (RFC 4122 §4.3)
 

@@ -125,16 +125,14 @@ struct ProblemDetailView: View {
         guard pendingTries > 0 else { return }
         let tries = pendingTries
         pendingTries = 0
-        if let existing = todaysAttempt() {
-            existing.tries += tries
-            existing.markDirty()
+        let day = Date()
+        // Deterministic id (per problem + UTC day) so the same-day attempt converges to
+        // one row across devices AND the local merge keys off the exact same bucket the
+        // server does — no local-calendar vs UTC drift (#12).
+        let attemptID = AscentSyncID.attemptID(problemIdentity: problem.id.uuidString, day: day)
+        if let existing = LogbookSession.attemptRow(id: attemptID, in: context) {
+            LogbookSession.revive(existing, tries: tries, date: day)
         } else {
-            let day = Date()
-            // Deterministic id so the same-day attempt converges to one row across
-            // devices (KTD5). Identity = the user problem's stable id.
-            let attemptID = AscentSyncID.attemptID(userID: LogbookSession.userID,
-                                                   problemIdentity: problem.id.uuidString,
-                                                   day: day)
             let attempt = Ascent(date: day,
                                  sourceCatalogID: nil,
                                  problemName: problem.name,
@@ -149,23 +147,6 @@ struct ProblemDetailView: View {
             context.insert(attempt)
         }
         sync.pushSoon()
-    }
-
-    /// The un-sent, non-tombstoned attempt logged today for this user problem, if any.
-    private func todaysAttempt() -> Ascent? {
-        let pid = problem.id
-        let name = problem.name
-        let descriptor = FetchDescriptor<Ascent>(
-            predicate: #Predicate {
-                $0.sent == false && !$0.tombstoned &&
-                ($0.userProblemID == pid || $0.problemName == name)
-            }
-        )
-        guard let matches = try? context.fetch(descriptor) else { return nil }
-        let cal = Calendar.current
-        return matches.first {
-            $0.sourceCatalogID == nil && cal.isDate($0.date, inSameDayAs: Date())
-        }
     }
 
     /// Soft-delete: tombstone so the delete propagates to the user's other devices

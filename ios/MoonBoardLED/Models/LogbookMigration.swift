@@ -53,8 +53,9 @@ enum LogbookMigration {
             defaults.set(true, forKey: doneKey)
         } catch {
             // Leave the flag unset so we retry next launch rather than shipping a
-            // half-migrated store. Never crash the app over this.
-            assertionFailure("LogbookMigration failed: \(error)")
+            // half-migrated store. Log rather than assert — `assertionFailure` traps in
+            // DEBUG builds, which would crash the one path meant to degrade gracefully.
+            print("[LogbookMigration] failed, will retry next launch: \(error)")
         }
     }
 }

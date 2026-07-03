@@ -26,6 +26,16 @@ final class LogbookSyncManager: ObservableObject {
     private let container: ModelContainer
     private let client: SupabaseClient?
     private var isSyncing = false
+    /// Set when a write's `pushSoon` arrives mid-sync, so the in-flight cycle re-runs
+    /// once more and the just-written row isn't stranded until the next trigger (#10).
+    private var needsResync = false
+
+    /// Identifies which account the on-device logbook cache belongs to. Guards against a
+    /// cross-account leak: on an implicit sign-out (token expiry) the cache isn't cleared,
+    /// so if a different user signs in we must wipe it before syncing, or the previous
+    /// user's rows would be pushed up under the new user's id (#4). Absent = unowned
+    /// pre-sign-in local data (the legitimate first-sign-in seed).
+    private let cacheOwnerKey = "logbookCacheLocalOwner"
 
     init(container: ModelContainer, client: SupabaseClient? = SupabaseClientProvider.shared) {
         self.container = container
@@ -42,20 +52,31 @@ final class LogbookSyncManager: ObservableObject {
         Task { await syncNow() }
     }
 
-    /// One push+pull cycle. No-op when signed out / unconfigured. Safe to call often
-    /// (foreground, after a write); re-entrancy guarded.
+    /// One push+pull cycle. No-op when signed out / unconfigured, while the
+    /// reconciliation modal is open, when the cache belongs to another account, or
+    /// before this user has reconciled — those states are owned by `handleSignIn`.
     func syncNow() async {
         guard let client, let userID = client.auth.currentUser?.id else { return }
-        guard !isSyncing else { return }
+        // Pre-reconciliation, foreign-cache, and open-modal states are handleSignIn's job.
+        // Syncing here would push the wrong user's rows or merge before the user chooses.
+        guard cacheBelongsToOrIsUnowned(userID) else { return }               // #4
+        guard UserDefaults.standard.bool(forKey: reconciledKey(userID)) else { return }
+        guard !pendingReconciliation else { return }                          // #3
+        guard !isSyncing else { needsResync = true; return }                 // #10 (coalesce)
         isSyncing = true
         defer { isSyncing = false }
-        do {
-            try await push(userID: userID)
-            try await pull(userID: userID)
-        } catch {
-            // Offline, or auth token expired mid-sync (RLS rejection): leave rows dirty
-            // and the cursor unchanged; the next cycle retries. Never surfaced, never lost.
-        }
+        repeat {
+            needsResync = false
+            do {
+                try await push(userID: userID)
+                try await pull(userID: userID)
+                claimCache(userID)
+            } catch {
+                // Offline, or auth token expired mid-sync (RLS rejection): leave rows dirty
+                // and the cursor unchanged; the next cycle retries. Never surfaced, lost.
+                break
+            }
+        } while needsResync && !pendingReconciliation
     }
 
     /// Called on launch-when-signed-in and on the sign-in transition. The first time for
@@ -64,10 +85,16 @@ final class LogbookSyncManager: ObservableObject {
     /// normal `syncNow` — so a restored session on relaunch never re-prompts.
     func handleSignIn() async {
         guard let client, let userID = client.auth.currentUser?.id else { return }
+        // A different account's cache lingering from an implicit sign-out must be wiped
+        // before anything else, or it would be attributed to this user (#4).
+        wipeForeignCacheIfNeeded(userID)
         if UserDefaults.standard.bool(forKey: reconciledKey(userID)) {
             await syncNow()
             return
         }
+        guard !isSyncing else { return }   // don't run reconciliation concurrently (#8)
+        isSyncing = true
+        defer { isSyncing = false }
         do {
             let localHasData = try localRowCount() > 0
             let cloudHasData = try await cloudRowCount(userID: userID) > 0
@@ -89,7 +116,34 @@ final class LogbookSyncManager: ObservableObject {
     }
 
     private func reconciledKey(_ userID: UUID) -> String { "logbookReconciled.\(userID.uuidString)" }
-    private func markReconciled(_ userID: UUID) { UserDefaults.standard.set(true, forKey: reconciledKey(userID)) }
+
+    private func markReconciled(_ userID: UUID) {
+        UserDefaults.standard.set(true, forKey: reconciledKey(userID))
+        claimCache(userID)
+    }
+
+    /// Record that the on-device cache now belongs to `userID`.
+    private func claimCache(_ userID: UUID) {
+        UserDefaults.standard.set(userID.uuidString, forKey: cacheOwnerKey)
+    }
+
+    /// True when the cache is unowned (pre-sign-in data) or already this user's.
+    private func cacheBelongsToOrIsUnowned(_ userID: UUID) -> Bool {
+        let owner = UserDefaults.standard.string(forKey: cacheOwnerKey)
+        return owner == nil || owner == userID.uuidString
+    }
+
+    /// If the cache belongs to a *different* account, wipe it and force this user to
+    /// reconcile from scratch — so none of the previous user's rows leak into this one.
+    private func wipeForeignCacheIfNeeded(_ current: UUID) {
+        guard let owner = UserDefaults.standard.string(forKey: cacheOwnerKey),
+              owner != current.uuidString else { return }
+        deleteAllLocalLogbook()
+        UserDefaults.standard.removeObject(forKey: cacheOwnerKey)
+        UserDefaults.standard.removeObject(forKey: reconciledKey(current))
+        resetCursors(userID: current)
+        try? context.save()
+    }
 
     // MARK: - Push
 
@@ -132,42 +186,53 @@ final class LogbookSyncManager: ObservableObject {
 
     private func pull(userID: UUID) async throws {
         guard let client else { return }
-        let cursor = cursorString(userID: userID)
-        var newest = SyncDate.date(cursor) ?? .distantPast
+
+        // Per-table cursors (#9): a shared cursor advanced by the ascents max could skip
+        // a user_problem written at the same instant between the two SELECTs, forever.
 
         // user_problems first (ascents may link to them).
+        let pCursor = cursorString(table: "user_problems", userID: userID)
+        var pNewest = SyncDate.date(pCursor) ?? .distantPast
         let problemRows: [UserProblemSyncRow] = try await client
             .from("user_problems").select()
-            .gt("updated_at", value: cursor)
+            .gt("updated_at", value: pCursor)
             .order("updated_at", ascending: true)
             .execute().value
         for row in problemRows {
             applyProblem(row)
-            if let ts = SyncDate.date(row.updated_at), ts > newest { newest = ts }
+            if let ts = SyncDate.date(row.updated_at), ts > pNewest { pNewest = ts }
         }
 
+        let aCursor = cursorString(table: "ascents", userID: userID)
+        var aNewest = SyncDate.date(aCursor) ?? .distantPast
         let ascentRows: [AscentSyncRow] = try await client
             .from("ascents").select()
-            .gt("updated_at", value: cursor)
+            .gt("updated_at", value: aCursor)
             .order("updated_at", ascending: true)
             .execute().value
         for row in ascentRows {
             applyAscent(row)
-            if let ts = SyncDate.date(row.updated_at), ts > newest { newest = ts }
+            if let ts = SyncDate.date(row.updated_at), ts > aNewest { aNewest = ts }
         }
 
         try context.save()
-        setCursor(SyncDate.string(newest), userID: userID)
+        setCursor(SyncDate.string(pNewest), table: "user_problems", userID: userID)
+        setCursor(SyncDate.string(aNewest), table: "ascents", userID: userID)
     }
 
     /// LWW apply: incoming wins iff its `updated_at` is newer than the local row's.
     private func applyProblem(_ row: UserProblemSyncRow) {
         let incoming = SyncDate.date(row.updated_at) ?? .distantPast
         let id = row.id
-        let existing = try? context.fetch(
-            FetchDescriptor<Problem>(predicate: #Predicate { $0.id == id })
-        ).first
-        if let existing = existing ?? nil {
+        // Distinguish a genuine "not found" from a thrown fetch error: on a throw, SKIP
+        // the row rather than fall through and insert a duplicate (ids aren't unique at
+        // the SwiftData layer, so a dup would defeat converge-by-id) (#6).
+        let existing: Problem?
+        do {
+            existing = try context.fetch(
+                FetchDescriptor<Problem>(predicate: #Predicate { $0.id == id })).first
+        } catch { return }
+        if let existing {
             if incoming > (existing.updatedAt ?? .distantPast) {
                 existing.name = row.name
                 existing.grade = row.grade
@@ -189,10 +254,12 @@ final class LogbookSyncManager: ObservableObject {
     private func applyAscent(_ row: AscentSyncRow) {
         let incoming = SyncDate.date(row.updated_at) ?? .distantPast
         let id = row.id
-        let existing = try? context.fetch(
-            FetchDescriptor<Ascent>(predicate: #Predicate { $0.id == id })
-        ).first
-        if let existing = existing ?? nil {
+        let existing: Ascent?
+        do {
+            existing = try context.fetch(
+                FetchDescriptor<Ascent>(predicate: #Predicate { $0.id == id })).first
+        } catch { return }   // fetch failed → skip, don't insert a duplicate (#6)
+        if let existing {
             if incoming > (existing.updatedAt ?? .distantPast) {
                 apply(row, to: existing)
                 existing.updatedAt = incoming
@@ -246,23 +313,22 @@ final class LogbookSyncManager: ObservableObject {
     func overwriteLocalWithCloud() async throws {
         guard let client, let userID = client.auth.currentUser?.id else { return }
         deleteAllLocalLogbook()
-        setCursor(SyncDate.string(.distantPast), userID: userID)
+        resetCursors(userID: userID)
         try context.save()
         try await pull(userID: userID)
         markReconciled(userID)
         pendingReconciliation = false
     }
 
+    /// Tombstone every live cloud row for the user in one bulk UPDATE per table — atomic
+    /// and a single round-trip, vs a per-row loop that could partial-fail (#11).
     private func tombstoneAllCloud(table: String, userID: UUID) async throws {
         guard let client else { return }
-        struct IDRow: Codable { var id: UUID }
-        let ids: [IDRow] = try await client.from(table).select("id")
-            .eq("user_id", value: userID).eq("deleted", value: false).execute().value
-        for row in ids {
-            try await client.from(table)
-                .update(["deleted": true])
-                .eq("id", value: row.id).execute()
-        }
+        try await client.from(table)
+            .update(["deleted": true])
+            .eq("user_id", value: userID)
+            .eq("deleted", value: false)
+            .execute()
     }
 
     // MARK: - Lifecycle (U6)
@@ -279,20 +345,26 @@ final class LogbookSyncManager: ObservableObject {
     /// cloud copy is safe; it re-downloads on next sign-in. Caller guards the offline +
     /// unsynced case with a warning before invoking (R7).
     func clearLocalSyncedCacheAfterFlush() async {
+        let userID = client?.auth.currentUser?.id
         await syncNow()
         deleteAllLocalLogbook()
-        clearCursorForCurrentUser()
+        if let userID { clearCursors(userID: userID) }
+        UserDefaults.standard.removeObject(forKey: cacheOwnerKey)   // cache no longer owned
         try? context.save()
     }
 
     /// Delete-account: keep the local logbook but strip sync metadata so it reverts to a
-    /// local-only store (the cloud copy is gone; nothing to restore from). R8.
-    func detachFromCloud() {
+    /// local-only store (the cloud copy is gone; nothing to restore from). R8. Pass the
+    /// user id explicitly — the session is already torn down by the time this runs (#15).
+    /// The cache owner is deliberately KEPT = this (now-deleted) user, so a *different*
+    /// account signing in later wipes the leftover data instead of adopting it (#4).
+    func detachFromCloud(userID: UUID) {
         let problems = (try? context.fetch(FetchDescriptor<Problem>())) ?? []
         for p in problems { p.updatedAt = nil; p.needsSync = false }
         let ascents = (try? context.fetch(FetchDescriptor<Ascent>())) ?? []
         for a in ascents { a.updatedAt = nil; a.needsSync = false }
-        clearCursorForCurrentUser()
+        clearCursors(userID: userID)
+        UserDefaults.standard.removeObject(forKey: reconciledKey(userID))
         try? context.save()
     }
 
@@ -322,30 +394,46 @@ final class LogbookSyncManager: ObservableObject {
         return a + p
     }
 
+    /// Count live cloud rows across BOTH tables (#5) — a user with cloud problems but no
+    /// ascents must still be seen as "cloud has data" so reconciliation fires the modal
+    /// instead of silently seeding/merging.
     private func cloudRowCount(userID: UUID) async throws -> Int {
         guard let client else { return 0 }
-        let res = try await client.from("ascents")
+        let ascents = try await client.from("ascents")
             .select("id", head: true, count: .exact)
             .eq("user_id", value: userID).eq("deleted", value: false)
-            .execute()
-        return res.count ?? 0
+            .execute().count ?? 0
+        if ascents > 0 { return ascents }
+        return try await client.from("user_problems")
+            .select("id", head: true, count: .exact)
+            .eq("user_id", value: userID).eq("deleted", value: false)
+            .execute().count ?? 0
     }
 
-    // MARK: - Cursor (per-user high-water mark)
+    // MARK: - Cursor (per-user, per-table high-water mark)
 
-    private func cursorKey(_ userID: UUID) -> String { "logbookSyncCursor.\(userID.uuidString)" }
+    private static let cursorTables = ["ascents", "user_problems"]
 
-    private func cursorString(userID: UUID) -> String {
-        UserDefaults.standard.string(forKey: cursorKey(userID))
+    private func cursorKey(_ table: String, _ userID: UUID) -> String {
+        "logbookSyncCursor.\(table).\(userID.uuidString)"
+    }
+
+    private func cursorString(table: String, userID: UUID) -> String {
+        UserDefaults.standard.string(forKey: cursorKey(table, userID))
             ?? SyncDate.string(.distantPast)
     }
 
-    private func setCursor(_ value: String, userID: UUID) {
-        UserDefaults.standard.set(value, forKey: cursorKey(userID))
+    private func setCursor(_ value: String, table: String, userID: UUID) {
+        UserDefaults.standard.set(value, forKey: cursorKey(table, userID))
     }
 
-    private func clearCursorForCurrentUser() {
-        guard let userID = client?.auth.currentUser?.id else { return }
-        UserDefaults.standard.removeObject(forKey: cursorKey(userID))
+    /// Reset both cursors to the epoch so the next pull re-fetches everything.
+    private func resetCursors(userID: UUID) {
+        for t in Self.cursorTables { setCursor(SyncDate.string(.distantPast), table: t, userID: userID) }
+    }
+
+    /// Remove both cursors for a user (sign-out / account deletion).
+    private func clearCursors(userID: UUID) {
+        for t in Self.cursorTables { UserDefaults.standard.removeObject(forKey: cursorKey(t, userID)) }
     }
 }

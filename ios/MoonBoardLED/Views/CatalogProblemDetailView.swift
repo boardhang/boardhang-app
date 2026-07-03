@@ -351,16 +351,14 @@ struct CatalogProblemPager: View {
         pendingTries = 0
         pendingProblemID = nil
 
-        if let existing = todaysAttempt(catalogID: p.id) {
-            existing.tries += tries
-            existing.markDirty()
+        let day = Date()
+        // Deterministic id (per catalog problem + UTC day) so the same-day attempt
+        // converges to one row across devices AND the local merge keys off the exact
+        // same bucket the server does — no local-calendar vs UTC drift (#12).
+        let attemptID = AscentSyncID.attemptID(problemIdentity: p.id, day: day)
+        if let existing = LogbookSession.attemptRow(id: attemptID, in: context) {
+            LogbookSession.revive(existing, tries: tries, date: day)
         } else {
-            let day = Date()
-            // Deterministic id so the same-day attempt converges to one row across
-            // devices (KTD5). Identity = the stable catalog id.
-            let attemptID = AscentSyncID.attemptID(userID: LogbookSession.userID,
-                                                   problemIdentity: p.id,
-                                                   day: day)
             let attempt = Ascent(date: day,
                                  sourceCatalogID: p.id,
                                  problemName: p.name,
@@ -374,19 +372,6 @@ struct CatalogProblemPager: View {
             context.insert(attempt)
         }
         sync.pushSoon()
-    }
-
-    /// The un-sent, non-tombstoned attempt logged today for this catalog problem, if any.
-    private func todaysAttempt(catalogID: String) -> Ascent? {
-        let target: String? = catalogID
-        let descriptor = FetchDescriptor<Ascent>(
-            predicate: #Predicate {
-                $0.sent == false && !$0.tombstoned && $0.sourceCatalogID == target
-            }
-        )
-        guard let matches = try? context.fetch(descriptor) else { return nil }
-        let cal = Calendar.current
-        return matches.first { cal.isDate($0.date, inSameDayAs: Date()) }
     }
 
     /// Whether the on-screen problem is currently favorited.

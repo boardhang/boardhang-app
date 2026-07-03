@@ -257,9 +257,12 @@ private struct AccountSection: View {
         actionError = nil
         isDeleting = true
         defer { isDeleting = false }
+        // Capture the user id BEFORE deletion — the session is gone afterward, so
+        // detachFromCloud can't read it itself (#15).
+        let userID = LogbookSession.userID
         do {
             try await auth.deleteAccount()
-            sync.detachFromCloud()
+            if let userID { sync.detachFromCloud(userID: userID) }
         }
         catch { actionError = "Couldn't delete your account. Please try again." }
     }
