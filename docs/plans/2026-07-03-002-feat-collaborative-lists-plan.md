@@ -539,9 +539,10 @@ combine rule (R7) is applied client-side over these sets.
 
 ### UX refinements (post-U6/U7) — 2026-07-04
 
-Design/UX pass on `ListDetailView` once the surface was live, making it read cleanly whether
-a list is solo (no other members yet) or shared. All in
-`ios/MoonBoardLED/Views/Lists/ListDetailView.swift`; no `ListsManager`/DTO/migration change.
+Design/UX pass once the collaborative-lists surface was live, making it read cleanly whether
+a list is solo (no other members yet) or shared. Mostly
+`ios/MoonBoardLED/Views/Lists/ListDetailView.swift`; the catalog group-bar item touches
+`ios/MoonBoardLED/Views/CatalogListView.swift`. No `ListsManager`/DTO/migration change.
 
 - **Member-agnostic "Browse & add".** The old "Browse together" button (two-person icon +
   "group lens" footer) read wrong on a personal list. Renamed to **"Browse & add problems"**
@@ -558,6 +559,30 @@ a list is solo (no other members yet) or shared. All in
   (`members.count <= 1`), the toolbar hides "Leave list" and shows only "Delete list"
   (leaving a member-less list you own is nonsensical). Owner-with-others and non-owner
   menus are unchanged.
+- **Hide the catalog group bar for a single-member list.** The group lens control at the top
+  of the catalog (`CatalogListView.groupBarSection` — the "Just me / [list]" segmented toggle
+  plus per-member status chips) is meaningless when you are the only member: there is nobody
+  to compare against, so it is pure clutter on a personal list. **But that lens also gates
+  swipe-to-add-to-pile, which must keep working on a solo list** (it is the "Browse & add"
+  flow), so the fix splits the two concepts rather than gating everything on member count:
+  - `lensActive` (list context → swipe-to-add) becomes
+    `activeList != nil && (members.count <= 1 || !showMine)`: a solo list has no visible
+    "Just me" toggle, so `showMine` can't turn add-to-pile off there; a multi-member list
+    still respects it.
+  - `isGroupList` (`activeList != nil && members.count > 1`) gates `groupBarSection`
+    visibility (independent of `showMine`, so the toggle can't hide itself).
+  - `groupFilterActive` (`isGroupList && !showMine`) gates the group **filtering** data
+    (`groupMembers`/`groupStatus`/`appliedGroupSelection`), the per-member chips, the
+    per-person row badges, and the recompute signature.
+
+  This is **stateless** — a stale `groupSelection`/`showMine` from a previously-viewed
+  multi-member list simply can't apply to a solo list (the group getters return empty), so no
+  mutate-on-collapse reset is needed. `activeList`'s slot-belongs guard means `lists.members`
+  is already scoped to the active list here, so the count is reliable (unlike the
+  `ListDetailView` transient). Refines U1/U8 (R7). *(Known limitation, pre-existing and out of
+  scope: switching between two multi-member lists without tapping "Leave" can carry a stale
+  chip for a member absent from the new roster, silently narrowing to zero results — track
+  separately.)*
 
 ---
 
