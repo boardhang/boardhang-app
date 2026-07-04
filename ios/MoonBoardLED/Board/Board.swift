@@ -146,28 +146,62 @@ enum AddedBoards {
 /// synced board/angle slab, so the logbook (and future collaborative lists) can render and
 /// navigate an ascent regardless of which board it came from.
 ///
-/// Built lazily from the synced disk cache and cached until invalidated. Now that the
-/// catalog is server-distributed and synced lazily per board, an id only resolves once its
-/// slab has synced — `CatalogSyncManager` calls `invalidate()` after each pull so freshly
-/// synced ids start resolving. An un-synced id returns nil; ascents still render from their
-/// denormalized name/grade snapshot.
+/// Built off the main thread from the synced disk cache and cached until invalidated. The
+/// build decodes every synced slab (thousands of problems), so lookups are deliberately
+/// **non-blocking**: `entry` returns whatever is cached and kicks a background rebuild on a
+/// miss — it never decodes inline on the calling thread. Until the first build lands (and
+/// briefly after each `invalidate`) a lookup returns nil, and callers fall back to the
+/// ascent's denormalized name/grade snapshot. When the build finishes,
+/// `CatalogIndexReadiness` nudges observing views (Home, Logbook) to re-render.
+///
+/// The catalog is server-distributed and synced lazily per board, so an id only resolves once
+/// its slab has synced — `CatalogSyncManager` calls `invalidate()` after each pull to fold in
+/// freshly synced ids.
 enum CatalogIndex {
     struct Entry { let board: Board; let problem: CatalogProblem }
 
     private static var cache: [String: Entry]?
+    /// A build is running on a background task; new triggers coalesce into it.
+    private static var building = false
+    /// An `invalidate` arrived mid-build, so the in-flight result is already stale and the
+    /// build re-runs once against the fresher slabs before publishing.
+    private static var staleWhileBuilding = false
     private static let lock = NSLock()
 
-    /// Drop the cached index so the next lookup rebuilds it from the current disk slabs.
+    /// Drop the cached index and rebuild it (off the main thread) from the current disk
+    /// slabs. Called after a catalog sync so freshly synced ids start resolving.
     static func invalidate() {
         lock.lock()
         cache = nil
+        if building { staleWhileBuilding = true }
         lock.unlock()
+        warm()
     }
 
-    private static func index() -> [String: Entry] {
+    /// Non-blocking lookup. Returns the resolved entry when the index is built, otherwise nil
+    /// (callers fall back to the ascent's snapshot) — and kicks a background build on a miss.
+    static func entry(forCatalogID id: String?) -> Entry? {
+        guard let id else { return nil }
         lock.lock()
-        defer { lock.unlock() }
-        if let cache { return cache }
+        let cached = cache
+        lock.unlock()
+        if let cached { return cached[id] }
+        warm()
+        return nil
+    }
+
+    /// Build the id→entry map off the main thread if it isn't cached and no build is already
+    /// running. Idempotent and safe to call from anywhere (a warm cache returns immediately).
+    static func warm() {
+        lock.lock()
+        guard cache == nil, !building else { lock.unlock(); return }
+        building = true
+        staleWhileBuilding = false
+        lock.unlock()
+        Task.detached(priority: .utility) { build() }
+    }
+
+    private static func build() {
         var idx: [String: Entry] = [:]
         for board in Board.all {
             for angle in board.angles {
@@ -176,14 +210,34 @@ enum CatalogIndex {
                 }
             }
         }
+        lock.lock()
+        // An invalidate landed while we were decoding — rebuild against the fresher slabs
+        // rather than publishing a stale index.
+        if staleWhileBuilding {
+            staleWhileBuilding = false
+            lock.unlock()
+            build()
+            return
+        }
         cache = idx
-        return idx
+        building = false
+        lock.unlock()
+        Task { await CatalogIndexReadiness.shared.markReady() }
     }
+}
 
-    static func entry(forCatalogID id: String?) -> Entry? {
-        guard let id else { return nil }
-        return index()[id]
-    }
+/// Observable readiness signal for `CatalogIndex`. Because the index builds off the main
+/// thread, populating its cache doesn't itself refresh SwiftUI; views that resolve ascents
+/// through the index (Home, Logbook) read `generation` so they re-render once a build lands.
+@MainActor @Observable
+final class CatalogIndexReadiness {
+    static let shared = CatalogIndexReadiness()
+    private init() {}
+
+    /// Bumped each time the index finishes (re)building.
+    private(set) var generation = 0
+
+    func markReady() { generation &+= 1 }
 }
 
 extension Ascent {
