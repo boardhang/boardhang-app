@@ -29,4 +29,25 @@ describe('center', () => {
     expect(aspect(MINI_GEOMETRY)).toBeGreaterThan(aspect(STANDARD_GEOMETRY))
     expect(aspect(STANDARD_GEOMETRY)).toBeCloseTo(0.65, 2)
   })
+
+  // Exact fractions from the iOS MoonBoardGeometry.center() formula — pins the
+  // proportions so a margin/row-count regression can't slip through the relative
+  // ordering checks above.
+  it('matches the iOS reference fractions for standard geometry', () => {
+    expect(center(STANDARD_GEOMETRY, 0, 1)).toEqual({
+      x: expect.closeTo(0.138636, 5),
+      y: expect.closeTo(0.935, 5),
+    })
+    expect(center(STANDARD_GEOMETRY, 0, 18)).toEqual({
+      x: expect.closeTo(0.138636, 5),
+      y: expect.closeTo(0.085, 5),
+    })
+  })
+
+  it('matches the iOS reference fractions for mini geometry', () => {
+    expect(center(MINI_GEOMETRY, 0, 1)).toEqual({
+      x: expect.closeTo(0.143086, 5),
+      y: expect.closeTo(0.906917, 5),
+    })
+  })
 })

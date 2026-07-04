@@ -18,6 +18,14 @@ describe('gradeIndex', () => {
     }
   })
 
+  it('treats empty, whitespace, and case-variant grades as unknown', () => {
+    // The scale is case- and exact-match sensitive (matching iOS FontGrade.all);
+    // anything not on it sorts to the end alongside other unknowns.
+    expect(gradeIndex('')).toBe(FONT_GRADES.length)
+    expect(gradeIndex(' ')).toBe(FONT_GRADES.length)
+    expect(gradeIndex('6a')).toBe(FONT_GRADES.length)
+  })
+
   it('sorting by gradeIndex yields the canonical order', () => {
     const shuffled = ['8A', '5+', '7B', '6A+', '6A']
     const sorted = [...shuffled].sort((a, b) => gradeIndex(a) - gradeIndex(b))

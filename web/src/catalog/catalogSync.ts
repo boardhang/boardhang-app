@@ -61,15 +61,24 @@ function openDB(): Promise<IDBDatabase> {
   })
 }
 
+/** Result of a slab sync: the cached problems plus whether the network pull succeeded. */
+export interface SyncResult {
+  problems: CatalogProblem[]
+  /** True when the delta pull completed (including a valid empty/unconfigured result);
+   *  false when it failed (offline, 5xx, CORS, timeout) and the slab is served stale. */
+  synced: boolean
+}
+
 /**
  * Pull catalog deltas for one board+angle slab from Supabase, merge them into IndexedDB,
  * and advance the high-water-mark cursor. Lazy per board — call it when a board is
  * selected. Best-effort: on an offline / transient failure it leaves the cursor untouched
- * and returns whatever is already cached, so the next call retries. Returns the slab's
- * cached problems, sorted by (grade, name).
+ * and returns whatever is already cached (with `synced: false`), so the next call retries
+ * and callers can flag the data as degraded. Problems are sorted by (grade, name).
  */
-export async function syncSlab(layoutId: number, angle: number): Promise<CatalogProblem[]> {
+export async function syncSlab(layoutId: number, angle: number): Promise<SyncResult> {
   const cursor = localStorage.getItem(cursorKey(layoutId, angle)) ?? EPOCH
+  let synced = true
   try {
     const rows = await restGet<CatalogRow>(
       'catalog_problems',
@@ -92,8 +101,9 @@ export async function syncSlab(layoutId: number, angle: number): Promise<Catalog
     }
   } catch {
     // Offline / transient — fall through to the cached slab; cursor unchanged for retry.
+    synced = false
   }
-  return readSlab(layoutId, angle)
+  return { problems: await readSlab(layoutId, angle), synced }
 }
 
 /** Read a slab's cached problems from IndexedDB (used offline and after a sync). */

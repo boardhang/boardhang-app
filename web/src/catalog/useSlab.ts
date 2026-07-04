@@ -27,7 +27,9 @@ export function useSlab(layoutId: number, angle: number): SlabState {
 
   useEffect(() => {
     let cancelled = false
-    setState((s) => ({ ...s, loading: true, degraded: false }))
+    // Reset problems too, so a slab switch never briefly shows the previous
+    // board's rows while the new slab loads.
+    setState({ problems: [], loading: true, degraded: false })
 
     async function load() {
       // Fast path: show whatever is cached before the network round-trip.
@@ -38,13 +40,13 @@ export function useSlab(layoutId: number, angle: number): SlabState {
         // A cache read failure is non-fatal; the sync below still runs.
       }
 
-      // Refresh via best-effort delta sync. syncSlab returns the merged slab and
-      // swallows transient failures, so treat "offline" as degraded; a throw
-      // (defensive) falls back to the cached slab.
-      const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+      // Refresh via best-effort delta sync. syncSlab reports whether the network
+      // pull actually succeeded; degraded reflects that real outcome (offline OR a
+      // same-network 5xx/CORS/timeout), not a navigator.onLine guess. A throw here
+      // means the final cache read failed — fall back defensively.
       try {
-        const problems = await syncSlab(layoutId, angle)
-        if (!cancelled) setState({ problems, loading: false, degraded: offline })
+        const { problems, synced } = await syncSlab(layoutId, angle)
+        if (!cancelled) setState({ problems, loading: false, degraded: !synced })
       } catch {
         const cached = await readSlab(layoutId, angle).catch(() => [] as CatalogProblem[])
         if (!cancelled) setState({ problems: cached, loading: false, degraded: true })

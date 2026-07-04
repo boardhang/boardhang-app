@@ -37,4 +37,18 @@ describe('board registry', () => {
       expect(ids.length).toBeGreaterThan(0)
     }
   })
+
+  it('keeps layout ids and names unique with non-empty resource fields', () => {
+    const layoutIds = BOARDS.map((b) => b.layoutId)
+    expect(new Set(layoutIds).size).toBe(layoutIds.length)
+    const names = BOARDS.map((b) => b.name)
+    expect(new Set(names).size).toBe(names.length)
+    for (const b of BOARDS) {
+      expect(b.folder).not.toBe('')
+      expect(b.background).not.toBe('')
+      expect(b.catalogPrefix).not.toBe('')
+      expect(b.membershipResource).not.toBe('')
+      expect(b.angles.length).toBeGreaterThan(0)
+    }
+  })
 })
