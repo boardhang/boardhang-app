@@ -158,6 +158,9 @@ private struct CreateListSheet: View {
     @State private var error: String?
     @State private var showingDatePicker = false
     @State private var pickedDate = Date.now
+    /// Cached formatted date-pill label — recomputed only when `pickedDate` changes, not on
+    /// every Name keystroke (the pill row is rebuilt whenever the sheet body re-evaluates).
+    @State private var dateText = ""
 
     private var addedBoards: [Board] { AddedBoards.boards(from: addedCSV) }
 
@@ -170,28 +173,31 @@ private struct CreateListSheet: View {
         date.formatted(date: .abbreviated, time: .omitted)
     }
 
-    private var canCreate: Bool {
+    private func canCreate(_ boards: [Board]) -> Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
             && !isSaving
-            && addedBoards.contains { $0.id == boardId }
+            && boards.contains { $0.id == boardId }
     }
 
     var body: some View {
-        NavigationStack {
+        // Resolve the added boards once per body pass (used by the Board section and the
+        // Create button) instead of recomputing the CSV parse several times per keystroke.
+        let boards = addedBoards
+        return NavigationStack {
             Form {
                 Section("Name") {
                     TextField("e.g. Projects", text: $name)
                     suggestionPills
                 }
                 Section("Board") {
-                    if addedBoards.isEmpty {
+                    if boards.isEmpty {
                         Text("Add a board on the Home tab to create a list.")
                             .foregroundStyle(.secondary)
                     } else {
                         // Wrapped in an Equatable child so typing in the Name field (which
                         // invalidates this whole sheet's body) doesn't re-render the board
                         // cards / their BoardImageViews on every keystroke.
-                        BoardPickerSection(boards: addedBoards, selectedId: $boardId)
+                        BoardPickerSection(boards: boards, selectedId: $boardId)
                             .equatable()
                     }
                 }
@@ -206,16 +212,20 @@ private struct CreateListSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { create() }.disabled(!canCreate)
+                    Button("Create") { create() }.disabled(!canCreate(boards))
                 }
             }
             .onAppear {
+                dateText = dateLabel(pickedDate)
                 // Default to the active board when it's added, else the first added board.
-                if !addedBoards.contains(where: { $0.id == boardId }) {
-                    boardId = addedBoards.first { $0.id == activeBoardId }?.id
-                        ?? addedBoards.first?.id
+                if !boards.contains(where: { $0.id == boardId }) {
+                    boardId = boards.first { $0.id == activeBoardId }?.id
+                        ?? boards.first?.id
                         ?? boardId
                 }
+            }
+            .onChange(of: pickedDate) { _, newValue in
+                dateText = dateLabel(newValue)
             }
             .sheet(isPresented: $showingDatePicker) {
                 datePickerSheet
@@ -240,7 +250,7 @@ private struct CreateListSheet: View {
                 Button { showingDatePicker = true } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "calendar")
-                        Text(dateLabel(pickedDate))
+                        Text(dateText)
                     }
                     .font(.caption.weight(.medium))
                     .padding(.horizontal, 10)
