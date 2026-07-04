@@ -269,19 +269,31 @@ struct CatalogListView: View {
         return list
     }
 
-    /// Whether the group lens is currently applied: a board-matched list is active AND
-    /// the user hasn't toggled to "Just me".
-    private var lensActive: Bool { activeList != nil && !showMine }
+    /// Whether the list *context* is applied — swipe-to-add-to-pile and the active-list
+    /// binding. A solo list (just you) has no "Just me" toggle to turn this off, so
+    /// `showMine` only gates it for a multi-member list; a solo list always keeps add-to-pile
+    /// so the "Browse & add" flow works on a personal list.
+    private var lensActive: Bool { activeList != nil && (lists.members.count <= 1 || !showMine) }
 
-    /// Members of the active list (for chips + badges); empty when the lens is off.
-    private var groupMembers: [Profile] { lensActive ? lists.members : [] }
+    /// A *multi-member* list is active on this board — the only case where the group bar,
+    /// per-member chips, per-person badges, and group filtering are meaningful. A solo list
+    /// keeps the context (via `lensActive`) but shows none of the group UI.
+    private var isGroupList: Bool { activeList != nil && lists.members.count > 1 }
 
-    /// Per-member sent/tried status for the active list; empty when the lens is off, so
-    /// the filter and badges are pure no-ops in solo mode.
-    private var groupStatus: [UUID: MemberStatus] { lensActive ? lists.groupStatus : [:] }
+    /// Group filtering + per-person badges are on: a multi-member list, in "us" view (not
+    /// toggled to "Just me"). False for a solo list, so a stale chip selection or `showMine`
+    /// from a previously-viewed group can't keep filtering with no visible control.
+    private var groupFilterActive: Bool { isGroupList && !showMine }
 
-    /// The group selection actually applied (empty when the lens is off).
-    private var appliedGroupSelection: Set<GroupChip> { lensActive ? groupSelection : [] }
+    /// Members of the active list (for chips + badges); empty unless the group filter is on.
+    private var groupMembers: [Profile] { groupFilterActive ? lists.members : [] }
+
+    /// Per-member sent/tried status for the active list; empty unless the group filter is on,
+    /// so the filter and badges are pure no-ops in solo/just-me mode.
+    private var groupStatus: [UUID: MemberStatus] { groupFilterActive ? lists.groupStatus : [:] }
+
+    /// The group selection actually applied (empty unless the group filter is on).
+    private var appliedGroupSelection: Set<GroupChip> { groupFilterActive ? groupSelection : [] }
 
     /// Recompute token for the group lens — folds selection + a status fingerprint so
     /// toggling chips or refreshing group status re-runs the off-main filter.
@@ -298,13 +310,13 @@ struct CatalogListView: View {
             .sorted()
             .joined(separator: "|")
             .hashValue
-        return "\(lensActive)|\(sel)|\(statusFingerprint)"
+        return "\(groupFilterActive)|\(sel)|\(statusFingerprint)"
     }
 
-    /// Per-person badges for a catalog row in lens mode (U2); nil in solo mode so rows
-    /// render unchanged. One entry per member, colored by their status for this problem.
+    /// Per-person badges for a catalog row in group mode (U2); nil for a solo/just-me list so
+    /// rows render unchanged. One entry per member, colored by their status for this problem.
     private func groupBadges(for catalogID: String) -> [(handle: String, color: Color)]? {
-        guard lensActive else { return nil }
+        guard groupFilterActive else { return nil }
         return groupMembers.map {
             (handle: $0.handle, color: memberStatusColor(groupStatus[$0.id], catalogID: catalogID))
         }
@@ -456,7 +468,10 @@ struct CatalogListView: View {
     /// per-member chips under each status bucket. Absent entirely in solo mode.
     @ViewBuilder
     private var groupBarSection: some View {
-        if let activeList {
+        // Only meaningful for a multi-member list — with just you there's nobody to compare
+        // against, so a solo list shows the plain catalog (no bar, no chips, no filtering)
+        // while still keeping swipe-to-add via `lensActive`.
+        if isGroupList, let activeList {
             Section {
                 Picker("View", selection: $showMine) {
                     Text("Just me").tag(true)
@@ -464,7 +479,7 @@ struct CatalogListView: View {
                 }
                 .pickerStyle(.segmented)
 
-                if lensActive {
+                if groupFilterActive {
                     ForEach(StatusBucket.allCases) { bucket in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(bucket.label)
