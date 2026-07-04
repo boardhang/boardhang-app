@@ -1,14 +1,18 @@
 import SwiftUI
+import SwiftData
 
-/// The Lists tab: your saved lists, plus a way to create one. Cloud-backed (reuses the
-/// same account as the logbook) — loads on appear + pull-to-refresh. When signed out or
-/// the build is unconfigured, shows a sign-in prompt instead.
+/// The Lists tab: a pinned Favorites entry plus your saved lists and a way to create one.
+/// Favorites is local (always available); the saved lists are cloud-backed (reuse the same
+/// account as the logbook) and load on appear + pull-to-refresh. When signed out or the
+/// build is unconfigured, the lists section is replaced by a sign-in prompt — Favorites
+/// stays put.
 ///
 /// Phase 1 (Saved Lists) is personal only: create / rename / delete and open a list. The
 /// collaborative surface (members, sharing, group status) is a later layer.
 struct ListsView: View {
     @EnvironmentObject private var auth: AuthManager
     @EnvironmentObject private var lists: ListsManager
+    @Query private var favorites: [FavoriteProblem]
 
     @State private var showingCreate = false
     @State private var renaming: ListRow?
@@ -19,15 +23,12 @@ struct ListsView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            List {
+                Section { favoritesCard }
                 if available {
-                    index
+                    listSection
                 } else {
-                    ContentUnavailableView {
-                        Label("Sign in to use lists", systemImage: "bookmark")
-                    } description: {
-                        Text("Saved Lists sync to your account so you can build collections of problems across your devices. Sign in from Settings to start.")
-                    }
+                    signInPrompt
                 }
             }
             .navigationTitle("Lists")
@@ -52,22 +53,56 @@ struct ListsView: View {
             } message: {
                 Text(loadError ?? "")
             }
+            .refreshable { await load() }
+            .task { await load() }
+        }
+    }
+
+    /// Pinned Favorites row: a live view over local FavoriteProblem, auto-populated by the
+    /// catalog's heart button. Present in every state (favorites aren't gated on auth).
+    private var favoritesCard: some View {
+        NavigationLink {
+            FavoritesView()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "heart.fill")
+                    .foregroundStyle(.pink)
+                    .frame(width: 28, height: 28)
+                    .background(Color.pink.opacity(0.15), in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Favorites")
+                    Text(favoriteCountLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var favoriteCountLabel: String {
+        switch favorites.count {
+        case 0:  return "No favorites yet"
+        case 1:  return "1 problem"
+        case let n: return "\(n) problems"
         }
     }
 
     @ViewBuilder
-    private var index: some View {
+    private var listSection: some View {
         if lists.myLists.isEmpty {
-            ContentUnavailableView {
-                Label("No lists yet", systemImage: "bookmark")
-            } description: {
-                Text("Create a list to start saving problems — projects, ticklists, warmups.")
-            } actions: {
-                Button("Create a list") { showingCreate = true }
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No lists yet").font(.headline)
+                    Text("Create a list to start saving problems — projects, ticklists, warmups.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Create a list") { showingCreate = true }
+                        .padding(.top, 2)
+                }
+                .padding(.vertical, 4)
             }
-            .task { await load() }
         } else {
-            List {
+            Section("Your lists") {
                 ForEach(lists.myLists) { list in
                     NavigationLink {
                         ListDetailView(listId: list.id)
@@ -89,8 +124,19 @@ struct ListsView: View {
                     }
                 }
             }
-            .refreshable { await load() }
-            .task { await load() }
+        }
+    }
+
+    private var signInPrompt: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Sign in to use lists", systemImage: "bookmark")
+                    .font(.headline)
+                Text("Saved Lists sync to your account so you can build collections of problems across your devices. Sign in from Settings to start.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
         }
     }
 

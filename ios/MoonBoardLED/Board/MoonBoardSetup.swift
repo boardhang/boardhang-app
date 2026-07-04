@@ -63,6 +63,14 @@ struct MoonBoardSetup: Identifiable, Hashable {
     let geometry: MoonBoardGeometry
     let holdSets: [MoonBoardHoldSet]
 
+    /// A compact label for chips/pills: "Mini MoonBoard 2025" → "Mini 2025", and
+    /// "MoonBoard Masters 2019" → "MoonBoard 2019" (the Masters line referred to by year).
+    /// A plain "MoonBoard 2024" is left intact.
+    var shortName: String {
+        name.replacingOccurrences(of: "Mini MoonBoard", with: "Mini")
+            .replacingOccurrences(of: "MoonBoard Masters", with: "MoonBoard")
+    }
+
     /// Full asset name for the background layer.
     var backgroundAsset: String { "Boards/\(background)" }
 
