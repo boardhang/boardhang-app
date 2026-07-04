@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
+// Test config lives in vitest.config.ts (kept separate so `tsc -b` doesn't
+// type-check Vitest's bundled-vite types against this project's rolldown Vite).
 export default defineConfig({
   plugins: [
     react(),
