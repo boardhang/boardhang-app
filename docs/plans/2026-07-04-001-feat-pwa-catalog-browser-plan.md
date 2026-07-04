@@ -57,7 +57,7 @@ The PWA is a partial port of the iOS app: it can connect to a board and author-a
 
 **Catalog browsing**
 
-- R5. The catalog lists the active slab's problems with lazy pagination. Each row shows name, benchmark and favorite badges, star rating, repeat count, setter (or hold count when the setter is empty), method label, and a trailing grade pill.
+- R5. The catalog lists the active slab's problems with lazy pagination. Each row shows name, benchmark and favorite badges, star rating, repeat count, setter (or hold count when the setter is empty), method label, a trailing grade pill, and an optional board thumbnail behind a "climb previews" toggle (matching iOS).
 - R6. A "Recently viewed" section is pinned above the main list, scoped per board+angle, with expand and clear, and it ignores active filters.
 - R7. Search matches problem name or setter as a case-insensitive substring; search is transient and not persisted.
 
@@ -154,7 +154,7 @@ The PWA has the data layer already written and unused, and a working authoring/l
 ### Key Technical Decisions
 
 - **KTD1. Hand-rolled view-state shell over a router dependency.** The PWA today has zero runtime deps beyond `react`/`react-dom` and a single-screen `App.tsx`. Add a small view-state machine (Build / My Boards / Catalog / Detail) rather than pulling in `react-router`. Rationale: the surface is a handful of screens, an offline PWA benefits from minimal bundle, and the repo's ethos is dependency-light. Alternative — `react-router` — is reasonable if deep-linking to a problem becomes a requirement; it is not one today.
-- **KTD2. Persistence mirrors iOS's key scheme on `localStorage`, reusing the existing IndexedDB catalog cache.** Per-board namespaced keys (angle, installed hold sets, grade range, sort, recents) match the iOS `@AppStorage` naming so behavior is traceable across apps. Favorites are a `localStorage` id set (device-local, unsynced), matching iOS's local-only `FavoriteProblem`. Problem rows stay in the existing IndexedDB store written by `catalogSync`.
+- **KTD2. Persistence mirrors iOS's key scheme on `localStorage`, reusing the existing IndexedDB catalog cache.** Per-board namespaced keys (angle, installed hold sets, `flipped` calibration, grade range, sort, recents) match the iOS `@AppStorage` naming so behavior is traceable across apps. Favorites are a `localStorage` id set (device-local, unsynced), matching iOS's local-only `FavoriteProblem`. Problem rows stay in the existing IndexedDB store written by `catalogSync`.
 - **KTD3. Port iOS layered PNG art for the catalog render; keep the programmatic grid for authoring.** The catalog render stacks a per-board background, per-hold-set overlays, and hold markers positioned by a ported render geometry (`center()` with per-board margins). This is a distinct concept from the existing `web/src/board/geometry.ts`, which is LED-serpentine geometry for hardware and stays untouched.
 - **KTD4. Introduce `vitest` + `@testing-library/react`.** The repo currently has no test runner. Adding one is prerequisite to meeting the test-scenario bar for feature-bearing units.
 - **KTD5. Consume the existing sync layer through React hooks.** A `useSlab(layoutId, angle)` hook calls `syncSlab` (best-effort) then `readSlab`, exposing the slab's problems, loading state, and offline fallback. `catalogSync` and `lib/supabase` are not modified.
@@ -181,6 +181,7 @@ flowchart TB
     Geo --> Art
   end
   subgraph Screens
+    Build["Build (existing authoring)"]
     MyBoards["My Boards"]
     List["Catalog list"]
     Detail["Detail pager"]
@@ -203,7 +204,7 @@ flowchart TB
 - **Phase 2 — Board model:** U4, U5 (multi-board state + persistence, hold-set membership + climbable filter).
 - **Phase 3 — Rendering:** U6, U7 (art asset pipeline, layered renderer).
 - **Phase 4 — Browsing:** U8, U9 (list + recents, search/sort/filters/favorites).
-- **Phase 5 — Shell & light:** U10 (navigation + detail pager + light-up + favorite).
+- **Phase 5 — Shell & light:** U10 (shell + navigation + first-run), U11 (detail pager + light-up + favorite).
 
 Phase 3's art pipeline (U6) is the highest-risk unit and the natural place to slip if asset export proves harder than assumed; U7 can fall back to a temporary programmatic render to keep Phases 4–5 unblocked (tracked in Open Questions).
 
@@ -216,34 +217,35 @@ Phase 3's art pipeline (U6) is the highest-risk unit and the natural place to sl
 - **Goal:** Give the repo a test runner so feature-bearing units can ship with tests.
 - **Requirements:** Enables test scenarios for U2–U10.
 - **Dependencies:** none
-- **Files:** `web/package.json`, `web/vite.config.ts`, `web/src/test/setup.ts`, `web/tsconfig.app.json`
+- **Files:** `web/package.json`, `web/vite.config.ts`, `web/src/test/setup.ts`, `web/src/test/smoke.test.ts`, `web/tsconfig.app.json`
 - **Approach:** Add `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, and `jsdom` as dev deps; add a `test` script; configure vitest (jsdom environment, setup file) inside the existing Vite config. Keep `oxlint` as the linter.
 - **Execution note:** Scaffolding — prefer a runtime smoke (one trivial passing test) over coverage here.
 - **Patterns to follow:** existing `web/vite.config.ts` structure and `web/tsconfig.app.json` compiler options.
 - **Test scenarios:** `Test expectation: none — tooling unit; a single smoke test proves the runner executes.`
 - **Verification:** `npm run test` runs and reports a passing smoke test; `npm run build` still succeeds.
 
-### U2. Port board registry and render geometry
+### U2. Port board registry, render geometry, and grade ordering
 
-- **Goal:** Represent all five boards and the geometry that maps hold coordinates onto rendered art.
-- **Requirements:** R1, R17, R18
+- **Goal:** Represent all five boards, the geometry that maps hold coordinates onto rendered art, and the canonical Font-grade ordinal scale.
+- **Requirements:** R1, R17, R18 (grade scale supports R8, R9)
 - **Dependencies:** U1
-- **Files:** `web/src/board/boards.ts`, `web/src/board/renderGeometry.ts`, `web/src/board/boards.test.ts`, `web/src/board/renderGeometry.test.ts`
-- **Approach:** Port the iOS `Board`/`MoonBoardSetup` registry keyed by `layout_id` (7 Mini 2025, 5 Masters 2019, 3 MoonBoard 2024, 4 Masters 2017, 2 MoonBoard 2016), each with `angles`, catalog-resource identity, hold-set metadata, and geometry class (`mini` 12-row / `standard` 18-row). Port `MoonBoardGeometry.center(col, row)` returning fractional (0–1) image coordinates with the Y-flip (`slotFromTop = rowTop - row`) and per-geometry margins from `ios/MoonBoardLED/Board/BoardArt.swift`.
-- **Patterns to follow:** `ios/MoonBoardLED/Board/Board.swift`, `ios/MoonBoardLED/Board/MoonBoardSetup.swift`, `ios/MoonBoardLED/Board/BoardArt.swift`; existing `web/src/board/config.ts` for TS board-config style.
+- **Files:** `web/src/board/boards.ts`, `web/src/board/renderGeometry.ts`, `web/src/board/grades.ts`, `web/src/board/boards.test.ts`, `web/src/board/renderGeometry.test.ts`, `web/src/board/grades.test.ts`
+- **Approach:** Port the iOS `Board`/`MoonBoardSetup` registry keyed by `layout_id` (7 Mini 2025, 5 Masters 2019, 3 MoonBoard 2024, 4 Masters 2017, 2 MoonBoard 2016), each with `angles`, catalog-resource identity, hold-set metadata, and geometry class (`mini` 12-row / `standard` 18-row). Port `MoonBoardGeometry.center(col, row)` returning fractional (0–1) image coordinates with the Y-flip (`slotFromTop = rowTop - row`) and per-geometry margins from `ios/MoonBoardLED/Board/BoardArt.swift`. Also port the ordered Font-grade table (`FontGrade.all` / `index(of:)` from `ios/MoonBoardLED/Models/Problem.swift`) as an ordinal index — grade sort and grade-range filtering (U9) must key off this index, never `String.localeCompare`, which orders grades wrong (`6A+` vs `6A`, `7C` vs `8A`).
+- **Patterns to follow:** `ios/MoonBoardLED/Board/Board.swift`, `ios/MoonBoardLED/Board/MoonBoardSetup.swift`, `ios/MoonBoardLED/Board/BoardArt.swift`, `ios/MoonBoardLED/Models/Problem.swift` (grade scale); existing `web/src/board/config.ts` for TS board-config style.
 - **Test scenarios:**
   - Covers R1. `boards` exposes exactly the five supported `layout_id`s with correct angles (`[40]` for Mini, `[40, 25]` for the rest).
   - Covers R18. `center(0, 1)` (A1, bottom-left) maps to the bottom-left region and `center(0, rowTop)` to the top-left, for both `mini` and `standard` geometry.
   - `center` uses the correct per-geometry margins so Mini and full boards differ in aspect and inset.
-- **Verification:** geometry and registry tests pass; values match iOS `center()` for spot-checked holds.
+  - Grade ordinal orders `6A < 6A+ < 6B < … < 7C < 8A`; an unknown/unmapped grade sorts to the end (supports AE4).
+- **Verification:** geometry, registry, and grade tests pass; `center()` values and grade order match iOS for spot-checked cases.
 
 ### U3. Wire the catalog sync layer into React
 
 - **Goal:** Expose the existing (currently unused) sync/cache layer to the UI.
 - **Requirements:** R19
-- **Dependencies:** U1, U2
-- **Files:** `web/src/catalog/useSlab.ts`, `web/src/catalog/useSlab.test.ts`
-- **Approach:** A `useSlab(layoutId, angle)` hook that calls `syncSlab` (best-effort, non-blocking) and surfaces `readSlab` results, loading state, and an offline/degraded flag. Do not modify `catalogSync.ts` or `lib/supabase.ts`. Handle the unconfigured-Supabase case (helpers return `[]`) as an empty-but-valid state.
+- **Dependencies:** U1
+- **Files:** `web/src/catalog/useSlab.ts`, `web/src/catalog/useSlab.test.ts`, `web/src/catalog/catalogSync.ts` (additive type widening only)
+- **Approach:** A `useSlab(layoutId, angle)` hook that calls `syncSlab` (best-effort, non-blocking) and surfaces `readSlab` results, loading state, and an offline/degraded flag. The exported `CatalogProblem` type must expose `method` (and `user_grade` if used) so U8/U9 can read them type-safely — the full row is already stored in IndexedDB, so this is an additive widen of the exported interface in `catalogSync.ts` (permitted); do not change its sync/cache logic. Handle the unconfigured-Supabase case (helpers return `[]`) as an empty-but-valid state.
 - **Patterns to follow:** `web/src/catalog/catalogSync.ts` (its `syncSlab`/`readSlab` contract), React 19 hook conventions in `web/src/App.tsx`.
 - **Test scenarios:**
   - Covers R19. With a seeded IndexedDB slab, the hook returns cached problems without a network call.
@@ -257,11 +259,11 @@ Phase 3's art pipeline (U6) is the highest-risk unit and the natural place to sl
 - **Requirements:** R2, R3, R4
 - **Dependencies:** U2
 - **Files:** `web/src/board/boardStore.ts`, `web/src/board/boardStore.test.ts`
-- **Approach:** A small store (React context + `localStorage`) holding added boards in MRU order, the active board id, and per-board angle + installed hold sets under iOS-parity key names. Adding a board configures angle and installed sets; activating promotes it to MRU front and switches the active slab.
+- **Approach:** A small store (React context + `localStorage`) holding added boards in MRU order, the active board id, and per-board angle + installed hold sets + `flipped` calibration under iOS-parity key names (`flipped_<id>` mirrors iOS `board.flippedKey`). `flipped` is the reverse-wired-strip calibration the light-up path (U11) feeds into `MoonBoardClient.send`. Adding a board configures angle and installed sets; activating promotes it to MRU front and switches the active slab.
 - **Patterns to follow:** iOS `AddedBoards` / `ActiveBoard` / `@AppStorage` key scheme in `ios/MoonBoardLED/Board/Board.swift` and `ios/MoonBoardLED/Views/RootTabView.swift`.
 - **Test scenarios:**
   - Covers R2. Adding boards records them; the list is ordered most-recently-used.
-  - Covers R3. Angle and installed-hold-set selections persist per board and survive reload (re-read from `localStorage`).
+  - Covers R3. Angle, installed-hold-set, and `flipped` selections persist per board and survive reload (re-read from `localStorage`).
   - Covers R4. Activating a different board changes the active slab; single-angle boards ignore angle selection.
 - **Verification:** store tests pass; state round-trips through `localStorage`.
 
@@ -312,14 +314,15 @@ Phase 3's art pipeline (U6) is the highest-risk unit and the natural place to sl
 - **Requirements:** R5, R6, R16
 - **Dependencies:** U3, U4, U7
 - **Files:** `web/src/catalog/CatalogList.tsx`, `web/src/catalog/RecentlyViewed.tsx`, `web/src/catalog/recentsStore.ts`, `web/src/catalog/CatalogList.test.tsx`, `web/src/catalog/recentsStore.test.ts`
-- **Approach:** Render the slab's problems with lazy pagination (grow-on-scroll, ~30/page). Each row shows name, benchmark/favorite badges, `★stars ⟳repeats` (each shown only when > 0), method label, setter or hold count, and a trailing grade pill. A pinned "Recently viewed" section per board+angle (move-to-front, deduped, capped) with expand and clear, ignoring active filters; recents persist in `localStorage`.
-- **Patterns to follow:** `ios/MoonBoardLED/Views/CatalogListView.swift` (row + recently-viewed), `ios/MoonBoardLED/Views/CatalogProblemDetailView.swift` (row metadata composition).
+- **Approach:** Render the slab's problems with lazy pagination (grow-on-scroll, ~30/page). Each row shows name, benchmark/favorite badges, `★stars ⟳repeats` (each shown only when > 0), method label, setter or hold count, a trailing grade pill, and an optional `CatalogBoard` thumbnail behind a "climb previews" toggle (matching iOS; this is why U8 depends on U7). Enumerate the list's distinct states: initial-loading (spinner), synced-with-results, empty-because-unseeded (a "not synced yet — needs seeding/first sync" prompt), empty-because-filters-exclude-all (a "no problems match" empty state with a clear-filters affordance), and degraded/offline (cached results plus a banner) — using the loading and offline/degraded flags from U3. Distinguish "no results" (filters) from "no data" (sync) so the user knows which lever to pull. A pinned "Recently viewed" section per board+angle (move-to-front, deduped, capped) with expand and clear, ignoring active filters; recents persist in `localStorage`.
+- **Patterns to follow:** `ios/MoonBoardLED/Views/CatalogListView.swift` (row + recently-viewed + climb-previews toggle), `ios/MoonBoardLED/Views/CatalogProblemDetailView.swift` (row metadata composition).
 - **Test scenarios:**
-  - Covers R5. A row renders each metadata field; stars/repeats hide when 0; setter falls back to hold count when empty.
+  - Covers R5. A row renders each metadata field; stars/repeats hide when 0; setter falls back to hold count when empty; the thumbnail shows only when the climb-previews toggle is on.
   - Covers R6. Recently-viewed shows most-recent-first, is capped, and ignores active filters.
   - Covers R16. Viewing a problem moves it to the front of its slab's recents, deduped.
+  - Loading shows a spinner; an unseeded slab shows the sync prompt; filters excluding everything show the clear-filters empty state (distinct from the unseeded state); offline shows cached results plus a banner.
   - Pagination grows the visible list on scroll without refetching the slab.
-- **Verification:** list and recents tests pass; list renders and paginates in `npm run dev`.
+- **Verification:** list and recents tests pass; list renders, shows each state, and paginates in `npm run dev`.
 
 ### U9. Search, sort, filters, favorites
 
@@ -327,7 +330,7 @@ Phase 3's art pipeline (U6) is the highest-risk unit and the natural place to sl
 - **Requirements:** R7, R8, R9, R11, R15
 - **Dependencies:** U8, U5
 - **Files:** `web/src/catalog/filters.ts`, `web/src/catalog/FilterControls.tsx`, `web/src/catalog/favoritesStore.ts`, `web/src/catalog/filters.test.ts`, `web/src/catalog/favoritesStore.test.ts`
-- **Approach:** Pure filter/sort functions plus UI controls. Search = transient case-insensitive name-or-setter substring. Two-level sort (primary + dimension-differing secondary; default Easiest then Most-repeats), persisted. Persisted filters: grade range over the slab's actual span (per board+angle keys), benchmark-only, min rating, method multi-select, favorites-only, and a drawn holds-filter (superset match). Installed-hold-set filter (U5) is always applied and not a chip. A reset clears grade, rating, method, sort, and holds. Favorites = `localStorage` id set driving badge + filter.
+- **Approach:** Pure filter/sort functions plus UI controls. Search = transient case-insensitive name-or-setter substring. Two-level sort (primary + dimension-differing secondary; default Easiest then Most-repeats), persisted. Grade sort and grade-range filtering key off the ported grade ordinal from U2, never `String.localeCompare`; the slab's "actual grade span" is derived from the min/max ordinal present in the slab. Persisted filters: grade range (per board+angle keys), benchmark-only, min rating, method multi-select, favorites-only, and a drawn holds-filter (superset match). Installed-hold-set filter (U5) is always applied and not a chip. A reset clears grade, rating, method, sort, and holds. Favorites = `localStorage` id set driving badge + filter.
 - **Patterns to follow:** `ios/MoonBoardLED/Views/CatalogListView.swift` (`computeDisplayed`/filter predicate, sort keys, reset), `ios/MoonBoardLED/Models/Ascent.swift` (`FavoriteProblem` semantics — local only).
 - **Test scenarios:**
   - Covers R7. Search matches name or setter, case-insensitive; empty search matches all.
@@ -337,20 +340,33 @@ Phase 3's art pipeline (U6) is the highest-risk unit and the natural place to sl
   - Covers R15. Favoriting toggles membership and drives both the badge and the favorites-only filter; state persists.
 - **Verification:** filter/sort/favorites tests pass; controls persist across reload.
 
-### U10. App shell, detail pager, and light-up
+### U10. App shell, navigation, and first-run
 
-- **Goal:** Navigation across surfaces plus the read-only detail pager with light-up and favorite.
-- **Requirements:** R12, R13, R14, R2, R4
-- **Dependencies:** U4, U7, U8, U9
-- **Files:** `web/src/App.tsx`, `web/src/shell/Navigation.tsx`, `web/src/catalog/ProblemDetail.tsx`, `web/src/catalog/ProblemDetail.test.tsx`, `web/src/shell/Navigation.test.tsx`
-- **Approach:** A view-state shell (Build / My Boards / Catalog / Detail) per KTD1. "My Boards" drives add/activate (U4). Selecting a problem opens a swipeable pager over the current filtered+sorted list (prev/next) rendering `CatalogBoard` (U7) plus metadata; the view is read-only (R13). "Light up" calls the existing `MoonBoardClient.send`; when disconnected, surface the connect flow first, then send, and track the currently-lit problem, clearing on disconnect. A favorite toggle in the detail view (U9). Keep the existing authoring `App` behavior reachable under "Build".
-- **Patterns to follow:** `ios/MoonBoardLED/Views/CatalogProblemDetailView.swift` (pager + actions), `web/src/ble/moonboard.ts` (`connect`/`send`/`clear`, `onStateChange`), existing `web/src/App.tsx` and `web/src/components/ConnectBar.tsx`.
+- **Goal:** The view-state shell across surfaces, including the first-run and no-active-board states.
+- **Requirements:** R2, R4
+- **Dependencies:** U4, U8, U9
+- **Files:** `web/src/App.tsx`, `web/src/shell/Navigation.tsx`, `web/src/shell/MyBoards.tsx`, `web/src/shell/Navigation.test.tsx`, `web/src/shell/MyBoards.test.tsx`
+- **Approach:** A view-state shell (Build / My Boards / Catalog / Detail) per KTD1. "My Boards" drives add/activate (U4) and keeps the existing authoring `App` reachable under "Build". The add/configure-board flow presents the board's filterable hold sets as multi-select toggles (default: all installed), the angle picker (only when the board has a choice), with always-on feet sets shown as locked/informational (not toggleable) per U5's `visible(...)` set. First-run and empty states: with zero added boards, land on My Boards showing an add-first-board prompt (CTA), not an empty Catalog; when no board is active, the Catalog surface routes to My Boards with an inline add-a-board prompt rather than rendering blank.
+- **Patterns to follow:** `ios/MoonBoardLED/Views/RootTabView.swift` and `ios/MoonBoardLED/Views/HomeView.swift` (my-boards + activate + add flow), existing `web/src/App.tsx`.
 - **Test scenarios:**
-  - Covers R12. The pager moves prev/next across the filtered+sorted list and renders each problem's board + metadata.
+  - Covers R2/R4. Navigation switches among Build / My Boards / Catalog / Detail without losing the active slab.
+  - First run (zero boards) lands on My Boards with an add-board CTA; Catalog with no active board routes to My Boards, not a blank screen.
+- **Verification:** navigation and first-run tests pass; a fresh `localStorage` starts at the add-board prompt in `npm run dev`.
+
+### U11. Problem detail pager and light-up
+
+- **Goal:** The read-only detail pager with its full interaction states, light-up, and favorite.
+- **Requirements:** R12, R13, R14
+- **Dependencies:** U4, U7, U9, U10
+- **Files:** `web/src/catalog/ProblemDetail.tsx`, `web/src/catalog/ProblemDetail.test.tsx`
+- **Approach:** Selecting a problem opens a pager over the current filtered+sorted list rendering `CatalogBoard` (U7) plus metadata; read-only (R13). Pager boundaries disable prev at the first item and next at the last (no wrap); if the open problem leaves the filtered set while open (e.g. unfavorited under a favorites-only filter), stay on it rather than auto-advancing. Both a visible pointer prev/next control and touch swipe drive the pager (desktop + mobile). "Light up" maps each `CatalogHold {c, r, t}` to a `HoldAssignment {col, row, type}` and calls `MoonBoardClient.send` with `MessageOptions {rows, flipped, showBeta}` — `rows` from the active board's geometry, `flipped` from the per-board store (U4), `showBeta` defaulting to true (iOS default). The Light-up control has explicit states: idle, connecting (disabled + progress), lit/success, connect-cancelled, connect-failed, and send-failed (with retry); a failed send does not mark the problem as currently-lit. Lit state clears on disconnect. A favorite toggle uses the U9 store.
+- **Patterns to follow:** `ios/MoonBoardLED/Views/CatalogProblemDetailView.swift` (pager + actions), `web/src/ble/moonboard.ts` (`connect`/`send`/`clear`, `onStateChange`), `web/src/components/ConnectBar.tsx`.
+- **Test scenarios:**
+  - Covers R12. The pager moves prev/next across the filtered+sorted list and renders each problem's board + metadata; prev is disabled at the first item and next at the last (no wrap).
   - Covers R13. The detail render has no hold-edit affordance.
-  - Covers R14 / AE2. Light up while connected sends the problem's holds; while disconnected it prompts to connect, then sends; the lit problem is tracked and cleared on disconnect.
-  - Navigation switches among Build / My Boards / Catalog / Detail without losing the active slab.
-- **Verification:** detail and navigation tests pass; end-to-end browse → open → connect → light works in Chrome against a device (manual).
+  - Covers R14 / AE2. Light up while connected sends the mapped holds; while disconnected it prompts to connect, then sends; a cancelled or failed connect and a failed send each surface feedback and do not mark the problem lit; lit state clears on disconnect.
+  - When the open problem leaves the filtered set, the pager stays on it rather than advancing.
+- **Verification:** detail and light-up tests pass; end-to-end browse → open → connect → light works in Chrome against a device (manual).
 
 ---
 
@@ -360,8 +376,8 @@ Phase 3's art pipeline (U6) is the highest-risk unit and the natural place to sl
 |---|---|---|
 | Lint | `npm run lint` (oxlint) | all units |
 | Types + build | `npm run build` (`tsc -b && vite build`) | all units |
-| Unit tests | `npm run test` (vitest) | U2–U5, U7–U10 |
-| Manual smoke | `npm run dev`, open in Chrome/Edge, connect a board, browse a slab, light a problem | U6, U7, U10 |
+| Unit tests | `npm run test` (vitest) | U1 (smoke), U2–U5, U7–U11 |
+| Manual smoke | `npm run dev`, open in Chrome/Edge, connect a board, browse a slab, light a problem | U6, U7, U10, U11 |
 
 Run from `web/`. BLE light-up (R14) can only be verified on a real device in a secure context (desktop Chrome/Edge, Android Chrome, or iPhone via Bluefy), not in a headless test.
 
@@ -385,11 +401,13 @@ Run from `web/`. BLE light-up (R14) can only be verified on a real device in a s
 - Art pipeline fidelity (U6): whether exported iOS PNGs render crisply at web resolutions, or need re-export/optimization. If U6 slips, U7 falls back to a temporary programmatic render (reusing `BoardGrid`-style drawing) so Phases 4–5 stay unblocked; the art swap lands later without changing the U7 interface.
 - Web-usability of `*HoldSets.json` and catalog data assumes the deployed `catalog_problems` table is seeded; if it isn't, browsing shows empty slabs until `scripts/import_catalog.py` runs.
 
+- Whether `catalog_problems.method` is populated by the seed import; if it isn't, the R5 method label and R9 method filter have no data to act on.
+
 **Deferred to implementation**
 
-- Exact detail-pager gesture handling (touch swipe vs buttons) on web.
 - Whether the drawn holds-filter picker reuses `CatalogBoard` with a tap layer or a dedicated lightweight grid.
 - Grade-range control representation (two-thumb slider vs min/max selects) on web.
+- Whether per-board `flipped` gets a calibration surface in the PWA or only carries the persisted value (default `false`) until authoring exposes one.
 
 ---
 
@@ -399,5 +417,6 @@ Run from `web/`. BLE light-up (R14) can only be verified on a real device in a s
 - Backend: `supabase/migrations/0006_catalog_problems.sql`
 - iOS board/geometry model: `ios/MoonBoardLED/Board/Board.swift`, `ios/MoonBoardLED/Board/MoonBoardSetup.swift`, `ios/MoonBoardLED/Board/BoardArt.swift`, `ios/MoonBoardLED/Board/HoldSetMembership.swift`, `ios/MoonBoardLED/Board/BoardImageView.swift`
 - iOS catalog UI: `ios/MoonBoardLED/Catalog/Catalog.swift`, `ios/MoonBoardLED/Views/CatalogListView.swift`, `ios/MoonBoardLED/Views/CatalogProblemDetailView.swift`, `ios/MoonBoardLED/Views/HomeView.swift`, `ios/MoonBoardLED/Views/RootTabView.swift`
+- iOS grade scale: `ios/MoonBoardLED/Models/Problem.swift` (`FontGrade` ordering)
 - iOS favorites: `ios/MoonBoardLED/Models/Ascent.swift` (`FavoriteProblem`)
 - Asset pipeline: `scripts/import_catalog.py`, `scripts/import_board_images.py`, `scripts/derive_holdset_membership.py`
