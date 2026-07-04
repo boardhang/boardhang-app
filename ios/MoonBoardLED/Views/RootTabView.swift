@@ -9,6 +9,7 @@ struct RootTabView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var auth: AuthManager
     @EnvironmentObject private var sync: LogbookSyncManager
+    @EnvironmentObject private var lists: ListsManager
     /// The board Search browses and Home marks active. Defaults to the Mini 2025
     /// (the physical board). Home writes it; Search reads it.
     @AppStorage(ActiveBoard.storageKey) private var activeBoardId = ActiveBoard.default
@@ -50,6 +51,9 @@ struct RootTabView: View {
                     Tab("Home", systemImage: "house.fill", value: RootTab.home) {
                         HomeView()
                     }
+                    Tab("Lists", systemImage: "bookmark.fill", value: RootTab.lists) {
+                        ListsView()
+                    }
                     Tab("Settings", systemImage: "gearshape.fill", value: RootTab.settings) {
                         SettingsView()
                     }
@@ -65,6 +69,9 @@ struct RootTabView: View {
                     HomeView()
                         .tabItem { Label("Home", systemImage: "house.fill") }
                         .tag(RootTab.home)
+                    ListsView()
+                        .tabItem { Label("Lists", systemImage: "bookmark.fill") }
+                        .tag(RootTab.lists)
                     SettingsView()
                         .tabItem { Label("Settings", systemImage: "gearshape.fill") }
                         .tag(RootTab.settings)
@@ -93,6 +100,9 @@ struct RootTabView: View {
         .onChange(of: auth.status) { _, newStatus in
             if newStatus != .signedOut {
                 Task { await sync.handleSignIn() }
+            } else {
+                // Never let one account's lists linger into a signed-out / switched session.
+                lists.clear()
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -108,7 +118,7 @@ struct RootTabView: View {
 }
 
 /// The app's top-level tabs. File-scope so screens like Home can switch tabs.
-enum RootTab: Hashable { case home, settings, search }
+enum RootTab: Hashable { case home, lists, settings, search }
 
 /// Session-only holder for the selected top-level tab, injected into the
 /// environment so any screen can switch tabs (e.g. Home → Search on board tap).
