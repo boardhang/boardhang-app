@@ -20,17 +20,19 @@ export interface CatalogProblem {
   angle: number
   name: string
   grade: string
+  /** Setter's suggested grade, when it differs from the consensus `grade`. */
+  user_grade: string | null
   setter: string
   stars: number
   repeats: number
   is_benchmark: boolean
+  /** Ascent method label (e.g. "Footless"), or null when unmarked. */
+  method: string | null
   holds: CatalogHold[]
 }
 
 /** The full row as it arrives from Supabase (superset of what the UI needs). */
 interface CatalogRow extends CatalogProblem {
-  user_grade: string | null
-  method: string | null
   updated_at: string
   deleted: boolean
 }
