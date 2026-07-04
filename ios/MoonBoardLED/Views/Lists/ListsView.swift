@@ -224,6 +224,16 @@ private struct CreateListSheet: View {
     }
 
     private var suggestionPills: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Suggestions")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            pillRow
+        }
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
+    }
+
+    private var pillRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 // Date pill — opens a calendar to pick any day.
@@ -256,7 +266,6 @@ private struct CreateListSheet: View {
             }
             .padding(.vertical, 2)
         }
-        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
     }
 
     private var datePickerSheet: some View {
