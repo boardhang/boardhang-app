@@ -13,21 +13,26 @@ struct HomeView: View {
     @AppStorage(AddedBoards.storageKey) private var addedCSV = ""
     /// Presents the two-step add-board flow.
     @State private var addingBoard = false
+    /// Re-render trigger for when the off-main catalog index finishes building, so ascents
+    /// resolve their board (and the pyramid/filter populate) a beat after first paint.
+    @State private var catalogReady = CatalogIndexReadiness.shared
     /// Lets a board tap jump to the Search tab (which browses the active board).
     @Environment(TabRouter.self) private var router
 
     private var addedBoards: [Board] { AddedBoards.boards(from: addedCSV) }
     private var availableBoards: [Board] { AddedBoards.available(from: addedCSV) }
 
-    private var filteredAscents: [Ascent] {
-        let selected = BoardFilter.selected(from: boardFilterCSV)
-        return ascents.filter { selected.contains($0.effectiveBoardLayoutId) }
-    }
-    private var sessions: [LogSession] { LogSession.sessions(from: filteredAscents) }
-    private var latestSessions: [LogSession] { Array(sessions.prefix(3)) }
-
     var body: some View {
-        NavigationStack {
+        // Reading the readiness generation re-filters/re-groups once the catalog index
+        // finishes building off the main thread (ascents resolve their board through it).
+        _ = catalogReady.generation
+        // Derive the filtered ascents + latest sessions once per body pass — otherwise the
+        // filter (an `effectiveBoardLayoutId` lookup per ascent) and the day-grouping ran
+        // several times across the Logbook section on every render.
+        let selected = BoardFilter.selected(from: boardFilterCSV)
+        let filtered = ascents.filter { selected.contains($0.effectiveBoardLayoutId) }
+        let latest = Array(LogSession.sessions(from: filtered).prefix(3))
+        return NavigationStack {
             List {
                 Section("My boards") {
                     if addedBoards.isEmpty {
@@ -74,8 +79,8 @@ struct HomeView: View {
                     // state where the pyramid would be (no empty chart). The filter
                     // pills always render, so you can switch back to a board with
                     // ascents.
-                    if filteredAscents.isEmpty {
-                        if BoardFilter.selected(from: boardFilterCSV).isEmpty {
+                    if filtered.isEmpty {
+                        if selected.isEmpty {
                             ContentUnavailableView {
                                 Label("No boards selected", systemImage: "square.grid.3x3")
                             } description: {
@@ -88,8 +93,8 @@ struct HomeView: View {
                                 Text("Log an ascent from a problem to start your logbook.")
                             }
                         }
-                    } else if filteredAscents.contains(where: \.sent) {
-                        GradePyramidView(ascents: filteredAscents)
+                    } else if filtered.contains(where: \.sent) {
+                        GradePyramidView(ascents: filtered)
                             .listRowInsets(EdgeInsets(top: 20, leading: 12, bottom: 12, trailing: 12))
                     }
 
@@ -99,8 +104,8 @@ struct HomeView: View {
                             .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                     }
 
-                    if !filteredAscents.isEmpty {
-                        ForEach(latestSessions) { session in
+                    if !filtered.isEmpty {
+                        ForEach(latest) { session in
                             NavigationLink {
                                 LogbookView(anchorDay: session.day)
                             } label: {
