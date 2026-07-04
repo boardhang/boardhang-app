@@ -122,6 +122,7 @@ struct GradePill: View {
 struct CatalogProblemPager: View {
     @EnvironmentObject private var ble: MoonBoardBLEManager
     @EnvironmentObject private var sync: LogbookSyncManager
+    @EnvironmentObject private var lists: ListsManager
     @Environment(\.modelContext) private var context
     @Query private var favorites: [FavoriteProblem]
     @AppStorage private var flipped: Bool
@@ -156,6 +157,8 @@ struct CatalogProblemPager: View {
     /// The problem currently lit on the board (set when we light up, cleared on
     /// disconnect). Drives the lightbulb's "active" state.
     @State private var litProblemID: String?
+    /// Presents the "add this problem to a saved list" picker.
+    @State private var showingAddToList = false
 
     init(problems: [CatalogProblem], current: CatalogProblem, board: Board, source: Source,
          visibleHoldSetIDs: Set<Int>? = nil, selectedHolds: Set<String> = []) {
@@ -226,6 +229,11 @@ struct CatalogProblemPager: View {
         .sheet(isPresented: $showingConnection) {
             ConnectionView()
         }
+        .sheet(isPresented: $showingAddToList) {
+            if let p = currentProblem {
+                AddToListSheet(catalogID: p.id, boardLayoutId: board.id)
+            }
+        }
     }
 
     private var bottomBar: some View {
@@ -247,6 +255,11 @@ struct CatalogProblemPager: View {
                              tint: isCurrentFavorite ? .pink : .primary,
                              active: isCurrentFavorite) {
                     toggleFavorite()
+                }
+                .disabled(currentProblem == nil)
+
+                circleButton(systemName: "bookmark") {
+                    showingAddToList = true
                 }
                 .disabled(currentProblem == nil)
 

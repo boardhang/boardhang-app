@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// A single saved list. Phase 1 (foundation) shows the list's name + board and offers
-/// rename / delete; the problem pile (add / remove / open) arrives in the next PR. The
-/// list is resolved from the manager's already-loaded `myLists`, so no extra fetch is
-/// needed to render this skeleton.
+/// A single saved list: its name/board and its saved problems. Add problems from the
+/// catalog (the pager's "add to list" button); remove them here (swipe); tap one to open
+/// it in the standard problem pager. Rename / delete live in the toolbar menu.
 struct ListDetailView: View {
     let listId: UUID
 
@@ -13,6 +12,7 @@ struct ListDetailView: View {
     @State private var renaming = false
     @State private var renameText = ""
     @State private var actionError: String?
+    @State private var selected: CatalogProblem?
 
     private var list: ListRow? {
         lists.currentList?.id == listId ? lists.currentList : lists.myLists.first { $0.id == listId }
@@ -20,18 +20,37 @@ struct ListDetailView: View {
 
     private var board: Board { Board.with(layoutId: list?.board_layout_id ?? Board.mini2025.id) }
 
+    /// This list's saved problems. Filter `lists.pile` by `list_id` so a previously-open
+    /// list's pile can't flash here before `reloadPile` lands.
+    private var items: [ListProblemRow] { lists.pile.filter { $0.list_id == listId } }
+
+    /// The pile resolved to catalog problems (in pile order), for the pager's swipe set.
+    private var resolvedPile: [CatalogProblem] {
+        items.compactMap { CatalogIndex.entry(forCatalogID: $0.source_catalog_id)?.problem }
+    }
+
     var body: some View {
         List {
             Section("Board") {
                 Text(board.name).foregroundStyle(.secondary)
             }
             Section("Problems") {
-                Text("No problems yet. Adding problems from the catalog comes next.")
-                    .foregroundStyle(.secondary)
+                if items.isEmpty {
+                    Text("No problems yet. Add problems from the catalog with the bookmark button.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(items) { item in
+                        problemRow(item)
+                    }
+                }
             }
         }
         .navigationTitle(list.map { $0.name.isEmpty ? "List" : $0.name } ?? "List")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $selected) { problem in
+            CatalogProblemPager(problems: resolvedPile, current: problem,
+                                board: board, source: .catalog(angle: board.defaultAngle))
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -51,6 +70,8 @@ struct ListDetailView: View {
                 }
             }
         }
+        .refreshable { await load() }
+        .task { await load() }
         .alert("Rename list", isPresented: $renaming) {
             TextField("Name", text: $renameText)
             Button("Save") { Task { await rename() } }
@@ -63,8 +84,49 @@ struct ListDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private func problemRow(_ item: ListProblemRow) -> some View {
+        Group {
+            if let problem = CatalogIndex.entry(forCatalogID: item.source_catalog_id)?.problem {
+                Button {
+                    selected = problem
+                } label: {
+                    CatalogProblemRow(problem: problem, showPreview: true, setup: board.setup)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                // Catalog id no longer resolves (e.g. a board that isn't bundled).
+                Text(item.source_catalog_id).foregroundStyle(.secondary)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                Task { await remove(item) }
+            } label: {
+                Label("Remove", systemImage: "trash")
+            }
+        }
+    }
+
     private var errorBinding: Binding<Bool> {
         Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })
+    }
+
+    // MARK: - Actions
+
+    private func load() async {
+        do { try await lists.reloadPile(listId) }
+        catch { actionError = error.localizedDescription }
+    }
+
+    private func remove(_ item: ListProblemRow) async {
+        do {
+            try await lists.removeProblem(item.id)
+            try await lists.reloadPile(listId)
+        } catch {
+            actionError = error.localizedDescription
+        }
     }
 
     private func rename() async {
