@@ -13,6 +13,7 @@ struct ListsView: View {
     @EnvironmentObject private var auth: AuthManager
     @EnvironmentObject private var lists: ListsManager
     @Query private var favorites: [FavoriteProblem]
+    @AppStorage(ActiveBoard.storageKey) private var activeBoardId = ActiveBoard.default
 
     @State private var showingCreate = false
     @State private var renaming: ListRow?
@@ -21,10 +22,27 @@ struct ListsView: View {
 
     private var available: Bool { lists.isConfigured && auth.status != .signedOut }
 
+    /// The board the Lists tab is scoped to (the one the Search tab is browsing). Everything
+    /// on this page — your lists, the create sheet, and Favorites — is tied to it; switching
+    /// the active board on the Home tab swaps what's shown here. No cross-board mixing.
+    private var activeBoard: Board { Board.with(layoutId: activeBoardId) }
+
+    /// Your lists for the active board only. Lists on other boards still exist in the cloud —
+    /// they're hidden until that board is active again.
+    private var boardLists: [ListRow] {
+        lists.myLists.filter { $0.board_layout_id == activeBoardId }
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                Section { favoritesCard }
+                Section {
+                    favoritesCard
+                } header: {
+                    // Read-only signal of which board this page is scoped to, so lists that
+                    // appear/disappear on a board switch don't read as "my lists vanished".
+                    Text(activeBoard.name)
+                }
                 if available {
                     listSection
                 } else {
@@ -79,8 +97,17 @@ struct ListsView: View {
         }
     }
 
+    /// Favorites on the active board only — matches the board-scoped `FavoritesView` this
+    /// card opens. Favorites store just a catalog id, so the board is derived via `CatalogIndex`.
+    private var activeBoardFavoriteCount: Int {
+        favorites
+            .compactMap { CatalogIndex.entry(forCatalogID: $0.catalogID) }
+            .filter { $0.board.id == activeBoardId }
+            .count
+    }
+
     private var favoriteCountLabel: String {
-        switch favorites.count {
+        switch activeBoardFavoriteCount {
         case 0:  return "No favorites yet"
         case 1:  return "1 problem"
         case let n: return "\(n) problems"
@@ -89,7 +116,7 @@ struct ListsView: View {
 
     @ViewBuilder
     private var listSection: some View {
-        if lists.myLists.isEmpty {
+        if boardLists.isEmpty {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("No lists yet").font(.headline)
@@ -103,7 +130,7 @@ struct ListsView: View {
             }
         } else {
             Section("Your lists") {
-                ForEach(lists.myLists) { list in
+                ForEach(boardLists) { list in
                     NavigationLink {
                         ListDetailView(listId: list.id)
                     } label: {
@@ -141,12 +168,9 @@ struct ListsView: View {
     }
 
     private func row(_ list: ListRow) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(list.name.isEmpty ? "Untitled list" : list.name)
-            Text(Board.with(layoutId: list.board_layout_id).name)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
+        // No per-row board label: every list here is the active board, stated once in the
+        // page header.
+        Text(list.name.isEmpty ? "Untitled list" : list.name)
     }
 
     // MARK: - Rename plumbing
@@ -188,18 +212,17 @@ struct ListsView: View {
     }
 }
 
-/// Create-list sheet: name + board. The creator is seated as the first member by a DB
-/// trigger, so the new list is immediately usable. The name field offers quick-fill
-/// suggestion pills, and the board is chosen from the user's *added* boards using the same
-/// card style as the Home tab's Boards section.
+/// Create-list sheet: name only. The new list is always created on the *active* board (the
+/// one the Lists tab is scoped to) — there's no board picker, so lists never mix boards. To
+/// make a list for another board, switch the active board on the Home tab first. The creator
+/// is seated as the first member by a DB trigger, so the new list is immediately usable. The
+/// name field offers quick-fill suggestion pills.
 private struct CreateListSheet: View {
     @EnvironmentObject private var lists: ListsManager
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(AddedBoards.storageKey) private var addedCSV = ""
     @AppStorage(ActiveBoard.storageKey) private var activeBoardId = ActiveBoard.default
 
     @State private var name = ""
-    @State private var boardId = ActiveBoard.default
     @State private var isSaving = false
     @State private var error: String?
     @State private var showingDatePicker = false
@@ -207,8 +230,6 @@ private struct CreateListSheet: View {
     /// Cached formatted date-pill label — recomputed only when `pickedDate` changes, not on
     /// every Name keystroke (the pill row is rebuilt whenever the sheet body re-evaluates).
     @State private var dateText = ""
-
-    private var addedBoards: [Board] { AddedBoards.boards(from: addedCSV) }
 
     /// Quick-fill name ideas (the date is a separate pill that opens a calendar).
     private var textSuggestions: [String] {
@@ -219,33 +240,16 @@ private struct CreateListSheet: View {
         date.formatted(date: .abbreviated, time: .omitted)
     }
 
-    private func canCreate(_ boards: [Board]) -> Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty
-            && !isSaving
-            && boards.contains { $0.id == boardId }
+    private var canCreate: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty && !isSaving
     }
 
     var body: some View {
-        // Resolve the added boards once per body pass (used by the Board section and the
-        // Create button) instead of recomputing the CSV parse several times per keystroke.
-        let boards = addedBoards
-        return NavigationStack {
+        NavigationStack {
             Form {
                 Section("Name") {
                     TextField("e.g. Projects", text: $name)
                     suggestionPills
-                }
-                Section("Board") {
-                    if boards.isEmpty {
-                        Text("Add a board on the Home tab to create a list.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        // Wrapped in an Equatable child so typing in the Name field (which
-                        // invalidates this whole sheet's body) doesn't re-render the board
-                        // cards / their BoardImageViews on every keystroke.
-                        BoardPickerSection(boards: boards, selectedId: $boardId)
-                            .equatable()
-                    }
                 }
                 if let error {
                     Text(error).foregroundStyle(.red).font(.footnote)
@@ -258,17 +262,11 @@ private struct CreateListSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { create() }.disabled(!canCreate(boards))
+                    Button("Create") { create() }.disabled(!canCreate)
                 }
             }
             .onAppear {
                 dateText = dateLabel(pickedDate)
-                // Default to the active board when it's added, else the first added board.
-                if !boards.contains(where: { $0.id == boardId }) {
-                    boardId = boards.first { $0.id == activeBoardId }?.id
-                        ?? boards.first?.id
-                        ?? boardId
-                }
             }
             .onChange(of: pickedDate) { _, newValue in
                 dateText = dateLabel(newValue)
@@ -351,90 +349,12 @@ private struct CreateListSheet: View {
         error = nil
         Task {
             do {
-                try await lists.createList(name: name, boardLayoutId: boardId)
+                try await lists.createList(name: name, boardLayoutId: activeBoardId)
                 dismiss()
             } catch {
                 self.error = error.localizedDescription
                 isSaving = false
             }
         }
-    }
-}
-
-/// The list of selectable board cards, isolated behind `Equatable` so it only re-renders
-/// when the added-board set or the selection actually changes — not on every Name-field
-/// keystroke (which invalidates the parent sheet's body). Equality deliberately ignores
-/// the `selectedId` Binding's identity and compares the current values.
-private struct BoardPickerSection: View, Equatable {
-    let boards: [Board]
-    @Binding var selectedId: Int
-
-    static func == (a: BoardPickerSection, b: BoardPickerSection) -> Bool {
-        a.selectedId == b.selectedId && a.boards.map(\.id) == b.boards.map(\.id)
-    }
-
-    var body: some View {
-        ForEach(boards) { board in
-            BoardPickerCard(board: board, isSelected: board.id == selectedId) {
-                selectedId = board.id
-            }
-            .equatable()
-        }
-    }
-}
-
-/// A selectable board card for the create-list sheet — the same thumbnail + name as the
-/// Home tab's board rows (rendering only the board's active hold sets), with a selection
-/// checkmark instead of the navigation chevron. `Equatable` (on board + selection, not the
-/// tap closure) so SwiftUI can skip re-rendering unchanged cards.
-private struct BoardPickerCard: View, Equatable {
-    let board: Board
-    let isSelected: Bool
-    let onTap: () -> Void
-
-    static func == (a: BoardPickerCard, b: BoardPickerCard) -> Bool {
-        a.board.id == b.board.id && a.isSelected == b.isSelected
-    }
-    @AppStorage private var activeCSV: String
-    @AppStorage private var angle: Int
-
-    init(board: Board, isSelected: Bool, onTap: @escaping () -> Void) {
-        self.board = board
-        self.isSelected = isSelected
-        self.onTap = onTap
-        _activeCSV = AppStorage(wrappedValue: "", board.activeHoldSetsKey)
-        _angle = AppStorage(wrappedValue: board.defaultAngle, board.angleKey)
-    }
-
-    private var active: Set<Int> { ActiveHoldSets.ids(from: activeCSV, in: board) }
-    private var renderIDs: Set<Int> { ActiveHoldSets.visible(active, in: board) }
-
-    /// Hold sets and (for multi-angle boards) the angle — same subtitle the Home board rows show.
-    private var subtitle: String {
-        let sets = ActiveHoldSets.subtitle(active, in: board)
-        return board.hasAngleChoice ? "\(sets) · \(angle)°" : sets
-    }
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                BoardImageView(setup: board.setup, visibleHoldSetIDs: renderIDs)
-                    .frame(width: 72)
-                    .allowsHitTesting(false)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(board.name)
-                        .fontWeight(isSelected ? .semibold : .regular)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color(.systemGray3))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }

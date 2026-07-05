@@ -99,6 +99,26 @@ uninstalled. For rendering, the visible set = active ids ∪ `alwaysOnHoldSetIDs
 added set, so removing a board silently drops it from the filter. UI: `BoardFilterMenu` and
 `BoardFilterPills`. It's only surfaced when more than one board is added.
 
+## Lists & Favorites (active-board scoped)
+
+The **Lists tab** is scoped to the **active board** — the layout id in
+`@AppStorage(ActiveBoard.storageKey)` (default Mini 2025), the one the Search tab is
+browsing. Everything on the page is tied to it; switching the active board on the Home tab
+swaps what's shown. Boards never mix on this page.
+
+- **Your lists**: `ListsView` filters `ListsManager.myLists` to `board_layout_id ==
+  activeBoardId`. Lists on other boards still exist in the cloud — they're hidden until that
+  board is active again (never deleted). The active board's name is shown once in the page
+  header as a read-only caption.
+- **Create list**: `CreateListSheet` is name-only, no board picker — new lists always use the
+  active board. To make a list for another board, switch the active board first.
+- **Favorites**: `FavoriteProblem` stores only a catalog id; the board is derived via
+  `CatalogIndex`. `FavoritesView` is hard-scoped to the active board (no board pills), and the
+  pinned Favorites card's problem count on the Lists page is board-scoped to match.
+
+This is single-board selection, unlike the logbook's multi-select `BoardFilter` above — don't
+conflate the two.
+
 ## Resolving a logged ascent's board: `effectiveBoardLayoutId`
 
 Catalog problems are shared identifiers that may exist on multiple boards, so an `Ascent`'s stored
@@ -124,3 +144,4 @@ Stored `boardLayoutId` **defaults to 7**
 - Active-hold-sets empty = _all_ filterable sets active (not "none").
 - Always-on hold sets (feet) are rendered but never filterable.
 - Use `effectiveBoardLayoutId`, not `boardLayoutId`, when grouping/filtering ascents by board.
+- Lists/Favorites are single-board (the active board); the logbook's `BoardFilter` is multi-select. Don't conflate.
