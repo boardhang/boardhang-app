@@ -5,7 +5,7 @@
 // (the ~thousands of problems per slab are too big for localStorage); the per-slab cursor
 // = localStorage.
 
-import { restGet } from '../lib/supabase'
+import { supabase } from '../supabase/client'
 import type { HoldType } from '../types'
 
 export interface CatalogHold {
@@ -80,11 +80,21 @@ export async function syncSlab(layoutId: number, angle: number): Promise<SyncRes
   const cursor = localStorage.getItem(cursorKey(layoutId, angle)) ?? EPOCH
   let synced = true
   try {
-    const rows = await restGet<CatalogRow>(
-      'catalog_problems',
-      `layout_id=eq.${layoutId}&angle=eq.${angle}` +
-        `&updated_at=gt.${encodeURIComponent(cursor)}&order=updated_at.asc&select=*`,
-    )
+    // High-water-mark delta pull: rows changed since our cursor, oldest-first so the
+    // cursor advances monotonically. When Supabase is unconfigured we degrade to "no
+    // data" (the app still runs) rather than failing — same as the old anon REST path.
+    let rows: CatalogRow[] = []
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('catalog_problems')
+        .select('*')
+        .eq('layout_id', layoutId)
+        .eq('angle', angle)
+        .gt('updated_at', cursor)
+        .order('updated_at', { ascending: true })
+      if (error) throw error
+      rows = (data ?? []) as CatalogRow[]
+    }
     if (rows.length > 0) {
       const db = await openDB()
       const tx = db.transaction(STORE, 'readwrite')

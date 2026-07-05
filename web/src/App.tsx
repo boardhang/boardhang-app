@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
+import { AccountMenu } from './auth/AccountMenu'
 import { useBoardStore } from './board/boardStore'
 import { CatalogScreen } from './catalog/CatalogScreen'
 import { clearSearch } from './catalog/searchStore'
@@ -29,8 +30,9 @@ function App() {
   return (
     <div className="app-shell">
       <main className="app-scroll overflow-x-hidden">
-        <header className="mb-3">
+        <header className="mb-3 flex items-center justify-between gap-2">
           <h1 className="text-base font-semibold tracking-tight">MoonBoard LED</h1>
+          <AccountMenu />
         </header>
         {effectiveView === 'catalog' && <CatalogScreen />}
         {effectiveView === 'boards' && <MyBoards onActivated={() => setView('catalog')} />}
