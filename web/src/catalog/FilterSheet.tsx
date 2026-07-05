@@ -25,10 +25,11 @@ export function FilterSheet({ state, onChange, gradeSpan, methods }: FilterSheet
   const count = activeFilterCount(state)
   return (
     <Drawer showSwipeHandle>
-      {/* Sticky, not fixed: pinned a fixed gap above the scroll region's bottom
-          (i.e. above the nav row) regardless of nav height. -mt-14 cancels the
-          flow space so it overlaps the list end; pointer-events let taps through. */}
-      <div className="pointer-events-none sticky bottom-4 z-30 -mt-14 flex justify-end">
+      {/* Floats bottom-right above the nav row without any nav-height constant:
+          mt-auto pushes it to the bottom of the (flex-column) scroll region on a
+          short list, and sticky bottom-4 keeps it pinned while a long list scrolls.
+          pointer-events let taps fall through to the list. */}
+      <div className="pointer-events-none sticky bottom-4 z-30 mt-auto flex justify-end">
         <DrawerTrigger
           aria-label="Filters"
           className="pointer-events-auto relative flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition hover:opacity-90"

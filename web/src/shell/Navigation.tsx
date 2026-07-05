@@ -67,11 +67,12 @@ export function Navigation({ view, onNavigate, disabled = [] }: NavigationProps)
             type="button"
             aria-label="Search"
             disabled={searchDisabled}
+            title={searchDisabled ? 'Add a board first' : undefined}
             onClick={() => onNavigate('catalog')}
             className={cn(
               'ml-auto flex flex-col items-center gap-0.5 px-2 py-2.5 text-[0.7rem] font-medium transition-colors',
               'text-muted-foreground hover:text-foreground',
-              searchDisabled && 'pointer-events-none opacity-35',
+              searchDisabled && 'opacity-35',
             )}
           >
             <Search className="size-5" />

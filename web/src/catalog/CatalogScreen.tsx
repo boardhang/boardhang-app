@@ -60,7 +60,7 @@ export function CatalogScreen() {
   }
 
   return (
-    <div>
+    <div className="flex flex-1 flex-col">
       <CatalogList
         board={board}
         angle={angle}
@@ -69,7 +69,7 @@ export function CatalogScreen() {
         degraded={degraded}
         favoriteIds={favoriteIds}
         transform={transform}
-        hideRecents={searchQuery.trim().length > 0}
+        searchActive={searchQuery.trim().length > 0}
         onSelect={openProblem}
       />
       <FilterSheet state={filters} onChange={setFilters} gradeSpan={gradeSpan} methods={methods} />
