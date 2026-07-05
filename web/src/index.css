@@ -46,8 +46,18 @@
   box-sizing: border-box;
 }
 
+html,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
+  height: 100%;
+  /* The app shell owns scrolling (see .app-scroll); the document itself never
+     scrolls, so the fixed-height grid can pin the nav as a real bottom row. */
+  overflow: hidden;
+  overscroll-behavior: none;
   background: #111111;
   color: #f3f3f3;
 }

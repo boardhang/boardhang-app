@@ -16,12 +16,14 @@ function App() {
   const noBoards = addedBoards.length === 0
 
   return (
-    <div className="app overflow-x-hidden pb-24">
-      <header className="mb-3">
-        <h1 className="text-base font-semibold tracking-tight">MoonBoard LED</h1>
-      </header>
-      {effectiveView === 'catalog' && <CatalogScreen />}
-      {effectiveView === 'boards' && <MyBoards onActivated={() => setView('catalog')} />}
+    <div className="app-shell">
+      <main className="app-scroll overflow-x-hidden">
+        <header className="mb-3">
+          <h1 className="text-base font-semibold tracking-tight">MoonBoard LED</h1>
+        </header>
+        {effectiveView === 'catalog' && <CatalogScreen />}
+        {effectiveView === 'boards' && <MyBoards onActivated={() => setView('catalog')} />}
+      </main>
       <Navigation view={effectiveView} onNavigate={setView} disabled={noBoards ? ['catalog'] : []} />
     </div>
   )

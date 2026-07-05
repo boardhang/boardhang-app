@@ -24,7 +24,7 @@ export function Navigation({ view, onNavigate, disabled = [] }: NavigationProps)
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur"
+      className="border-t border-border bg-background pb-[env(safe-area-inset-bottom)]"
     >
       {/* Full-width: Boards pinned left, search always pinned to the right edge. */}
       <div className="flex items-center gap-2 px-3">

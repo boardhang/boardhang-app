@@ -1,6 +1,22 @@
-.app {
+/* Fixed-height app shell: content region (1fr) + the nav as a real bottom row
+   (auto). The browser sizes the content to 100dvh − nav height, so nothing ever
+   hides behind the nav and there is no magic padding constant to keep in sync. */
+.app-shell {
+  height: 100vh; /* fallback */
+  height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  grid-template-columns: 1fr;
+}
+
+/* The only scroll container. min-height:0 lets the 1fr row shrink below its
+   content and actually scroll. */
+.app-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 1rem;
   display: flex;
   flex-direction: column;

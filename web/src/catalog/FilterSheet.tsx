@@ -25,22 +25,27 @@ export function FilterSheet({ state, onChange, gradeSpan, methods }: FilterSheet
   const count = activeFilterCount(state)
   return (
     <Drawer showSwipeHandle>
-      <DrawerTrigger
-        aria-label="Filters"
-        className="fixed right-4 bottom-24 z-30 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition hover:opacity-90"
-      >
-        <SlidersHorizontal className="size-6" />
-        {count > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex size-5 items-center justify-center rounded-full bg-destructive text-[0.7rem] font-semibold text-white">
-            {count}
-          </span>
-        )}
-      </DrawerTrigger>
+      {/* Sticky, not fixed: pinned a fixed gap above the scroll region's bottom
+          (i.e. above the nav row) regardless of nav height. -mt-14 cancels the
+          flow space so it overlaps the list end; pointer-events let taps through. */}
+      <div className="pointer-events-none sticky bottom-4 z-30 -mt-14 flex justify-end">
+        <DrawerTrigger
+          aria-label="Filters"
+          className="pointer-events-auto relative flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition hover:opacity-90"
+        >
+          <SlidersHorizontal className="size-6" />
+          {count > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 flex size-5 items-center justify-center rounded-full bg-destructive text-[0.7rem] font-semibold text-white">
+              {count}
+            </span>
+          )}
+        </DrawerTrigger>
+      </div>
       <DrawerContent>
         <DrawerHeader>
           <DrawerTitle>Filters</DrawerTitle>
         </DrawerHeader>
-        <div className="max-h-[70vh] overflow-y-auto px-4 pb-8">
+        <div className="max-h-[70vh] overflow-y-auto px-4 pb-[calc(2rem+env(safe-area-inset-bottom))]">
           <FilterControls state={state} onChange={onChange} gradeSpan={gradeSpan} methods={methods} />
         </div>
       </DrawerContent>

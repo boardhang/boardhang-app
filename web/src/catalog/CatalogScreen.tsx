@@ -78,7 +78,7 @@ export function CatalogScreen() {
         <DrawerContent>
           <DrawerTitle className="sr-only">Problem details</DrawerTitle>
           {openIndex !== null && (
-            <div className="max-h-[85vh] overflow-y-auto px-4 pb-6">
+            <div className="max-h-[85vh] overflow-y-auto px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
               <ProblemDetail
                 problems={displayed}
                 initialIndex={openIndex}
