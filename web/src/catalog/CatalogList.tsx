@@ -31,6 +31,8 @@ interface CatalogListProps {
   showThumbnails?: boolean
   /** Filter/sort the slab's problems (U9). Defaults to grade-ordinal sort. */
   transform?: (problems: CatalogProblem[]) => CatalogProblem[]
+  /** Hide "Recently viewed" while an active search query is narrowing the list. */
+  hideRecents?: boolean
   onSelect?: (problem: CatalogProblem) => void
 }
 
@@ -43,6 +45,7 @@ export function CatalogList({
   favoriteIds = new Set(),
   showThumbnails = false,
   transform,
+  hideRecents = false,
   onSelect,
 }: CatalogListProps) {
   const [visibleCount, setVisibleCount] = useState(PAGE)
@@ -117,13 +120,15 @@ export function CatalogList({
           Offline — showing cached problems
         </div>
       )}
-      <RecentlyViewed
-        problems={recentProblems}
-        board={board}
-        favoriteIds={favoriteIds}
-        onSelect={onSelectProblem}
-        onClear={() => clearRecents(board.layoutId, angle)}
-      />
+      {!hideRecents && (
+        <RecentlyViewed
+          problems={recentProblems}
+          board={board}
+          favoriteIds={favoriteIds}
+          onSelect={onSelectProblem}
+          onClear={() => clearRecents(board.layoutId, angle)}
+        />
+      )}
       <div className="px-3 py-1 text-xs text-muted-foreground">
         {displayed.length} problems
       </div>

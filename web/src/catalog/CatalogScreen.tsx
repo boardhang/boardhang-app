@@ -9,10 +9,10 @@ import { holdSetContext, isClimbable } from '../board/holdSetMembership'
 import { CatalogList } from './CatalogList'
 import { FilterSheet } from './FilterSheet'
 import { ProblemDetail } from './ProblemDetail'
-import { Input } from '@/components/ui/input'
 import { applyFilters, type FilterContext } from './filters'
 import { useFavorites } from './favoritesStore'
 import { useFilters } from './useFilters'
+import { useSearch } from './searchStore'
 import { useSlab } from './useSlab'
 import type { CatalogProblem } from './catalogSync'
 
@@ -25,6 +25,7 @@ export function CatalogScreen() {
 
   const { problems, loading, degraded } = useSlab(board.layoutId, angle)
   const [filters, setFilters] = useFilters(board.layoutId, angle)
+  const { query: searchQuery } = useSearch()
   const { favoriteIds } = useFavorites()
   const [openIndex, setOpenIndex] = useState<number | null>(null)
 
@@ -44,9 +45,11 @@ export function CatalogScreen() {
     return { favoriteIds, isClimbable: (holds) => isClimbable(membership, holds, active) }
   }, [board, favoriteIds])
 
+  // Search is transient (bottom-nav field), so inject it into the filter call
+  // rather than persisting it in FilterState.
   const transform = useCallback(
-    (list: CatalogProblem[]) => applyFilters(list, filters, context),
-    [filters, context],
+    (list: CatalogProblem[]) => applyFilters(list, { ...filters, search: searchQuery }, context),
+    [filters, searchQuery, context],
   )
   const displayed = useMemo(() => transform(problems), [transform, problems])
 
@@ -70,13 +73,6 @@ export function CatalogScreen() {
 
   return (
     <div>
-      <div className="px-3 pb-1">
-        <Input
-          placeholder="Name or setter"
-          value={filters.search}
-          onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-        />
-      </div>
       <CatalogList
         board={board}
         angle={angle}
@@ -85,6 +81,7 @@ export function CatalogScreen() {
         degraded={degraded}
         favoriteIds={favoriteIds}
         transform={transform}
+        hideRecents={searchQuery.trim().length > 0}
         onSelect={openProblem}
       />
       <FilterSheet state={filters} onChange={setFilters} gradeSpan={gradeSpan} methods={methods} />
