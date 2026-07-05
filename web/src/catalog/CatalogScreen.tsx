@@ -9,6 +9,7 @@ import { holdSetContext, isClimbable } from '../board/holdSetMembership'
 import { CatalogList } from './CatalogList'
 import { FilterSheet } from './FilterSheet'
 import { ProblemDetail } from './ProblemDetail'
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { applyFilters, type FilterContext } from './filters'
 import { useFavorites } from './favoritesStore'
 import { useFilters } from './useFilters'
@@ -58,19 +59,6 @@ export function CatalogScreen() {
     if (i >= 0) setOpenIndex(i)
   }
 
-  if (openIndex !== null) {
-    return (
-      <ProblemDetail
-        problems={displayed}
-        initialIndex={openIndex}
-        board={board}
-        angle={angle}
-        favoriteIds={favoriteIds}
-        onClose={() => setOpenIndex(null)}
-      />
-    )
-  }
-
   return (
     <div>
       <CatalogList
@@ -85,6 +73,24 @@ export function CatalogScreen() {
         onSelect={openProblem}
       />
       <FilterSheet state={filters} onChange={setFilters} gradeSpan={gradeSpan} methods={methods} />
+
+      <Drawer open={openIndex !== null} onOpenChange={(open) => !open && setOpenIndex(null)} showSwipeHandle>
+        <DrawerContent>
+          <DrawerTitle className="sr-only">Problem details</DrawerTitle>
+          {openIndex !== null && (
+            <div className="max-h-[85vh] overflow-y-auto px-4 pb-6">
+              <ProblemDetail
+                problems={displayed}
+                initialIndex={openIndex}
+                board={board}
+                angle={angle}
+                favoriteIds={favoriteIds}
+                onClose={() => setOpenIndex(null)}
+              />
+            </div>
+          )}
+        </DrawerContent>
+      </Drawer>
     </div>
   )
 }

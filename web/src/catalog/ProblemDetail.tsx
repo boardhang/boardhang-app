@@ -6,7 +6,7 @@
 // the filtered set while open (e.g. unfavorited under a favorites-only filter),
 // the pager stays on it rather than jumping — prev/next just disable.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BadgeCheck, ChevronLeft, ChevronRight, Heart, Lightbulb, Repeat, Star } from 'lucide-react'
 import { bleClient, connectBoard, isConnected, setBleError, useBle } from '../ble/useBle'
 import { CatalogBoard } from '../board/CatalogBoard'
@@ -41,6 +41,7 @@ export function ProblemDetail({
   onClose,
 }: ProblemDetailProps) {
   const [current, setCurrent] = useState<CatalogProblem | undefined>(() => problems[initialIndex])
+  const swipeStart = useRef<{ x: number; y: number } | null>(null)
   const { state } = useBle()
   const { toggleFavorite } = useFavorites()
   const [lit, setLit] = useState(false)
@@ -111,6 +112,22 @@ export function ProblemDetail({
   const atFirst = pos <= 0
   const atLast = pos < 0 || pos >= problems.length - 1
 
+  // Side-swipe the board to page prev/next (vertical drags fall through to the
+  // drawer's swipe-to-dismiss).
+  function onSwipeStart(e: React.PointerEvent) {
+    swipeStart.current = { x: e.clientX, y: e.clientY }
+  }
+  function onSwipeEnd(e: React.PointerEvent) {
+    const start = swipeStart.current
+    swipeStart.current = null
+    if (!start) return
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy)) return // not a clear horizontal swipe
+    if (dx < 0 && !atLast) setCurrent(problems[pos + 1])
+    else if (dx > 0 && !atFirst) setCurrent(problems[pos - 1])
+  }
+
   return (
     <div className="space-y-4 pb-2">
       <div className="flex items-center justify-between">
@@ -136,7 +153,11 @@ export function ProblemDetail({
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-[17rem]">
+      <div
+        className="mx-auto w-full max-w-[17rem] touch-pan-y select-none"
+        onPointerDown={onSwipeStart}
+        onPointerUp={onSwipeEnd}
+      >
         <CatalogBoard board={board} holds={current.holds} visibleHoldSetIds={visible} showBeta />
       </div>
 
