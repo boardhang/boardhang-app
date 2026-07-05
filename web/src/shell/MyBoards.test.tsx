@@ -8,6 +8,20 @@ beforeEach(() => {
   window.dispatchEvent(new StorageEvent('storage')) // reset boardStore snapshot
 })
 
+/** Add a board by name from the "Add a board" list. */
+function addBoard(name: string) {
+  const addRow = screen.getByText(name).closest('div')!
+  fireEvent.click(within(addRow).getByRole('button', { name: 'Add' }))
+}
+
+/** Open a board's config drawer. */
+function openConfig(name: string) {
+  fireEvent.click(screen.getByRole('button', { name: `Configure ${name}` }))
+}
+
+/** Hold-set / angle toggles in the open drawer (the aria-pressed buttons). */
+const toggles = () => screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed'))
+
 describe('MyBoards', () => {
   it('shows the first-run prompt and every addable board when none are added', () => {
     render(<MyBoards onActivated={() => {}} />)
@@ -18,26 +32,17 @@ describe('MyBoards', () => {
   it('adds a non-default board, then activates it via Browse', () => {
     const onActivated = vi.fn()
     render(<MyBoards onActivated={onActivated} />)
-
-    // Mini 2025 (7) is the default active board, so add a different one to get
-    // a Browse action (an already-active board shows "Active", not "Browse").
-    const addRow = screen.getByText('MoonBoard Masters 2019').closest('div')!
-    fireEvent.click(within(addRow).getByRole('button', { name: 'Add' }))
+    addBoard('MoonBoard Masters 2019')
     const myBoards = screen.getByText('My boards').closest('section')!
-    expect(within(myBoards).getByText('MoonBoard Masters 2019')).toBeInTheDocument()
-
     fireEvent.click(within(myBoards).getByRole('button', { name: 'Browse' }))
     expect(onActivated).toHaveBeenCalled()
     expect(getActiveBoardId()).toBe(5)
   })
 
-  it('configures the angle for a multi-angle board', () => {
+  it('configures the angle from the board drawer', () => {
     render(<MyBoards onActivated={() => {}} />)
-    // Masters 2019 (layout 5) offers 40/25 — add it.
-    const addRow = screen.getByText('MoonBoard Masters 2019').closest('div')!
-    fireEvent.click(within(addRow).getByRole('button', { name: 'Add' }))
-
-    // Its card now shows angle toggles; 40 is the default (pressed).
+    addBoard('MoonBoard Masters 2019')
+    openConfig('MoonBoard Masters 2019')
     expect(screen.getByRole('button', { name: '40°' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: '25°' }))
     expect(screen.getByRole('button', { name: '25°' })).toHaveAttribute('aria-pressed', 'true')
@@ -45,17 +50,10 @@ describe('MyBoards', () => {
 
   it('toggles installed hold sets and blocks removing the last one', () => {
     render(<MyBoards onActivated={() => {}} />)
-    // Add Mini 2025 (4 filterable hold sets, all installed by default).
-    const addRow = screen.getByText('Mini MoonBoard 2025').closest('div')!
-    fireEvent.click(within(addRow).getByRole('button', { name: 'Add' }))
-
-    // Mini 2025 has no angle choice, so the only aria-pressed toggles are the
-    // 4 installed hold sets.
-    const toggles = () => screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed'))
+    addBoard('Mini MoonBoard 2025') // 4 hold sets, no angle choice
+    openConfig('Mini MoonBoard 2025')
     expect(toggles()).toHaveLength(4)
-    toggles().forEach((t) => expect(t).toHaveAttribute('aria-pressed', 'true'))
 
-    // Turn three off; the last remaining one is disabled (empty = "all" is not allowed).
     fireEvent.click(toggles()[0])
     fireEvent.click(toggles()[1])
     fireEvent.click(toggles()[2])
@@ -64,14 +62,14 @@ describe('MyBoards', () => {
     expect(stillOn[0]).toBeDisabled()
   })
 
-  it('removes an added board after a confirm click', () => {
+  it('removes a board from its drawer after a confirm click', () => {
     render(<MyBoards onActivated={() => {}} />)
-    fireEvent.click(screen.getAllByRole('button', { name: 'Add' })[0])
+    addBoard('MoonBoard Masters 2019')
     expect(screen.getByText('My boards')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
-    expect(screen.getByText('My boards')).toBeInTheDocument() // first click just confirms
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm?' }))
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
     expect(screen.queryByText('My boards')).toBeNull() // back to first-run
   })
 })

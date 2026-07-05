@@ -60,9 +60,7 @@ export function CatalogBoard({
 
   return (
     <div
-      // Fixed light surface (not a theme token): the board art is dark-on-transparent
-      // and must stay legible regardless of the app's dark theme.
-      className="catalog-board bg-neutral-100"
+      className="catalog-board overflow-hidden rounded-lg bg-card"
       role="img"
       aria-label={`${board.name} problem, ${holds.length} holds`}
       style={{
@@ -71,7 +69,15 @@ export function CatalogBoard({
         aspectRatio: `${g.width} / ${g.height}`,
       }}
     >
-      <img src={assetUrl(`${board.background}.png`)} alt="" style={fill} onError={hideBrokenImage} />
+      {/* The background art is black axis labels on transparency; invert so they
+          read white on the dark board surface (iOS template-tints them the same way). */}
+      <img
+        src={assetUrl(`${board.background}.png`)}
+        alt=""
+        className="invert"
+        style={fill}
+        onError={hideBrokenImage}
+      />
       {overlays.map((s) => (
         <img
           key={s.id}

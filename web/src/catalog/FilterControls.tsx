@@ -1,6 +1,6 @@
-// The catalog filter/sort bar. Controlled: the parent owns FilterState (via
-// useFilters) and passes the slab's grade span + available methods. Built on
-// shadcn Input/Select/Slider/Toggle/Button per web/CLAUDE.md.
+// The filter/sort controls shown inside the filter bottom sheet (search lives in
+// the catalog top bar). Controlled: the parent owns FilterState and passes the
+// slab's grade span + available methods. Built on shadcn Select/Slider/Toggle.
 //
 // The drawn holds-filter picker (tap positions on the board) is intentionally
 // deferred — applyFilters supports the predicate, but its UI lands with the
@@ -16,7 +16,6 @@ import {
   type SortKey,
 } from './filters'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -28,6 +27,14 @@ import { Slider } from '@/components/ui/slider'
 import { Toggle } from '@/components/ui/toggle'
 
 const SORT_KEYS: SortKey[] = ['easiest', 'hardest', 'rated', 'repeats']
+const RATING_LABELS: Record<string, string> = {
+  '0': 'Any rating',
+  '1': '1★ and up',
+  '2': '2★ and up',
+  '3': '3★ and up',
+  '4': '4★ and up',
+  '5': '5★ and up',
+}
 
 interface FilterControlsProps {
   state: FilterState
@@ -38,69 +45,70 @@ interface FilterControlsProps {
   methods: string[]
 }
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      {children}
+    </div>
+  )
+}
+
 export function FilterControls({ state, onChange, gradeSpan, methods }: FilterControlsProps) {
   const set = (patch: Partial<FilterState>) => onChange({ ...state, ...patch })
   const range = state.gradeRange ?? gradeSpan
   const secondaryOptions = SORT_KEYS.filter(
     (k) => sortDimension(k) !== sortDimension(state.sortPrimary),
   )
+  const secondaryItems: Record<string, string> = {
+    none: 'No tiebreak',
+    ...Object.fromEntries(secondaryOptions.map((k) => [k, SORT_LABELS[k]])),
+  }
 
   function changePrimary(primary: SortKey) {
-    // Drop a secondary that now shares the primary's dimension, so the Select
-    // never shows an orphaned value that isn't in its option list.
-    const keepSecondary =
-      state.sortSecondary && sortDimension(state.sortSecondary) !== sortDimension(primary)
-    set({ sortPrimary: primary, sortSecondary: keepSecondary ? state.sortSecondary : null })
+    const keep = state.sortSecondary && sortDimension(state.sortSecondary) !== sortDimension(primary)
+    set({ sortPrimary: primary, sortSecondary: keep ? state.sortSecondary : null })
   }
 
   return (
-    <div className="space-y-3 p-3">
-      <Input
-        placeholder="Name or setter"
-        value={state.search}
-        onChange={(e) => set({ search: e.target.value })}
-      />
-
-      <div className="flex gap-2">
-        <Select value={state.sortPrimary} onValueChange={(v) => changePrimary(v as SortKey)}>
-          <SelectTrigger className="flex-1">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_KEYS.map((k) => (
-              <SelectItem key={k} value={k}>
-                {SORT_LABELS[k]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={state.sortSecondary ?? 'none'}
-          onValueChange={(v) => set({ sortSecondary: v === 'none' ? null : (v as SortKey) })}
-        >
-          <SelectTrigger className="flex-1">
-            <SelectValue placeholder="then by…" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">No tiebreak</SelectItem>
-            {secondaryOptions.map((k) => (
-              <SelectItem key={k} value={k}>
-                {SORT_LABELS[k]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div>
-        <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-          <span id="grade-range-label">Grade</span>
-          <span>
-            {FONT_GRADES[range[0]]} – {FONT_GRADES[range[1]]}
-          </span>
+    <div className="space-y-4">
+      <Field label="Sort">
+        <div className="flex gap-2">
+          <Select items={SORT_LABELS} value={state.sortPrimary} onValueChange={(v) => changePrimary(v as SortKey)}>
+            <SelectTrigger className="flex-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_KEYS.map((k) => (
+                <SelectItem key={k} value={k}>
+                  {SORT_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            items={secondaryItems}
+            value={state.sortSecondary ?? 'none'}
+            onValueChange={(v) => set({ sortSecondary: v === 'none' ? null : (v as SortKey) })}
+          >
+            <SelectTrigger className="flex-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No tiebreak</SelectItem>
+              {secondaryOptions.map((k) => (
+                <SelectItem key={k} value={k}>
+                  {SORT_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
+      </Field>
+
+      <Field label={`Grade · ${FONT_GRADES[range[0]]} – ${FONT_GRADES[range[1]]}`}>
         <Slider
-          aria-labelledby="grade-range-label"
+          aria-label="Grade range"
           min={gradeSpan[0]}
           max={gradeSpan[1]}
           step={1}
@@ -110,34 +118,23 @@ export function FilterControls({ state, onChange, gradeSpan, methods }: FilterCo
             set({ gradeRange: lo === gradeSpan[0] && hi === gradeSpan[1] ? null : [lo, hi] })
           }}
         />
-      </div>
+      </Field>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Toggle
-          variant="outline"
-          size="sm"
-          pressed={state.benchmarkOnly}
-          onPressedChange={(v) => set({ benchmarkOnly: v })}
-        >
+        <Toggle variant="outline" size="sm" pressed={state.benchmarkOnly} onPressedChange={(v) => set({ benchmarkOnly: v })}>
           Benchmarks
         </Toggle>
-        <Toggle
-          variant="outline"
-          size="sm"
-          pressed={state.favoritesOnly}
-          onPressedChange={(v) => set({ favoritesOnly: v })}
-        >
+        <Toggle variant="outline" size="sm" pressed={state.favoritesOnly} onPressedChange={(v) => set({ favoritesOnly: v })}>
           Favorites
         </Toggle>
-        <Select value={String(state.minStars)} onValueChange={(v) => set({ minStars: Number(v) })}>
-          <SelectTrigger className="w-28">
+        <Select items={RATING_LABELS} value={String(state.minStars)} onValueChange={(v) => set({ minStars: Number(v) })}>
+          <SelectTrigger className="w-32">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="0">Any rating</SelectItem>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <SelectItem key={n} value={String(n)}>
-                {n}★ and up
+            {Object.entries(RATING_LABELS).map(([v, label]) => (
+              <SelectItem key={v} value={v}>
+                {label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -145,23 +142,23 @@ export function FilterControls({ state, onChange, gradeSpan, methods }: FilterCo
       </div>
 
       {methods.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {methods.map((m) => (
-            <Toggle
-              key={m}
-              variant="outline"
-              size="sm"
-              pressed={state.methods.includes(m)}
-              onPressedChange={(active) =>
-                set({
-                  methods: active ? [...state.methods, m] : state.methods.filter((x) => x !== m),
-                })
-              }
-            >
-              {m}
-            </Toggle>
-          ))}
-        </div>
+        <Field label="Method">
+          <div className="flex flex-wrap gap-1.5">
+            {methods.map((m) => (
+              <Toggle
+                key={m}
+                variant="outline"
+                size="sm"
+                pressed={state.methods.includes(m)}
+                onPressedChange={(active) =>
+                  set({ methods: active ? [...state.methods, m] : state.methods.filter((x) => x !== m) })
+                }
+              >
+                {m}
+              </Toggle>
+            ))}
+          </div>
+        </Field>
       )}
 
       {hasActiveFilters(state) && (

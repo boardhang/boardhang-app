@@ -52,13 +52,18 @@ export const DEFAULT_FILTERS: FilterState = {
 
 /** Whether any filter (not sort/search) is narrowing the list — drives "Reset". */
 export function hasActiveFilters(s: FilterState): boolean {
+  return activeFilterCount(s) > 0
+}
+
+/** How many filter dimensions are active — drives the filter FAB's count badge. */
+export function activeFilterCount(s: FilterState): number {
   return (
-    s.gradeRange !== null ||
-    s.benchmarkOnly ||
-    s.minStars > 0 ||
-    s.methods.length > 0 ||
-    s.favoritesOnly ||
-    s.holdsFilter.length > 0
+    (s.gradeRange ? 1 : 0) +
+    (s.benchmarkOnly ? 1 : 0) +
+    (s.minStars > 0 ? 1 : 0) +
+    (s.methods.length > 0 ? 1 : 0) +
+    (s.favoritesOnly ? 1 : 0) +
+    (s.holdsFilter.length > 0 ? 1 : 0)
   )
 }
 

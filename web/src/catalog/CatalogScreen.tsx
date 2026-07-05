@@ -7,11 +7,13 @@ import { FONT_GRADES, gradeIndex } from '../board/grades'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { holdSetContext, isClimbable } from '../board/holdSetMembership'
 import { CatalogList } from './CatalogList'
-import { FilterControls } from './FilterControls'
+import { FilterSheet } from './FilterSheet'
 import { ProblemDetail } from './ProblemDetail'
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { applyFilters, type FilterContext } from './filters'
 import { useFavorites } from './favoritesStore'
 import { useFilters } from './useFilters'
+import { useSearchQuery } from './searchStore'
 import { useSlab } from './useSlab'
 import type { CatalogProblem } from './catalogSync'
 
@@ -24,6 +26,7 @@ export function CatalogScreen() {
 
   const { problems, loading, degraded } = useSlab(board.layoutId, angle)
   const [filters, setFilters] = useFilters(board.layoutId, angle)
+  const searchQuery = useSearchQuery()
   const { favoriteIds } = useFavorites()
   const [openIndex, setOpenIndex] = useState<number | null>(null)
 
@@ -43,9 +46,11 @@ export function CatalogScreen() {
     return { favoriteIds, isClimbable: (holds) => isClimbable(membership, holds, active) }
   }, [board, favoriteIds])
 
+  // Search is transient (bottom-nav field), so inject it into the filter call
+  // rather than persisting it in FilterState.
   const transform = useCallback(
-    (list: CatalogProblem[]) => applyFilters(list, filters, context),
-    [filters, context],
+    (list: CatalogProblem[]) => applyFilters(list, { ...filters, search: searchQuery }, context),
+    [filters, searchQuery, context],
   )
   const displayed = useMemo(() => transform(problems), [transform, problems])
 
@@ -54,22 +59,8 @@ export function CatalogScreen() {
     if (i >= 0) setOpenIndex(i)
   }
 
-  if (openIndex !== null) {
-    return (
-      <ProblemDetail
-        problems={displayed}
-        initialIndex={openIndex}
-        board={board}
-        angle={angle}
-        favoriteIds={favoriteIds}
-        onClose={() => setOpenIndex(null)}
-      />
-    )
-  }
-
   return (
-    <div>
-      <FilterControls state={filters} onChange={setFilters} gradeSpan={gradeSpan} methods={methods} />
+    <div className="flex flex-1 flex-col">
       <CatalogList
         board={board}
         angle={angle}
@@ -78,8 +69,28 @@ export function CatalogScreen() {
         degraded={degraded}
         favoriteIds={favoriteIds}
         transform={transform}
+        searchActive={searchQuery.trim().length > 0}
         onSelect={openProblem}
       />
+      <FilterSheet state={filters} onChange={setFilters} gradeSpan={gradeSpan} methods={methods} />
+
+      <Drawer open={openIndex !== null} onOpenChange={(open) => !open && setOpenIndex(null)} showSwipeHandle>
+        <DrawerContent>
+          <DrawerTitle className="sr-only">Problem details</DrawerTitle>
+          {openIndex !== null && (
+            <div className="max-h-[85vh] overflow-y-auto px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+              <ProblemDetail
+                problems={displayed}
+                initialIndex={openIndex}
+                board={board}
+                angle={angle}
+                favoriteIds={favoriteIds}
+                onClose={() => setOpenIndex(null)}
+              />
+            </div>
+          )}
+        </DrawerContent>
+      </Drawer>
     </div>
   )
 }

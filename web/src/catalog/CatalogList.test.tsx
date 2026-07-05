@@ -28,6 +28,7 @@ interface Opts {
   loading?: boolean
   degraded?: boolean
   transform?: (p: CatalogProblem[]) => CatalogProblem[]
+  searchActive?: boolean
 }
 
 function renderList(problems: CatalogProblem[], opts: Opts = {}) {
@@ -39,6 +40,7 @@ function renderList(problems: CatalogProblem[], opts: Opts = {}) {
       loading={opts.loading ?? false}
       degraded={opts.degraded ?? false}
       transform={opts.transform}
+      searchActive={opts.searchActive}
     />,
   )
 }
@@ -63,6 +65,14 @@ describe('CatalogList', () => {
   it('shows an offline empty state when degraded with no cache', () => {
     renderList([], { degraded: true })
     expect(screen.getByTestId('catalog-empty')).toHaveTextContent(/offline/i)
+  })
+
+  it('points the empty state at the search ✕ (not filters) when a query narrows to nothing', () => {
+    renderList([problem('a', '6A', 'ALPHA')], { transform: () => [], searchActive: true })
+    const empty = screen.getByTestId('catalog-empty')
+    expect(empty).toHaveTextContent(/match your search/i)
+    expect(empty).toHaveTextContent(/clear the search/i)
+    expect(empty).not.toHaveTextContent(/clear filters/i)
   })
 
   it('renders rows sorted easiest-first by grade with a count', () => {

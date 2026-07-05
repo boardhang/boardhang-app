@@ -1,4 +1,5 @@
 import type { ConnectionState } from '../ble/moonboard'
+import { Button } from '@/components/ui/button'
 
 interface ConnectBarProps {
   state: ConnectionState
@@ -28,12 +29,14 @@ export function ConnectBar({
     <div className="connect-bar">
       <span className={`status status-${state}`}>{status}</span>
       {connected ? (
-        <button onClick={onDisconnect}>Disconnect</button>
+        <Button size="sm" variant="secondary" onClick={onDisconnect}>
+          Disconnect
+        </Button>
       ) : (
         // Web Bluetooth requires the picker to be opened from a user gesture.
-        <button onClick={onConnect} disabled={state === 'connecting'}>
+        <Button size="sm" onClick={onConnect} disabled={state === 'connecting'}>
           Connect
-        </button>
+        </Button>
       )}
       {error && <span className="error">{error}</span>}
     </div>

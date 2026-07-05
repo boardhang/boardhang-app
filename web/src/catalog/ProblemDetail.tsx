@@ -6,8 +6,8 @@
 // the filtered set while open (e.g. unfavorited under a favorites-only filter),
 // the pager stays on it rather than jumping — prev/next just disable.
 
-import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Heart, Lightbulb, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { BadgeCheck, ChevronLeft, ChevronRight, Heart, Lightbulb, Repeat, Star } from 'lucide-react'
 import { bleClient, connectBoard, isConnected, setBleError, useBle } from '../ble/useBle'
 import { CatalogBoard } from '../board/CatalogBoard'
 import type { CatalogBoardDef } from '../board/boards'
@@ -17,7 +17,6 @@ import type { CatalogHold, CatalogProblem } from './catalogSync'
 import { recordRecent } from './recentsStore'
 import { useFavorites } from './favoritesStore'
 import type { HoldAssignment } from '../types'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
 interface ProblemDetailProps {
@@ -42,6 +41,7 @@ export function ProblemDetail({
   onClose,
 }: ProblemDetailProps) {
   const [current, setCurrent] = useState<CatalogProblem | undefined>(() => problems[initialIndex])
+  const swipeStart = useRef<{ x: number; y: number } | null>(null)
   const { state } = useBle()
   const { toggleFavorite } = useFavorites()
   const [lit, setLit] = useState(false)
@@ -109,47 +109,32 @@ export function ProblemDetail({
           : 'Light up'
         : 'Connect & light up'
 
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <X className="size-4" /> Back
-        </Button>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Previous problem"
-            disabled={pos <= 0}
-            onClick={() => setCurrent(problems[pos - 1])}
-          >
-            <ChevronLeft className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Next problem"
-            disabled={pos < 0 || pos >= problems.length - 1}
-            onClick={() => setCurrent(problems[pos + 1])}
-          >
-            <ChevronRight className="size-4" />
-          </Button>
-        </div>
-      </div>
+  const atFirst = pos <= 0
+  const atLast = pos < 0 || pos >= problems.length - 1
 
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold uppercase">{current.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {current.setter ? `by ${current.setter}` : `${current.holds.length} holds`}
-            {current.stars > 0 && ` · ★ ${current.stars}`}
-            {current.repeats > 0 && ` · ⟳ ${current.repeats}`}
-            {current.method && ` · ${current.method}`}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {current.is_benchmark && <Badge variant="secondary">Benchmark</Badge>}
-          <Badge variant="secondary">{current.grade}</Badge>
+  // Side-swipe the board to page prev/next (vertical drags fall through to the
+  // drawer's swipe-to-dismiss).
+  function onSwipeStart(e: React.PointerEvent) {
+    swipeStart.current = { x: e.clientX, y: e.clientY }
+  }
+  function onSwipeEnd(e: React.PointerEvent) {
+    const start = swipeStart.current
+    swipeStart.current = null
+    if (!start) return
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy)) return // not a clear horizontal swipe
+    if (dx < 0 && !atLast) setCurrent(problems[pos + 1])
+    else if (dx > 0 && !atFirst) setCurrent(problems[pos - 1])
+  }
+
+  return (
+    <div className="space-y-4 pb-2">
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={onClose}>
+          <ChevronLeft className="size-4" /> Catalog
+        </Button>
+        <div className="flex items-center gap-0.5">
           <Button
             variant="ghost"
             size="icon"
@@ -159,16 +144,58 @@ export function ProblemDetail({
           >
             <Heart className={isFav ? 'size-5 fill-favorite text-favorite' : 'size-5'} />
           </Button>
+          <Button variant="ghost" size="icon" aria-label="Previous problem" disabled={atFirst} onClick={() => setCurrent(problems[pos - 1])}>
+            <ChevronLeft className="size-5" />
+          </Button>
+          <Button variant="ghost" size="icon" aria-label="Next problem" disabled={atLast} onClick={() => setCurrent(problems[pos + 1])}>
+            <ChevronRight className="size-5" />
+          </Button>
         </div>
       </div>
 
-      <div className="mx-auto max-w-xs">
+      <div
+        className="mx-auto w-full max-w-[17rem] touch-pan-y select-none"
+        onPointerDown={onSwipeStart}
+        onPointerUp={onSwipeEnd}
+      >
         <CatalogBoard board={board} holds={current.holds} visibleHoldSetIds={visible} showBeta />
       </div>
 
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <span className="rounded-md bg-secondary px-2.5 py-1 text-base font-bold tabular-nums text-secondary-foreground">
+            {current.grade}
+          </span>
+          {current.is_benchmark && (
+            <span className="inline-flex items-center gap-1 text-sm font-medium text-benchmark">
+              <BadgeCheck className="size-4" /> Benchmark
+            </span>
+          )}
+        </div>
+        <h1 className="text-xl font-bold break-words uppercase leading-tight tracking-tight">
+          {current.name}
+        </h1>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          <span className="break-words">
+            {current.setter ? `by ${current.setter}` : `${current.holds.length} holds`}
+          </span>
+          {current.stars > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Star className="size-3.5" /> {current.stars}
+            </span>
+          )}
+          {current.repeats > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Repeat className="size-3.5" /> {current.repeats}
+            </span>
+          )}
+          {current.method && <span className="text-foreground/70">{current.method}</span>}
+        </div>
+      </div>
+
       <div className="space-y-1">
-        <Button className="w-full" onClick={lightUp} disabled={busy !== null}>
-          <Lightbulb className="size-4" />
+        <Button size="lg" className="w-full" onClick={lightUp} disabled={busy !== null}>
+          <Lightbulb className={lit ? 'size-5 fill-current' : 'size-5'} />
           {lightLabel}
         </Button>
         {lightError && <p className="text-center text-sm text-destructive">{lightError}</p>}

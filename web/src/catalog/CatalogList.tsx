@@ -31,6 +31,9 @@ interface CatalogListProps {
   showThumbnails?: boolean
   /** Filter/sort the slab's problems (U9). Defaults to grade-ordinal sort. */
   transform?: (problems: CatalogProblem[]) => CatalogProblem[]
+  /** A search query is narrowing the list — hides "Recently viewed" and points
+      the empty state at the search ✕ (not the filters, which search bypasses). */
+  searchActive?: boolean
   onSelect?: (problem: CatalogProblem) => void
 }
 
@@ -43,6 +46,7 @@ export function CatalogList({
   favoriteIds = new Set(),
   showThumbnails = false,
   transform,
+  searchActive = false,
   onSelect,
 }: CatalogListProps) {
   const [visibleCount, setVisibleCount] = useState(PAGE)
@@ -89,18 +93,23 @@ export function CatalogList({
   }
 
   if (displayed.length === 0) {
-    const message =
-      problems.length > 0
+    const message = searchActive
+      ? 'No problems match your search.'
+      : problems.length > 0
         ? 'No problems match the current filters.'
         : degraded
           ? "You're offline and this board isn't cached yet."
           : 'No problems to show yet — sync this board to load its catalog.'
+    // Search bypasses FilterState, so point at the ✕ — "clear filters" wouldn't help.
+    const hint = searchActive
+      ? 'Clear the search (✕) to see all problems.'
+      : problems.length > 0
+        ? 'Clear filters to see all problems.'
+        : null
     return (
       <div className="p-8 text-center text-muted-foreground" data-testid="catalog-empty">
         {message}
-        {problems.length > 0 && (
-          <div className="mt-2 text-xs">Clear filters to see all problems.</div>
-        )}
+        {hint && <div className="mt-2 text-xs">{hint}</div>}
       </div>
     )
   }
@@ -117,13 +126,15 @@ export function CatalogList({
           Offline — showing cached problems
         </div>
       )}
-      <RecentlyViewed
-        problems={recentProblems}
-        board={board}
-        favoriteIds={favoriteIds}
-        onSelect={onSelectProblem}
-        onClear={() => clearRecents(board.layoutId, angle)}
-      />
+      {!searchActive && (
+        <RecentlyViewed
+          problems={recentProblems}
+          board={board}
+          favoriteIds={favoriteIds}
+          onSelect={onSelectProblem}
+          onClear={() => clearRecents(board.layoutId, angle)}
+        />
+      )}
       <div className="px-3 py-1 text-xs text-muted-foreground">
         {displayed.length} problems
       </div>

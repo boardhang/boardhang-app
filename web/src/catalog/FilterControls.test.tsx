@@ -21,12 +21,6 @@ function setup(over: Partial<FilterState> = {}) {
 }
 
 describe('FilterControls', () => {
-  it('reports search input changes', () => {
-    const { onChange } = setup()
-    fireEvent.change(screen.getByPlaceholderText('Name or setter'), { target: { value: 'crimp' } })
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ search: 'crimp' }))
-  })
-
   it('toggles the benchmark filter', () => {
     const { onChange } = setup()
     fireEvent.click(screen.getByRole('button', { name: 'Benchmarks' }))
