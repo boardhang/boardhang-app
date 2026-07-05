@@ -10,6 +10,7 @@ struct MoonBoardApp: App {
     @StateObject private var ble = MoonBoardBLEManager()
     @StateObject private var auth = AuthManager()
     @StateObject private var sync: LogbookSyncManager
+    @StateObject private var lists = ListsManager()
 
     init() {
         let container = try! ModelContainer(for: Problem.self, Ascent.self, FavoriteProblem.self)
@@ -23,6 +24,7 @@ struct MoonBoardApp: App {
                 .environmentObject(ble)
                 .environmentObject(auth)
                 .environmentObject(sync)
+                .environmentObject(lists)
                 // Magic-link / OAuth redirects return through the app's custom URL
                 // scheme; hand them to the auth manager to complete sign-in.
                 .onOpenURL { url in

@@ -122,6 +122,7 @@ struct GradePill: View {
 struct CatalogProblemPager: View {
     @EnvironmentObject private var ble: MoonBoardBLEManager
     @EnvironmentObject private var sync: LogbookSyncManager
+    @EnvironmentObject private var lists: ListsManager
     @Environment(\.modelContext) private var context
     @Query private var favorites: [FavoriteProblem]
     @AppStorage private var flipped: Bool
@@ -146,6 +147,10 @@ struct CatalogProblemPager: View {
     /// UserDefaults key under which to record the last problem shown, or nil when
     /// this pager shouldn't record (logbook). Derived from `Source`.
     private let recentKey: String?
+    /// When set, this pager is building a specific saved list: the bookmark button adds/
+    /// removes the shown problem directly to/from this list (filled when it's in the list),
+    /// instead of opening the multi-list picker. nil = normal browsing (picker).
+    let addToListId: UUID?
     @State private var currentID: String?
     @State private var showingLog = false
     /// Un-saved tries tapped via "Add try", and the problem they belong to.
@@ -156,13 +161,19 @@ struct CatalogProblemPager: View {
     /// The problem currently lit on the board (set when we light up, cleared on
     /// disconnect). Drives the lightbulb's "active" state.
     @State private var litProblemID: String?
+    /// Presents the "add this problem to a saved list" picker (non-contextual mode).
+    @State private var showingAddToList = false
+    /// Surfaced when a contextual add/remove to `addToListId` fails.
+    @State private var addToListError: String?
 
     init(problems: [CatalogProblem], current: CatalogProblem, board: Board, source: Source,
-         visibleHoldSetIDs: Set<Int>? = nil, selectedHolds: Set<String> = []) {
+         visibleHoldSetIDs: Set<Int>? = nil, selectedHolds: Set<String> = [],
+         addToListId: UUID? = nil) {
         self.problems = problems
         self.board = board
         self.visibleHoldSetIDs = visibleHoldSetIDs
         self.selectedHolds = selectedHolds
+        self.addToListId = addToListId
         switch source {
         case .catalog(let angle): self.recentKey = "catalogRecentProblems_\(board.id)_\(angle)"
         case .logbook:            self.recentKey = nil
@@ -226,6 +237,46 @@ struct CatalogProblemPager: View {
         .sheet(isPresented: $showingConnection) {
             ConnectionView()
         }
+        .sheet(isPresented: $showingAddToList) {
+            if let p = currentProblem {
+                AddToListSheet(catalogID: p.id, boardLayoutId: board.id)
+            }
+        }
+        // In "build a list" mode, load that list's pile so the bookmark reflects membership.
+        .task {
+            if let addToListId { try? await lists.reloadPile(addToListId) }
+        }
+        .alert("Couldn't update list", isPresented: addToListErrorBinding) {
+            Button("OK") { addToListError = nil }
+        } message: {
+            Text(addToListError ?? "")
+        }
+    }
+
+    private var addToListErrorBinding: Binding<Bool> {
+        Binding(get: { addToListError != nil }, set: { if !$0 { addToListError = nil } })
+    }
+
+    /// Whether the on-screen problem is in the list this pager is building (`addToListId`).
+    private var isCurrentInList: Bool {
+        guard let addToListId, let id = currentProblem?.id else { return false }
+        return lists.pile.contains { $0.list_id == addToListId && $0.source_catalog_id == id }
+    }
+
+    /// Toggle the shown problem in/out of `addToListId`, then refresh that list's pile so the
+    /// bookmark state updates.
+    private func toggleInList() async {
+        guard let addToListId, let id = currentProblem?.id else { return }
+        do {
+            if let row = lists.pile.first(where: { $0.list_id == addToListId && $0.source_catalog_id == id }) {
+                try await lists.removeProblem(row.id)
+            } else {
+                try await lists.addProblem(listId: addToListId, sourceCatalogID: id, boardLayoutId: board.id)
+            }
+            try await lists.reloadPile(addToListId)
+        } catch {
+            addToListError = error.localizedDescription
+        }
     }
 
     private var bottomBar: some View {
@@ -249,6 +300,21 @@ struct CatalogProblemPager: View {
                     toggleFavorite()
                 }
                 .disabled(currentProblem == nil)
+
+                if addToListId != nil {
+                    // Building a specific list: toggle this problem in/out of it directly.
+                    circleButton(systemName: isCurrentInList ? "bookmark.fill" : "bookmark",
+                                 tint: isCurrentInList ? .accentColor : .primary,
+                                 active: isCurrentInList) {
+                        Task { await toggleInList() }
+                    }
+                    .disabled(currentProblem == nil)
+                } else {
+                    circleButton(systemName: "bookmark") {
+                        showingAddToList = true
+                    }
+                    .disabled(currentProblem == nil)
+                }
 
                 Spacer()
 

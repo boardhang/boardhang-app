@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saved Lists — Ideation</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --card: #f6f7f9; --border: #e2e5ea;
+    --accent: #2f6df6; --green: #1a9e5c; --amber: #d98416; --pink: #d6336c;
+    --chip: #eaeef6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --fg: #e8eaed; --muted: #9aa0a8; --card: #1e2127; --border: #2b2f36;
+      --accent: #6f9dff; --green: #46c88a; --amber: #f0a94e; --pink: #f06592; --chip: #262b33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 22px 80px; }
+  h1 { font-size: 1.9rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  h2 { font-size: 1.25rem; margin: 40px 0 12px; letter-spacing: -0.01em; }
+  p { margin: 0 0 12px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: .85rem; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; background: var(--card); }
+  .axes { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 3px 11px; font-size: .8rem; color: var(--fg); white-space: nowrap; }
+  .lead { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 14px 18px; margin: 18px 0 8px; }
+  .dirs { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 8px 0 4px; }
+  @media (max-width: 640px) { .dirs { grid-template-columns: 1fr; } }
+  .dir { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--card); }
+  .dir h3 { margin: 0 0 6px; font-size: 1rem; }
+  .dir p { font-size: .9rem; color: var(--muted); margin: 0; }
+  .card { border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin: 16px 0; background: var(--card); }
+  .card .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .rank { font-weight: 700; color: var(--accent); font-size: 1.05rem; }
+  .card h3 { margin: 0; font-size: 1.12rem; flex: 1; letter-spacing: -0.01em; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 6px; }
+  .tag { font-size: .74rem; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+  .tag.axis { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .tag.hi { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+  .tag.med { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, transparent); }
+  .field { margin: 8px 0; font-size: .95rem; }
+  .field b { color: var(--fg); }
+  .field.basis, .field.trade { color: var(--muted); font-size: .9rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 8px; }
+  td, th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  code { background: var(--chip); padding: 1px 6px; border-radius: 5px; font-size: .85em; }
+  .foot { color: var(--muted); font-size: .85rem; margin-top: 40px; border-top: 1px solid var(--border); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Saved Lists — Ideation</h1>
+  <p class="sub">A personal, cloud-backed way to save catalog problems into named lists — collaboration comes later · 4 Jul 2026</p>
+
+  <div class="meta">
+    <span><b>Subject:</b> a new <code>feat/saved-lists</code> feature, off <code>main</code></span>
+    <span><b>Trigger:</b> the collaborative-first Lists work (PR #10) felt heavy and wrong to use</span>
+    <span><b>Method:</b> grilling session (grill-me) — resolving the design tree one branch at a time</span>
+    <span><b>Grounding:</b> in-session</span>
+  </div>
+
+  <h2>The one thing to take away</h2>
+  <div class="lead">
+    PR #10 built lists <em>collaborative-first</em> — every list a cloud, membership-scoped, shareable object, with
+    "personal" as a degenerate one-member case. That bundled the simplest, most-used act — <b>save a problem to a
+    list</b> — with all the multiplayer machinery. The reframe: keep #10's <b>backend</b> (it's sound) but
+    <b>extract it onto a fresh feature off <code>main</code></b> and ship the <b>personal cloud list first</b>,
+    deferring everything collaborative to a later layer.
+  </div>
+
+  <p>This isn't a "redesign" of #10 — it's a <b>new feature on a clean base</b>. The app has no Lists tab on
+  <code>main</code> at all; Saved Lists adds one. #10 is superseded as the delivery vehicle: its backend is extracted
+  here, its collaborative UI revived later.</p>
+
+  <div class="dirs">
+    <div class="dir">
+      <h3>Now — Saved Lists</h3>
+      <p>Cloud lists (a personal list = a one-member list): create / rename / delete, add &amp; remove problems, plus a local Favorites view. Signed in, synced across your devices via the account you already use for the logbook.</p>
+    </div>
+    <div class="dir">
+      <h3>Later — Collaboration</h3>
+      <p>Apply the deferred migrations and un-hide what #10 already built: sharing, member roster, one-way promotion, group status. Mostly a revival, not a rewrite. Its own future plan.</p>
+    </div>
+  </div>
+
+  <h2>Why extract #10's backend, ship personal-first</h2>
+  <div class="card">
+    <div class="field"><b>The pain</b> — a collaborative-first product bundles the 95% (solo curation) with the 5% (a co-located group). Re-sequencing ships the useful core first.</div>
+    <div class="field"><b>The inversion</b> — treat the personal list as the primary object and collaboration as an <em>enhancement of</em> it. A list becomes shareable when you choose; until then it's just yours.</div>
+    <div class="field"><b>Reuse over rewrite</b> — #10's schema (<code>lists</code>/<code>list_members</code>/<code>list_problems</code> + RLS) and <code>ListsManager</code> are solid. Extract the backend; leave the join/group-status RPCs (<code>0004</code>/<code>0005</code>) and sharing UI dormant until the collaboration layer.</div>
+    <div class="field basis"><b>Accepted tradeoff</b> — cloud lists need sign-in (like the cloud logbook); the tab shows a prompt when signed out. Favorites stays local and needs no auth. The auth + Supabase foundation is already on <code>main</code> (merged PR #8).</div>
+  </div>
+
+  <h2>Decisions locked in grilling</h2>
+  <table>
+    <tr><th>Question</th><th>Decision</th></tr>
+    <tr><td>Old stacked redesign branches</td><td>Deleted — start fresh</td></tr>
+    <tr><td>Name &amp; framing</td><td>New feature "Saved Lists", not a "redesign" of #10</td></tr>
+    <tr><td>Base branch</td><td><code>main</code> (fresh <code>feat/saved-lists</code>)</td></tr>
+    <tr><td>Storage</td><td>Cloud — extract #10's backend (migration <code>0003</code> + <code>ListsManager</code> + <code>ListsDTO</code>)</td></tr>
+    <tr><td>Phasing</td><td>Personal cloud lists now; collaboration as a later layer (<code>0004</code>/<code>0005</code> + revived UI)</td></tr>
+    <tr><td>Slicing</td><td>Small PRs off <code>main</code>; only a foundation dependency (P1a)</td></tr>
+    <tr><td>Favorites</td><td>Live view of local <code>FavoriteProblem</code>, board-filtered with multi-select pills; own PR</td></tr>
+    <tr><td><code>Board.shortName</code></td><td>Folded into the Favorites PR (its only consumer)</td></tr>
+  </table>
+
+  <h2>Carried forward for the later collaboration layer</h2>
+  <p>Decided in the earlier grill (when the feature was collaborative-first); still true, deferred to the cloud phase:</p>
+  <div class="card">
+    <div class="field"><b>Personal vs shared is explicit</b> — a list becomes collaborative by an explicit action, not by who happens to be in it.</div>
+    <div class="field"><b>Sharing is opt-in and one-way</b> — a private list stays private until you Share it, which promotes it (no silent demotion).</div>
+    <div class="field"><b>Member presence on cards</b> — shared lists show member avatars + count.</div>
+    <div class="field trade"><b>Open (later):</b> demotion of a shared list back to private — currently one-way. Revisit in the collaboration plan.</div>
+  </div>
+
+  <p class="foot">Companion plan: <code>docs/plans/2026-07-04-002-feat-saved-lists-plan.md</code>.</p>
+
+</div>
+</body>
+</html>

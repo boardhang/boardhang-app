@@ -5,12 +5,19 @@ import Charts
 /// classic climbing "pyramid". Each bar is stacked by how many tries the ascent
 /// took (flash / 2nd / 3rd / 4+), with a legend explaining the colors.
 struct GradePyramidView: View {
-    let ascents: [Ascent]
+    /// Pre-aggregated chart data, computed once from `ascents` (see `Model`). Held as a
+    /// stored value so the many self-triggered re-renders — the 0.6 s entrance animation and
+    /// each bar tap — reuse it instead of recomputing the whole chain every body pass.
+    private let model: Model
 
     /// The grade whose per-segment counts are revealed (tap a bar to select).
     @State private var selectedGrade: String?
     /// Drives the grow-up entrance animation when the chart appears.
     @State private var animateIn = false
+
+    init(ascents: [Ascent]) {
+        self.model = Model(ascents: ascents)
+    }
 
     private struct Bar: Identifiable {
         let grade: String
@@ -23,59 +30,62 @@ struct GradePyramidView: View {
         var id: String { grade + bucket.rawValue }
     }
 
-    /// One ascent per distinct problem — the chart shows unique sends, not every
-    /// logged repeat. Keeps the earliest send (when the problem was first done).
-    /// Attempts-only logs (`sent == false`) are excluded entirely.
-    private var uniqueSends: [Ascent] {
-        var earliest: [String: Ascent] = [:]
-        for ascent in ascents where ascent.sent && !ascent.tombstoned {
-            let key = ascent.sourceCatalogID ?? "name:\(ascent.problemName)"
-            if let existing = earliest[key] {
-                if ascent.date < existing.date { earliest[key] = ascent }
-            } else {
-                earliest[key] = ascent
+    /// The chart's derived data — the `uniqueSends → counts → domain → bars` chain, run once
+    /// per set of ascents rather than on every render.
+    private struct Model {
+        let bars: [Bar]
+        let gradeDomain: [String]
+        let maxTotal: Int
+        /// Total unique sends per grade — for the tap handler's hit test.
+        let gradeTotals: [String: Int]
+
+        init(ascents: [Ascent]) {
+            // One ascent per distinct problem — the chart shows unique sends, not every
+            // logged repeat. Keeps the earliest send. Attempts-only logs are excluded.
+            var earliest: [String: Ascent] = [:]
+            for ascent in ascents where ascent.sent && !ascent.tombstoned {
+                let key = ascent.sourceCatalogID ?? "name:\(ascent.problemName)"
+                if let existing = earliest[key] {
+                    if ascent.date < existing.date { earliest[key] = ascent }
+                } else {
+                    earliest[key] = ascent
+                }
             }
-        }
-        return Array(earliest.values)
-    }
 
-    /// Counts per grade, split by try-bucket (unique sends only).
-    private var counts: [String: [TryBucket: Int]] {
-        var result: [String: [TryBucket: Int]] = [:]
-        for ascent in uniqueSends {
-            let bucket = TryBucket.from(ascent.tries)
-            result[ascent.problemGrade, default: [:]][bucket, default: 0] += 1
-        }
-        return result
-    }
-
-    /// Grades that have at least one ascent, in canonical order.
-    private var gradeDomain: [String] {
-        FontGrade.all.filter { counts[$0] != nil }
-    }
-
-    private var maxTotal: Int {
-        gradeDomain.map { counts[$0]?.values.reduce(0, +) ?? 0 }.max() ?? 0
-    }
-
-    private var bars: [Bar] {
-        gradeDomain.flatMap { grade -> [Bar] in
-            let perBucket = counts[grade] ?? [:]
-            let total = perBucket.values.reduce(0, +)
-            // Stacking order follows TryBucket.allCases, so the top segment is the
-            // last present bucket in that order.
-            let topBucket = TryBucket.allCases.last { (perBucket[$0] ?? 0) > 0 }
-            return TryBucket.allCases.compactMap { bucket -> Bar? in
-                guard let count = perBucket[bucket], count > 0 else { return nil }
-                return Bar(grade: grade, bucket: bucket, count: count,
-                           gradeTotal: total, isTop: bucket == topBucket)
+            // Counts per grade, split by try-bucket (unique sends only).
+            var counts: [String: [TryBucket: Int]] = [:]
+            for ascent in earliest.values {
+                let bucket = TryBucket.from(ascent.tries)
+                counts[ascent.problemGrade, default: [:]][bucket, default: 0] += 1
             }
+
+            let domain = FontGrade.all.filter { counts[$0] != nil }
+            var totals: [String: Int] = [:]
+            var bars: [Bar] = []
+            for grade in domain {
+                let perBucket = counts[grade] ?? [:]
+                let total = perBucket.values.reduce(0, +)
+                totals[grade] = total
+                // Stacking order follows TryBucket.allCases, so the top segment is the
+                // last present bucket in that order.
+                let topBucket = TryBucket.allCases.last { (perBucket[$0] ?? 0) > 0 }
+                for bucket in TryBucket.allCases {
+                    guard let count = perBucket[bucket], count > 0 else { continue }
+                    bars.append(Bar(grade: grade, bucket: bucket, count: count,
+                                    gradeTotal: total, isTop: bucket == topBucket))
+                }
+            }
+
+            self.bars = bars
+            self.gradeDomain = domain
+            self.maxTotal = domain.map { totals[$0] ?? 0 }.max() ?? 0
+            self.gradeTotals = totals
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Chart(bars) { bar in
+            Chart(model.bars) { bar in
                 BarMark(
                     x: .value("Grade", bar.grade),
                     y: .value("Ascents", animateIn ? bar.count : 0)
@@ -93,7 +103,7 @@ struct GradePyramidView: View {
                     }
                 }
             }
-            .chartYScale(domain: 0...(Double(maxTotal) * 1.05 + 0.3))
+            .chartYScale(domain: 0...(Double(model.maxTotal) * 1.05 + 0.3))
             .chartOverlay { proxy in
                 GeometryReader { geo in
                     Rectangle()
@@ -107,7 +117,7 @@ struct GradePyramidView: View {
                             let tappedValue: Double = proxy.value(atY: y) ?? 0
                             let grade: String? = proxy.value(atX: x)
                             if let grade,
-                               tappedValue <= Double(counts[grade]?.values.reduce(0, +) ?? 0) {
+                               tappedValue <= Double(model.gradeTotals[grade] ?? 0) {
                                 // Tapped on the bar itself → toggle that grade.
                                 selectedGrade = (selectedGrade == grade) ? nil : grade
                             } else {
@@ -121,7 +131,7 @@ struct GradePyramidView: View {
                 domain: TryBucket.allCases.map(\.rawValue),
                 range: TryBucket.allCases.map(\.color)
             )
-            .chartXScale(domain: gradeDomain)
+            .chartXScale(domain: model.gradeDomain)
             .chartXAxis {
                 AxisMarks { value in
                     AxisValueLabel {

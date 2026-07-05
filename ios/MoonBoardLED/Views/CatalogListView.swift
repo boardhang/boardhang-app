@@ -65,6 +65,9 @@ struct CatalogListView: View {
 
     let board: Board
     let angle: Int
+    /// When set, this catalog is browsing to build a specific saved list: the problem
+    /// pager adds/removes directly to this list (no picker). nil = normal Search browsing.
+    var addToListId: UUID? = nil
 
     @Query(filter: #Predicate<Ascent> { !$0.tombstoned }) private var ascents: [Ascent]
     @Query private var favorites: [FavoriteProblem]
@@ -103,9 +106,16 @@ struct CatalogListView: View {
     /// Lets a board tap (from Home) pop this catalog back to its list.
     @Environment(TabRouter.self) private var router
 
-    init(board: Board, angle: Int) {
+    /// Whether to show the active-board switcher in the nav bar. Only the Search tab (which
+    /// browses the *active* board) sets this — the add-to-list browse and custom-problem list
+    /// pin `CatalogListView` to a specific board, where a global switcher would be wrong.
+    let showsBoardSwitcher: Bool
+
+    init(board: Board, angle: Int, addToListId: UUID? = nil, showsBoardSwitcher: Bool = false) {
         self.board = board
         self.angle = angle
+        self.addToListId = addToListId
+        self.showsBoardSwitcher = showsBoardSwitcher
         // No catalog decode here — the upper-grade default is a sentinel that's
         // clamped to the real grade list once the catalog loads.
         _lowerGrade = AppStorage(wrappedValue: 0, "catalogLowerGrade_\(board.id)_\(angle)")
@@ -497,7 +507,8 @@ struct CatalogListView: View {
                 CatalogProblemPager(problems: list, current: problem,
                                     board: board, source: .catalog(angle: angle),
                                     visibleHoldSetIDs: renderIDs,
-                                    selectedHolds: selectedHolds)
+                                    selectedHolds: selectedHolds,
+                                    addToListId: addToListId)
             }
             // A board tap on Home pops us back to the list (see TabRouter).
             .onChange(of: router.listResetToken) { _, _ in selectedProblem = nil }
@@ -525,7 +536,9 @@ struct CatalogListView: View {
                 displayed = result
                 hasComputed = true
             }
-            .navigationTitle(board.name)
+            // On the Search tab the BoardSwitcher (principal slot below) shows the board name,
+            // so the static title is cleared to avoid a duplicate; elsewhere keep the board name.
+            .navigationTitle(showsBoardSwitcher ? "" : board.name)
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if filtersActive { activeFilterBar }
@@ -536,6 +549,11 @@ struct CatalogListView: View {
             // only *looks* anchored while the expanded scrim stretches the
             // ZStack full-screen — collapsed, it floats mid-screen.
             .toolbar {
+                if showsBoardSwitcher {
+                    ToolbarItem(placement: .principal) {
+                        BoardSwitcher()
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showClimbPreviews.toggle() } label: {
                         Image(systemName: showClimbPreviews ? "square.grid.2x2.fill" : "square.grid.2x2")

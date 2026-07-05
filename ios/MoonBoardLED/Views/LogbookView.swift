@@ -18,41 +18,46 @@ struct LogbookView: View {
     var anchorDay: Date?
 
     @State private var editing: Ascent?
+    /// Re-render trigger for when the off-main catalog index finishes building, so rows
+    /// resolve their problem (and the swipe-through pager fills) once it's ready.
+    @State private var catalogReady = CatalogIndexReadiness.shared
 
     /// Added boards — the filter is only worth showing when there's more than one.
     private var addedBoards: [Board] { AddedBoards.boards(from: addedCSV) }
     /// Board ids currently shown (drives the empty-state copy).
     private var selectedBoardIDs: Set<Int> { BoardFilter.selected(from: boardFilterCSV) }
 
-    /// Ascents included by the current board filter.
-    private var ascents: [Ascent] {
-        let selected = BoardFilter.selected(from: boardFilterCSV)
-        return allAscents.filter { selected.contains($0.effectiveBoardLayoutId) }
-    }
-
-    private var sessions: [LogSession] { LogSession.sessions(from: ascents) }
-
     /// The board + catalog problem an ascent was logged from, if it still exists.
     private func entry(for ascent: Ascent) -> CatalogIndex.Entry? {
         CatalogIndex.entry(forCatalogID: ascent.sourceCatalogID)
     }
 
-    /// Distinct catalog problems for a board across the (filtered) logbook, in
-    /// logbook order — the set you swipe through from that board's detail view.
-    private func loggedProblems(for board: Board) -> [CatalogProblem] {
-        var seen = Set<String>()
-        var result: [CatalogProblem] = []
+    /// Distinct catalog problems per board across the (filtered) logbook, in logbook order —
+    /// the set you swipe through from a board's detail view. Built in one pass so rendering N
+    /// rows is O(N), not O(N × ascents): SwiftUI builds every row's NavigationLink destination
+    /// as the list materializes, so a per-row rescan of all ascents was quadratic.
+    private func distinctProblemsByBoard(from ascents: [Ascent]) -> [Int: [CatalogProblem]] {
+        var seenByBoard: [Int: Set<String>] = [:]
+        var result: [Int: [CatalogProblem]] = [:]
         for ascent in ascents {
-            guard let e = entry(for: ascent), e.board.id == board.id,
-                  !seen.contains(e.problem.id) else { continue }
-            seen.insert(e.problem.id)
-            result.append(e.problem)
+            guard let e = entry(for: ascent) else { continue }
+            if seenByBoard[e.board.id, default: []].insert(e.problem.id).inserted {
+                result[e.board.id, default: []].append(e.problem)
+            }
         }
         return result
     }
 
     var body: some View {
-        Group {
+        // Re-render once the off-main catalog index resolves (rows resolve through it).
+        _ = catalogReady.generation
+        // Filter, group into sessions, and build the per-board problem lists once per body
+        // pass rather than recomputing them (and rescanning per row) across the render.
+        let selected = BoardFilter.selected(from: boardFilterCSV)
+        let ascents = allAscents.filter { selected.contains($0.effectiveBoardLayoutId) }
+        let sessions = LogSession.sessions(from: ascents)
+        let problemsByBoard = distinctProblemsByBoard(from: ascents)
+        return Group {
             if ascents.isEmpty {
                 if selectedBoardIDs.isEmpty {
                     ContentUnavailableView {
@@ -73,7 +78,7 @@ struct LogbookView: View {
                         ForEach(sessions) { session in
                             Section {
                                 ForEach(session.ascents) { ascent in
-                                    row(for: ascent)
+                                    row(for: ascent, problemsByBoard: problemsByBoard)
                                         .swipeActions(edge: .trailing) {
                                             Button(role: .destructive) {
                                                 // Soft-delete: tombstone so the delete
@@ -139,7 +144,7 @@ struct LogbookView: View {
     /// shown, regardless of the board's installed sets). Ascents whose source
     /// problem no longer exists are shown as plain (non-tappable).
     @ViewBuilder
-    private func row(for ascent: Ascent) -> some View {
+    private func row(for ascent: Ascent, problemsByBoard: [Int: [CatalogProblem]]) -> some View {
         if let e = entry(for: ascent) {
             ZStack(alignment: .leading) {
                 AscentRow(ascent: ascent, isBenchmark: e.problem.isBenchmark,
@@ -147,7 +152,7 @@ struct LogbookView: View {
                           holds: showClimbPreviews ? e.problem.holdAssignments : nil,
                           setup: e.board.setup)
                 NavigationLink {
-                    CatalogProblemPager(problems: loggedProblems(for: e.board),
+                    CatalogProblemPager(problems: problemsByBoard[e.board.id] ?? [],
                                         current: e.problem, board: e.board, source: .logbook,
                                         visibleHoldSetIDs: nil)
                 } label: { EmptyView() }
