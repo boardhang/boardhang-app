@@ -1,11 +1,11 @@
 // The catalog list for one board+angle slab: a "Recently viewed" section, the
 // problems (lazy-paginated), and the distinct empty/loading/offline states.
-// Consumes the useSlab data hook; sorting/filtering is layered on by U9 via the
-// optional `transform` prop (defaults to grade-ordinal sort).
+// Slab data (problems/loading/degraded) is supplied by the parent (CatalogScreen,
+// which owns the single useSlab); sorting/filtering is layered on via the optional
+// `transform` prop (defaults to the grade-ordinal sort).
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CatalogBoardDef } from '../board/boards'
-import { useSlab } from './useSlab'
 import { CatalogRow } from './CatalogRow'
 import { RecentlyViewed } from './RecentlyViewed'
 import { clearRecents, useRecents } from './recentsStore'
@@ -24,6 +24,9 @@ const DEFAULT_CONTEXT: FilterContext = { favoriteIds: new Set(), isClimbable: ()
 interface CatalogListProps {
   board: CatalogBoardDef
   angle: number
+  problems: CatalogProblem[]
+  loading: boolean
+  degraded: boolean
   favoriteIds?: Set<string>
   showThumbnails?: boolean
   /** Filter/sort the slab's problems (U9). Defaults to grade-ordinal sort. */
@@ -34,12 +37,14 @@ interface CatalogListProps {
 export function CatalogList({
   board,
   angle,
+  problems,
+  loading,
+  degraded,
   favoriteIds = new Set(),
   showThumbnails = false,
   transform,
   onSelect,
 }: CatalogListProps) {
-  const { problems, loading, degraded } = useSlab(board.layoutId, angle)
   const [visibleCount, setVisibleCount] = useState(PAGE)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
