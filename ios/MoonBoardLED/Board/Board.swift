@@ -15,8 +15,6 @@ struct Board: Identifiable, Hashable {
 
     var id: Int { setup.id }
     var name: String { setup.name }
-    /// Compact name for chips/pills (e.g. "Mini 2025").
-    var shortName: String { setup.shortName }
     /// LED row count for this board (Mini 12, full 18).
     var rows: Int { setup.geometry.rowTop }
     var hasAngleChoice: Bool { angles.count > 1 }
