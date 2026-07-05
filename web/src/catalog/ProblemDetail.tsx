@@ -130,11 +130,37 @@ export function ProblemDetail({
 
   return (
     <div className="space-y-4 pb-2">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={onClose}>
-          <ChevronLeft className="size-4" /> Catalog
-        </Button>
-        <div className="flex items-center gap-0.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <h1 className="min-w-0 break-words text-sm font-bold uppercase leading-tight tracking-tight">
+              {current.name}
+            </h1>
+            <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-xs font-semibold tabular-nums text-secondary-foreground">
+              {current.grade}
+            </span>
+            {current.is_benchmark && (
+              <BadgeCheck className="size-3.5 shrink-0 text-benchmark" aria-label="Benchmark" />
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="break-words">
+              {current.setter ? `by ${current.setter}` : `${current.holds.length} holds`}
+            </span>
+            {current.stars > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <Star className="size-3.5" /> {current.stars}
+              </span>
+            )}
+            {current.repeats > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <Repeat className="size-3.5" /> {current.repeats}
+              </span>
+            )}
+            {current.method && <span className="text-foreground/70">{current.method}</span>}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
           <Button
             variant="ghost"
             size="icon"
@@ -159,38 +185,6 @@ export function ProblemDetail({
         onPointerUp={onSwipeEnd}
       >
         <CatalogBoard board={board} holds={current.holds} visibleHoldSetIds={visible} showBeta />
-      </div>
-
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <span className="rounded-md bg-secondary px-2.5 py-1 text-base font-bold tabular-nums text-secondary-foreground">
-            {current.grade}
-          </span>
-          {current.is_benchmark && (
-            <span className="inline-flex items-center gap-1 text-sm font-medium text-benchmark">
-              <BadgeCheck className="size-4" /> Benchmark
-            </span>
-          )}
-        </div>
-        <h1 className="text-xl font-bold break-words uppercase leading-tight tracking-tight">
-          {current.name}
-        </h1>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span className="break-words">
-            {current.setter ? `by ${current.setter}` : `${current.holds.length} holds`}
-          </span>
-          {current.stars > 0 && (
-            <span className="inline-flex items-center gap-1">
-              <Star className="size-3.5" /> {current.stars}
-            </span>
-          )}
-          {current.repeats > 0 && (
-            <span className="inline-flex items-center gap-1">
-              <Repeat className="size-3.5" /> {current.repeats}
-            </span>
-          )}
-          {current.method && <span className="text-foreground/70">{current.method}</span>}
-        </div>
       </div>
 
       <div className="space-y-1">
