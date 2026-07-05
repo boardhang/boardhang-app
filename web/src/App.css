@@ -7,11 +7,6 @@
   gap: 1rem;
 }
 
-h1 {
-  font-size: 1.4rem;
-  margin: 0;
-}
-
 .connect-bar {
   display: flex;
   align-items: center;
