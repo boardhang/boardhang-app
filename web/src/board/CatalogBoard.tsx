@@ -3,7 +3,7 @@
 // geometry. Ported from ios/MoonBoardLED/Board/BoardImageView.swift. This is
 // non-interactive by design (R13) — it takes no tap handler.
 
-import type { CSSProperties } from 'react'
+import type { CSSProperties, SyntheticEvent } from 'react'
 import type { CatalogHold } from '../catalog/catalogSync'
 import { displayed, holdColor } from '../types'
 import type { CatalogBoardDef } from './boards'
@@ -18,6 +18,14 @@ interface CatalogBoardProps {
   showBeta?: boolean
 }
 
+/** Marker diameter as a fraction of one column's span on the board art. */
+const MARKER_COLUMN_RATIO = 0.6
+const MARKER_BORDER_WIDTH = '2px'
+// The board art is black axis labels + colored holds on transparency, drawn for
+// a light backdrop (iOS shows it on a light board / tints labels for dark mode).
+// The component owns a light surface so it stays legible on any page theme.
+const BOARD_SURFACE = '#f4f4f5'
+
 const fill: CSSProperties = {
   position: 'absolute',
   inset: 0,
@@ -30,6 +38,18 @@ function assetUrl(path: string): string {
   return `${import.meta.env.BASE_URL}boards/${path}`
 }
 
+// A missing PNG (e.g. export_board_art_web.py not re-run) degrades to nothing
+// visible rather than the browser's broken-image icon.
+function hideBrokenImage(e: SyntheticEvent<HTMLImageElement>): void {
+  e.currentTarget.style.visibility = 'hidden'
+}
+
+/**
+ * Renders a board and a problem's holds. Fills 100% of its parent's width and
+ * derives height from the board aspect ratio, so the parent must constrain the
+ * width (e.g. a max-width card) — otherwise the board grows to the full width
+ * available.
+ */
 export function CatalogBoard({
   board,
   holds,
@@ -40,19 +60,21 @@ export function CatalogBoard({
   const overlays = board.holdSets.filter(
     (s) => visibleHoldSetIds === undefined || visibleHoldSetIds.has(s.id),
   )
-  // Marker diameter as a fraction of the image width: ~60% of one column's span.
-  const markerPct = ((1 - g.leftMargin - g.rightMargin) / g.numColumns) * 60
+  const markerPct = ((1 - g.leftMargin - g.rightMargin) / g.numColumns) * MARKER_COLUMN_RATIO * 100
 
   return (
     <div
       className="catalog-board"
+      role="img"
+      aria-label={`${board.name} problem, ${holds.length} holds`}
       style={{
         position: 'relative',
         width: '100%',
         aspectRatio: `${g.width} / ${g.height}`,
+        background: BOARD_SURFACE,
       }}
     >
-      <img src={assetUrl(`${board.background}.png`)} alt="" style={fill} />
+      <img src={assetUrl(`${board.background}.png`)} alt="" style={fill} onError={hideBrokenImage} />
       {overlays.map((s) => (
         <img
           key={s.id}
@@ -60,6 +82,7 @@ export function CatalogBoard({
           alt=""
           data-holdset={s.id}
           style={fill}
+          onError={hideBrokenImage}
         />
       ))}
       {holds.map((h, i) => {
@@ -78,7 +101,7 @@ export function CatalogBoard({
               aspectRatio: '1',
               transform: 'translate(-50%, -50%)',
               borderRadius: '50%',
-              border: `2px solid ${holdColor[role]}`,
+              border: `${MARKER_BORDER_WIDTH} solid ${holdColor[role]}`,
               boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.35)',
               boxSizing: 'border-box',
             }}

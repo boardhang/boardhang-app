@@ -14,6 +14,11 @@ markers, so it needs the same PNGs at stable URLs:
 
 This is a straight copy (same PNGs iOS ships), so no image libraries are needed.
 Board folders / backgrounds / overlay basenames mirror web/src/board/boards.ts.
+
+RE-RUN this after the iOS Assets.xcassets/Boards art changes, or after adding a
+board / hold set to web/src/board/boards.ts. The board-art coverage test
+(web/src/board/boardArt.test.ts) fails if boards.ts references art this script
+did not export, so drift is caught by `npm run test`.
 """
 
 import os

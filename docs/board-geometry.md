@@ -72,6 +72,19 @@ PNGs into one `UIImage`, keyed by the concatenated asset names, guarded by an `N
 composite would make them a fixed color. All overlay PNGs within a single board setup must share
 the same pixel dimensions (they're composited onto a shared canvas with no per-layer scaling).
 
+## Web port
+
+The PWA renders the board in TypeScript:
+
+- `web/src/board/renderGeometry.ts` — the `MoonBoardGeometry` port (`center()` + per-geometry margins).
+- `web/src/board/CatalogBoard.tsx` — the `BoardImageView` port: stacks the background + visible
+  hold-set overlays + role-colored hold markers. Read-only (no tap handler).
+- Art PNGs are copied from the iOS asset catalog into `web/public/boards/` by
+  `scripts/export_board_art_web.py` (coverage guarded by `web/src/board/boardArt.test.ts`).
+
+Unlike iOS, the web renderer does not template-tint the axis-label background, so `CatalogBoard`
+draws on its own light surface to keep the black labels legible on any page theme.
+
 ## Gotchas summary
 
 - Column 0-indexed (A–K), row 1-indexed, **row 1 = bottom**.
