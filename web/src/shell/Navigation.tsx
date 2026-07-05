@@ -1,15 +1,14 @@
 // Bottom tab bar — thumb-reachable navigation for a phone at the wall. "Detail"
 // is a sub-view of the catalog and has no tab.
 
-import { Blocks, Grid3x3, Layers } from 'lucide-react'
+import { Blocks, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type NavView = 'build' | 'boards' | 'catalog'
+export type NavView = 'boards' | 'catalog'
 
 const TABS: { view: NavView; label: string; Icon: typeof Blocks }[] = [
   { view: 'catalog', label: 'Catalog', Icon: Blocks },
   { view: 'boards', label: 'Boards', Icon: Layers },
-  { view: 'build', label: 'Build', Icon: Grid3x3 },
 ]
 
 interface NavigationProps {

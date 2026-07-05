@@ -2,7 +2,6 @@ import { useState } from 'react'
 import './App.css'
 import { useBoardStore } from './board/boardStore'
 import { CatalogScreen } from './catalog/CatalogScreen'
-import { BuildScreen } from './shell/BuildScreen'
 import { MyBoards } from './shell/MyBoards'
 import { Navigation, type NavView } from './shell/Navigation'
 
@@ -23,7 +22,6 @@ function App() {
       </header>
       {effectiveView === 'catalog' && <CatalogScreen />}
       {effectiveView === 'boards' && <MyBoards onActivated={() => setView('catalog')} />}
-      {effectiveView === 'build' && <BuildScreen />}
       <Navigation view={effectiveView} onNavigate={setView} disabled={noBoards ? ['catalog'] : []} />
     </div>
   )

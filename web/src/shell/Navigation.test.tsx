@@ -12,7 +12,7 @@ describe('Navigation', () => {
   it('navigates on click', () => {
     const onNavigate = vi.fn()
     render(<Navigation view="catalog" onNavigate={onNavigate} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
-    expect(onNavigate).toHaveBeenCalledWith('build')
+    fireEvent.click(screen.getByRole('button', { name: 'Boards' }))
+    expect(onNavigate).toHaveBeenCalledWith('boards')
   })
 })
