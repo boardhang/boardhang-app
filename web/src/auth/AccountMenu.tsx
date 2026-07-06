@@ -8,11 +8,11 @@ import {
 import { Button } from '../components/ui/button'
 import { useAuth } from './AuthProvider'
 import { ProfileSetup } from './ProfileSetup'
-import { SignInPanel } from './SignInPanel'
+import { SignInDialog } from './SignInDialog'
 
 /**
  * The account control in the app header. Three states, mirroring iOS:
- *   • signedOut           → "Sign in" opens the sign-in drawer.
+ *   • signedOut           → "Sign in" opens the sign-in modal.
  *   • signedInNoProfile   → "Finish profile" opens profile setup.
  *   • signedInWithProfile → "@handle" opens a menu (sign out / delete account).
  *
@@ -28,7 +28,7 @@ export function AccountMenu() {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [menuError, setMenuError] = useState<string | null>(null)
 
-  // Once a session lands, close the sign-in drawer and hand off to profile setup for a
+  // Once a session lands, close the sign-in modal and hand off to profile setup for a
   // brand-new account. When a full profile resolves, ensure setup is closed.
   useEffect(() => {
     if (status === 'signedOut') return
@@ -89,15 +89,8 @@ export function AccountMenu() {
         </Button>
       )}
 
-      {/* Sign-in drawer */}
-      <Drawer open={showSignIn} onOpenChange={setShowSignIn} showSwipeHandle>
-        <DrawerContent>
-          <DrawerHeader>
-            <DrawerTitle>Sign in</DrawerTitle>
-          </DrawerHeader>
-          <SignInPanel />
-        </DrawerContent>
-      </Drawer>
+      {/* Sign-in modal — kept consistent with the log-ascent sign-in surface */}
+      <SignInDialog open={showSignIn} onOpenChange={setShowSignIn} />
 
       {/* Profile setup drawer */}
       <Drawer open={showProfile} onOpenChange={setShowProfile} showSwipeHandle>

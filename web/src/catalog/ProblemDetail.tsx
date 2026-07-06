@@ -323,7 +323,11 @@ export function ProblemDetail({
           setPendingTries(0)
         }}
       />
-      <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />
+      <SignInDialog
+        open={signInOpen}
+        onOpenChange={setSignInOpen}
+        title="Sign in to log ascents"
+      />
     </div>
   )
 }

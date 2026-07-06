@@ -9,9 +9,14 @@ import { SignInPanel } from './SignInPanel'
 interface SignInDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  title?: string
 }
 
-export function SignInDialog({ open, onOpenChange }: SignInDialogProps) {
+export function SignInDialog({
+  open,
+  onOpenChange,
+  title = 'Sign in',
+}: SignInDialogProps) {
   const { status } = useAuth()
 
   // Once sign-in succeeds (status leaves signedOut), dismiss the modal.
@@ -23,7 +28,7 @@ export function SignInDialog({ open, onOpenChange }: SignInDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Sign in to log ascents</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <SignInPanel />
       </DialogContent>
