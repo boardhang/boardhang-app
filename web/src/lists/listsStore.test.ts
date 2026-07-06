@@ -28,6 +28,11 @@ const h = vi.hoisted(() => ({
   // When set, the next list_problems insert simulates losing a concurrent first-add:
   // the injected row becomes the live winner and the insert returns a 23505 (#5).
   injectOnInsert: null as ListProblemRow | null,
+  // When set, simulates a concurrent winner that is NOT visible to the first re-select
+  // (read-after-write lag): the insert returns 23505, the first pure-select comes back
+  // empty, and the row only becomes visible on the follow-up revive (BUG B).
+  concurrentPending: null as ListProblemRow | null,
+  reselectSeen: false,
 }))
 
 function opKey(table: string, steps: Step[]): string {
@@ -81,6 +86,13 @@ function resolve(table: string, steps: Step[]): { data: unknown; error: unknown 
       h.injectOnInsert = null
       return { data: null, error: { code: '23505', message: 'unique_violation' } }
     }
+    // Lagged concurrent winner: fail with 23505 but don't reveal the row yet.
+    if (h.concurrentPending) {
+      return {
+        data: null,
+        error: { code: '23505', message: 'duplicate key value violates unique constraint' },
+      }
+    }
     // Partial unique index: a second LIVE row for the same key would violate it.
     const liveExists = h.serverProblems.some(
       (r) =>
@@ -102,9 +114,17 @@ function resolve(table: string, steps: Step[]): { data: unknown; error: unknown 
     h.serverProblems.push(row)
     return { data: row, error: null }
   }
+  const matchesPending = (row: ListProblemRow | null) =>
+    !!row && !!match && row.list_id === match.list_id && row.source_catalog_id === match.source_catalog_id
+
   const updateStep = steps.find((s) => s.m === 'update')
   if (!updateStep) {
-    // Pure select — the #5 re-select of the existing live row after a 23505.
+    // Pure select — the #5 / BUG B re-select of the existing live row after a 23505. A
+    // lagged concurrent winner is not visible on this first read.
+    if (matchesPending(h.concurrentPending)) {
+      h.reselectSeen = true
+      return { data: [], error: null }
+    }
     const live = h.serverProblems.filter(
       (r) =>
         match &&
@@ -113,6 +133,11 @@ function resolve(table: string, steps: Step[]): { data: unknown; error: unknown 
         r.source_catalog_id === match.source_catalog_id,
     )
     return { data: live, error: null }
+  }
+  // Reveal a lagged concurrent winner on the follow-up revive (after the empty re-select).
+  if (matchesPending(h.concurrentPending) && h.reselectSeen) {
+    h.serverProblems.push(h.concurrentPending!)
+    h.concurrentPending = null
   }
   const update = updateStep.args[0] as Partial<ListProblemRow>
   const matched = h.serverProblems.filter(
@@ -238,6 +263,8 @@ beforeEach(async () => {
   h.listSeq = 0
   h.problemSeq = 0
   h.injectOnInsert = null
+  h.concurrentPending = null
+  h.reselectSeen = false
   localStorage.clear()
   readListsMock.mockResolvedValue([])
   readListProblemsMock.mockResolvedValue([])
@@ -412,6 +439,26 @@ describe('addProblem / removeProblem — explicit revive (KTD8)', () => {
     const live = h.serverProblems.filter((r) => !r.deleted)
     expect(live).toHaveLength(1)
     expect(live[0].id).toBe('concurrent')
+  })
+
+  it('23505 with a lagged winner: retries the revive and reconciles, no throw (BUG B)', async () => {
+    // The concurrent winner is invisible to the first re-select (read-after-write lag);
+    // the follow-up revive reveals it and reconciles to success.
+    h.concurrentPending = {
+      id: 'winner',
+      list_id: 'list-1',
+      source_catalog_id: 'cat-1',
+      board_layout_id: 7,
+      added_by: 'user-B',
+      created_at: '2026-07-06T00:00:00Z',
+      updated_at: '2026-07-06T00:00:00Z',
+      deleted: false,
+    }
+
+    await expect(addProblem('list-1', 'cat-1', 7)).resolves.toBeUndefined()
+    const live = h.serverProblems.filter((r) => !r.deleted)
+    expect(live).toHaveLength(1)
+    expect(live[0].id).toBe('winner')
   })
 
   it('removeProblem notifies re-read even when the row was not cached (#6)', async () => {

@@ -287,13 +287,25 @@ export async function addProblem(
         // problem IS saved, so reconcile the existing live row instead of reporting a
         // false failure (#5).
         if ((insertError as { code?: string }).code === '23505') {
+          // The concurrent winner's row exists but may not be visible to our re-select yet
+          // (read-after-write lag). Try the live re-select first; if it comes back empty,
+          // retry the revive once (it reconciles the winner's row once visible) before
+          // giving up — so the loser reconciles to success, not a raw 23505 (BUG B).
           const { data: existing } = await supabase
             .from('list_problems')
             .select(LIST_PROBLEM_COLUMNS)
             .match({ list_id: listId, source_catalog_id: sourceCatalogId })
             .eq('deleted', false)
             .limit(1)
-          const rows = (existing ?? []) as ListProblemRow[]
+          let rows = (existing ?? []) as ListProblemRow[]
+          if (rows.length === 0) {
+            const { data: revivedAgain } = await supabase
+              .from('list_problems')
+              .update({ deleted: false, added_by: userId })
+              .match({ list_id: listId, source_catalog_id: sourceCatalogId })
+              .select(LIST_PROBLEM_COLUMNS)
+            rows = (revivedAgain ?? []) as ListProblemRow[]
+          }
           if (rows.length === 0) throw new Error(insertError.message)
           serverRows = rows
         } else {
