@@ -78,6 +78,7 @@ function mount() {
       board={board}
       angle={40}
       favoriteIds={new Set()}
+      sentIds={new Set()}
       onNavigate={() => {}}
     />,
   )
@@ -121,6 +122,7 @@ describe('ProblemDetail — save-to-list trigger', () => {
         board={board}
         angle={40}
         favoriteIds={new Set()}
+        sentIds={new Set()}
         onNavigate={() => {}}
       />,
     )
@@ -144,6 +146,7 @@ describe('ProblemDetail — save-to-list trigger', () => {
         board={board}
         angle={40}
         favoriteIds={new Set()}
+        sentIds={new Set()}
         onNavigate={() => {}}
       />,
     )

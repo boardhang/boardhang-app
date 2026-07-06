@@ -15,6 +15,7 @@ import { ProblemDetail } from '../catalog/ProblemDetail'
 import { getCatalogProblemsByIds, type CatalogProblem } from '../catalog/catalogSync'
 import { useFavorites } from '../catalog/favoritesStore'
 import { useShowPreviews } from '../catalog/previewsStore'
+import { useEnsureAscentsLoaded } from '../logbook/ascents'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
@@ -85,6 +86,18 @@ export function ListDetailScreen() {
 
   const { favoriteIds } = useFavorites()
   const showThumbnails = useShowPreviews()
+  // Logged sends → the green sent check on rows + detail (iOS parity), mirroring
+  // CatalogScreen. Board-scoped to this list's board; attempts (sent === false) excluded.
+  const { ascents } = useEnsureAscentsLoaded()
+  const sentIds = useMemo(
+    () =>
+      new Set(
+        ascents
+          .filter((a) => a.sent && a.boardLayoutId === board?.layoutId && a.sourceCatalogId)
+          .map((a) => a.sourceCatalogId as string),
+      ),
+    [ascents, board?.layoutId],
+  )
   const [openId, setOpenId] = useState<string | null>(null)
   const current = openId ? displayed.find((p) => p.source_catalog_id === openId) : undefined
 
@@ -186,6 +199,7 @@ export function ListDetailScreen() {
                 <CatalogRow
                   problem={p}
                   board={board!}
+                  isSent={sentIds.has(p.source_catalog_id)}
                   showThumbnail={showThumbnails}
                   onSelect={() => setOpenId(p.source_catalog_id)}
                 />
@@ -218,6 +232,7 @@ export function ListDetailScreen() {
                 board={board}
                 angle={current.angle}
                 favoriteIds={favoriteIds}
+                sentIds={sentIds}
                 onNavigate={(id) => setOpenId(id)}
               />
             )}

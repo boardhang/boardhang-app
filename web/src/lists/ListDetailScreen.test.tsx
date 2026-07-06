@@ -47,6 +47,14 @@ vi.mock('./useListProblems', () => ({
   useListProblems: () => problemsState,
 }))
 
+// Ascents feed the sent check. Keep the real module (ProblemDetail uses addAttemptTries)
+// but inject a configurable ascents list via the hook.
+let ascentsList: Array<{ sent: boolean; boardLayoutId: number; sourceCatalogId: string | null }> = []
+vi.mock('../logbook/ascents', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../logbook/ascents')>()
+  return { ...actual, useEnsureAscentsLoaded: () => ({ ascents: ascentsList, status: 'loaded' }) }
+})
+
 const catalogById = vi.fn<(ids: string[]) => Promise<Map<string, CatalogProblem>>>()
 vi.mock('../catalog/catalogSync', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../catalog/catalogSync')>()
@@ -104,6 +112,7 @@ beforeEach(() => {
     loading: false,
     degraded: false,
   }
+  ascentsList = []
   catalogById.mockResolvedValue(
     new Map([
       ['c40', catalog('c40', 'Forty', 40)],
@@ -144,6 +153,15 @@ describe('ListDetailScreen', () => {
     expect(await screen.findByRole('heading', { name: 'Twentyfive' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next problem' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Previous problem' })).toBeDisabled()
+  })
+
+  it('shows the sent check on rows with a logged send for this board', async () => {
+    ascentsList = [{ sent: true, boardLayoutId: 5, sourceCatalogId: 'c40' }]
+    renderWithRouter('/lists/list-1')
+    await screen.findByText('Forty')
+    // c40 has a send on board 5 → its row shows the "Sent" check; c25 does not.
+    const sent = screen.getAllByRole('img', { name: 'Sent' })
+    expect(sent).toHaveLength(1)
   })
 
   it('remove calls removeProblem for that problem', async () => {
