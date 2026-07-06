@@ -34,6 +34,20 @@ const EPOCH = '1970-01-01T00:00:00+00:00'
 // Column projections (LIST_COLUMNS / LIST_PROBLEM_COLUMNS) live in listsTypes.ts as the
 // single source of the KTD-I10 "never select invite_token" invariant — NOT `*`.
 
+// Cache generation (KTD-I9 async-identity guard). clearListsCache() bumps this; every
+// cache write that follows a network await captures the generation it started under and
+// drops itself if the generation has since changed. Without it, a pull or mutation
+// reconcile that was in flight when the user signed out / switched accounts would resolve
+// under the OLD user's RLS and write their private rows back into the just-cleared cache,
+// re-arming hasListsCursor() so the next user paints the previous user's lists.
+let cacheGeneration = 0
+
+/** The current cache generation — captured by callers before an await, re-checked at the
+ *  write boundary. A changed value means the cache was cleared (identity switch) meanwhile. */
+export function currentCacheGeneration(): number {
+  return cacheGeneration
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
@@ -68,14 +82,18 @@ export interface ListsSyncResult {
  */
 export async function syncLists(userId: string): Promise<ListsSyncResult> {
   if (!supabase || !userId) return { synced: false }
+  // Capture the generation this pull starts under. If the identity changes (cache cleared)
+  // while the network round-trip is in flight, pullTable drops its writes rather than
+  // re-poisoning the cleared cache with the previous user's rows (KTD-I9).
+  const gen = cacheGeneration
   let synced = true
   try {
-    await pullTable(LISTS_STORE, LISTS_CURSOR, LIST_COLUMNS)
+    await pullTable(LISTS_STORE, LISTS_CURSOR, LIST_COLUMNS, gen)
   } catch {
     synced = false
   }
   try {
-    await pullTable(PROBLEMS_STORE, PROBLEMS_CURSOR, LIST_PROBLEM_COLUMNS)
+    await pullTable(PROBLEMS_STORE, PROBLEMS_CURSOR, LIST_PROBLEM_COLUMNS, gen)
   } catch {
     synced = false
   }
@@ -83,8 +101,10 @@ export async function syncLists(userId: string): Promise<ListsSyncResult> {
 }
 
 /** One table's high-water delta pull. Throws on a network/query error so syncLists can
- *  mark the run degraded; the cursor advances only when rows were applied. */
-async function pullTable(store: string, cursorKey: string, columns: string): Promise<void> {
+ *  mark the run degraded; the cursor advances only when rows were applied. `gen` is the
+ *  cache generation captured before the network call — a mismatch at write time means the
+ *  cache was cleared meanwhile (identity switch), so we drop the write entirely. */
+async function pullTable(store: string, cursorKey: string, columns: string, gen: number): Promise<void> {
   if (!supabase) return
   const cursor = localStorage.getItem(cursorKey) ?? EPOCH
   const { data, error } = await supabase
@@ -93,6 +113,9 @@ async function pullTable(store: string, cursorKey: string, columns: string): Pro
     .gt('updated_at', cursor)
     .order('updated_at', { ascending: true })
   if (error) throw error
+  // Identity changed mid-flight → these rows belong to the previous user. Drop them and
+  // leave the cursor un-advanced so the cleared cache stays clean (KTD-I9).
+  if (gen !== cacheGeneration) return
   const rows = (data ?? []) as unknown as Array<{ id: string; updated_at: string; deleted: boolean }>
   if (rows.length === 0) return
   const db = await openDB()
@@ -163,17 +186,27 @@ export async function countListProblems(): Promise<Map<string, number>> {
 }
 
 /** Write-through cache for optimistic list mutations: put live rows, delete tombstoned
- *  ones (same rule as the pull). Rollback re-applies with the flag flipped. */
-export async function cacheLists(rows: ListRow[]): Promise<void> {
-  await applyRows(LISTS_STORE, rows)
+ *  ones (same rule as the pull). Rollback re-applies with the flag flipped. Pass `gen`
+ *  (the generation captured at the start of a mutation) for any write that FOLLOWS a
+ *  network await, so a write straddling an identity switch is dropped (KTD-I9). Omit it
+ *  for a synchronous optimistic write that can't straddle a clear. */
+export async function cacheLists(rows: ListRow[], gen?: number): Promise<void> {
+  await applyRows(LISTS_STORE, rows, gen)
 }
 
-export async function cacheListProblems(rows: ListProblemRow[]): Promise<void> {
-  await applyRows(PROBLEMS_STORE, rows)
+export async function cacheListProblems(rows: ListProblemRow[], gen?: number): Promise<void> {
+  await applyRows(PROBLEMS_STORE, rows, gen)
 }
 
-async function applyRows(store: string, rows: Array<{ id: string; deleted: boolean }>): Promise<void> {
+async function applyRows(
+  store: string,
+  rows: Array<{ id: string; deleted: boolean }>,
+  gen?: number,
+): Promise<void> {
   if (rows.length === 0) return
+  // A caller-supplied generation that no longer matches means the cache was cleared
+  // (identity switch) after this write was scheduled — drop it (KTD-I9).
+  if (gen !== undefined && gen !== cacheGeneration) return
   const db = await openDB()
   const tx = db.transaction(store, 'readwrite')
   const objectStore = tx.objectStore(store)
@@ -188,6 +221,9 @@ async function applyRows(store: string, rows: Array<{ id: string; deleted: boole
 /** Clear both stores and both cursors — the sign-out / user-switch reset (KTD-I9). One
  *  user's private lists must never paint for the next. */
 export async function clearListsCache(): Promise<void> {
+  // Bump the generation FIRST so any in-flight pull/mutation that captured the old value
+  // drops its post-await write instead of re-poisoning the cache we're about to clear.
+  cacheGeneration++
   const db = await openDB()
   const tx = db.transaction([LISTS_STORE, PROBLEMS_STORE], 'readwrite')
   tx.objectStore(LISTS_STORE).clear()

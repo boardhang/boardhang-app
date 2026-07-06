@@ -15,6 +15,7 @@ import {
   cacheListProblems,
   cacheLists,
   clearListsCache,
+  currentCacheGeneration,
   hasListsCursor,
   readListProblems,
   readLists,
@@ -114,6 +115,10 @@ export async function loadLists(): Promise<void> {
   setState({ lists: sortNewestFirst(cached) })
   const { synced } = await syncLists(userId)
   const fresh = await readLists().catch(() => cached)
+  // The pull may have populated list_problems too; nudge membership/count subscribers
+  // (the add-to-list sheet's checkmarks, the index's counts) to re-read the warmed cache —
+  // syncLists writes IndexedDB directly and can't otherwise signal them.
+  notifyProblemsChanged()
   if (!synced && fresh.length === 0) {
     setState({ status: 'offline', lists: [], error: null })
   } else {
@@ -128,6 +133,7 @@ export async function refreshLists(): Promise<{ synced: boolean }> {
   if (!userId) return { synced: false }
   const { synced } = await syncLists(userId)
   const fresh = await readLists().catch(() => state.lists)
+  notifyProblemsChanged() // pulled list_problems may have changed — re-read subscribers
   if (!synced && fresh.length === 0) {
     setState({ status: 'offline', lists: [], error: null })
   } else {
@@ -141,6 +147,7 @@ export async function refreshLists(): Promise<{ synced: boolean }> {
 /** Create a board-bound list. Sets `owner_id` for the RLS WITH CHECK (KTD-I8) and binds
  *  `board_layout_id` from the caller (KTD-I4). Returns the server-reconciled list. */
 export async function createList(name: string, boardLayoutId: number): Promise<SavedList> {
+  const gen = currentCacheGeneration()
   const userId = await currentUserId()
   if (!userId) throw new Error('You need to be signed in to create a list.')
   const now = new Date().toISOString()
@@ -158,7 +165,7 @@ export async function createList(name: string, boardLayoutId: number): Promise<S
   // If the write-through cache write fails, roll the optimistic row back out of the
   // in-memory store too — otherwise a phantom list lingers with nothing behind it (#4).
   try {
-    await cacheLists([toListRow(optimistic)])
+    await cacheLists([toListRow(optimistic)], gen)
   } catch (e) {
     setState({ lists: prev })
     throw e instanceof Error ? e : new Error(String(e))
@@ -172,7 +179,7 @@ export async function createList(name: string, boardLayoutId: number): Promise<S
     .single()
   if (error) {
     setState({ lists: prev })
-    await cacheLists([toListRow({ ...optimistic, deleted: true })])
+    await cacheLists([toListRow({ ...optimistic, deleted: true })], gen)
     throw new Error(error.message)
   }
   // Reconcile the temp id with the authoritative server row.
@@ -180,19 +187,20 @@ export async function createList(name: string, boardLayoutId: number): Promise<S
   setState({
     lists: sortNewestFirst([saved, ...state.lists.filter((l) => l.id !== optimistic.id)]),
   })
-  await cacheLists([toListRow({ ...optimistic, deleted: true }), toListRow(saved)])
+  await cacheLists([toListRow({ ...optimistic, deleted: true }), toListRow(saved)], gen)
   return saved
 }
 
 /** Rename a list (optimistic; rolls back on failure). */
 export async function renameList(id: string, name: string): Promise<void> {
+  const gen = currentCacheGeneration()
   const prev = state.lists
   const target = prev.find((l) => l.id === id)
   const updated = target ? { ...target, name } : null
   setState({ lists: prev.map((l) => (l.id === id ? { ...l, name } : l)) })
   if (updated) {
     try {
-      await cacheLists([toListRow(updated)])
+      await cacheLists([toListRow(updated)], gen)
     } catch (e) {
       setState({ lists: prev })
       throw e instanceof Error ? e : new Error(String(e))
@@ -202,19 +210,20 @@ export async function renameList(id: string, name: string): Promise<void> {
   const { error } = await supabase.from('lists').update({ name }).eq('id', id)
   if (error) {
     setState({ lists: prev })
-    if (target) await cacheLists([toListRow(target)])
+    if (target) await cacheLists([toListRow(target)], gen)
     throw new Error(error.message)
   }
 }
 
 /** Soft-delete a list (optimistic remove; rolls back on failure). */
 export async function deleteList(id: string): Promise<void> {
+  const gen = currentCacheGeneration()
   const prev = state.lists
   const target = prev.find((l) => l.id === id)
   setState({ lists: prev.filter((l) => l.id !== id) })
   if (target) {
     try {
-      await cacheLists([toListRow({ ...target, deleted: true })])
+      await cacheLists([toListRow({ ...target, deleted: true })], gen)
     } catch (e) {
       setState({ lists: prev })
       throw e instanceof Error ? e : new Error(String(e))
@@ -224,7 +233,7 @@ export async function deleteList(id: string): Promise<void> {
   const { error } = await supabase.from('lists').update({ deleted: true }).eq('id', id)
   if (error) {
     setState({ lists: prev })
-    if (target) await cacheLists([toListRow(target)])
+    if (target) await cacheLists([toListRow(target)], gen)
     throw new Error(error.message)
   }
 }
@@ -243,6 +252,7 @@ export async function addProblem(
   sourceCatalogId: string,
   boardLayoutId: number,
 ): Promise<void> {
+  const gen = currentCacheGeneration()
   const userId = await currentUserId()
   if (!userId) throw new Error('You need to be signed in to save a problem.')
   const now = new Date().toISOString()
@@ -256,7 +266,7 @@ export async function addProblem(
     updatedAt: now,
     deleted: false,
   }
-  await cacheListProblems([toProblemRow(optimistic)])
+  await cacheListProblems([toProblemRow(optimistic)], gen)
   notifyProblemsChanged()
 
   if (!supabase) return
@@ -316,11 +326,11 @@ export async function addProblem(
       }
     }
     // Reconcile: drop the temp optimistic row, cache the authoritative server row(s).
-    await cacheListProblems([toProblemRow(optimistic, { deleted: true }), ...serverRows])
+    await cacheListProblems([toProblemRow(optimistic, { deleted: true }), ...serverRows], gen)
     notifyProblemsChanged()
   } catch (e) {
     // Roll back the optimistic cache entry.
-    await cacheListProblems([toProblemRow(optimistic, { deleted: true })])
+    await cacheListProblems([toProblemRow(optimistic, { deleted: true })], gen)
     notifyProblemsChanged()
     throw e instanceof Error ? e : new Error(String(e))
   }
@@ -328,10 +338,11 @@ export async function addProblem(
 
 /** Remove a problem from a list (soft-delete; optimistic, rolls back on failure). */
 export async function removeProblem(listId: string, sourceCatalogId: string): Promise<void> {
+  const gen = currentCacheGeneration()
   const cached = await readListProblems(listId).catch(() => [] as SavedListProblem[])
   const target = cached.find((p) => p.sourceCatalogId === sourceCatalogId)
   if (target) {
-    await cacheListProblems([toProblemRow(target, { deleted: true })])
+    await cacheListProblems([toProblemRow(target, { deleted: true })], gen)
     notifyProblemsChanged()
   }
   if (!supabase) return
@@ -341,7 +352,7 @@ export async function removeProblem(listId: string, sourceCatalogId: string): Pr
     .match({ list_id: listId, source_catalog_id: sourceCatalogId })
   if (error) {
     if (target) {
-      await cacheListProblems([toProblemRow(target, { deleted: false })])
+      await cacheListProblems([toProblemRow(target, { deleted: false })], gen)
       notifyProblemsChanged()
     }
     throw new Error(error.message)

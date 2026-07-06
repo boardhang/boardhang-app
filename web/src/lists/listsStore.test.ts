@@ -11,6 +11,7 @@ vi.mock('./listsSync', () => ({
   cacheListProblems: vi.fn(),
   clearListsCache: vi.fn(),
   countListProblems: vi.fn(),
+  currentCacheGeneration: vi.fn(() => 0),
 }))
 
 // ── Mock supabase with a small stateful server modeling the RLS + partial index. ──

@@ -7,6 +7,7 @@ import {
   cacheLists,
   clearListsCache,
   countListProblems,
+  currentCacheGeneration,
   readListProblems,
   readLists,
   syncLists,
@@ -187,5 +188,28 @@ describe('clearListsCache', () => {
     expect(await readListProblems('a')).toHaveLength(0)
     expect(localStorage.getItem(LISTS_CURSOR)).toBeNull()
     expect(localStorage.getItem(PROBLEMS_CURSOR)).toBeNull()
+  })
+})
+
+describe('cache-generation guard (KTD-I9 async-identity)', () => {
+  it('drops a write whose captured generation is stale — a clear happened meanwhile', async () => {
+    // Simulates: a pull/mutation captures the generation, then the user switches accounts
+    // (clearListsCache bumps the generation), then the in-flight write lands — it must be
+    // dropped so it can't re-poison the just-cleared cache with the previous user's rows.
+    const gen = currentCacheGeneration()
+    await clearListsCache()
+    await cacheLists([listRow('leak', '2026-07-06T01:00:00Z')], gen)
+    expect(await readLists()).toHaveLength(0)
+  })
+
+  it('applies a write whose generation is current', async () => {
+    await cacheLists([listRow('ok', '2026-07-06T01:00:00Z')], currentCacheGeneration())
+    expect((await readLists()).map((l) => l.id)).toEqual(['ok'])
+  })
+
+  it('an unguarded (optimistic) write still applies regardless of generation', async () => {
+    await clearListsCache() // bump generation with no captured gen passed below
+    await cacheLists([listRow('opt', '2026-07-06T01:00:00Z')])
+    expect((await readLists()).map((l) => l.id)).toEqual(['opt'])
   })
 })

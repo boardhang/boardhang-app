@@ -34,7 +34,8 @@ import {
   useSavedLists,
 } from './listsStore'
 import { listIdsContaining } from './listsSync'
-import { formatListDate, trimListName } from './listsTypes'
+import { retryAction } from './retryAction'
+import { MAX_LIST_NAME, formatListDate, trimListName } from './listsTypes'
 
 /** Common list names offered as quick-fill pills under the new-list input. */
 const NAME_SUGGESTIONS = ['Projects', 'Warmups', 'Ticklist', 'To try'] as const
@@ -55,6 +56,11 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
   const [members, setMembers] = useState<Set<string>>(new Set())
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
+  // Synchronous re-entrancy lock for create — the `creating` STATE flips a render later,
+  // so a same-tick double-submit (fast double-Enter / autofill+Enter) would pass a
+  // `creating`-state guard twice and make two duplicate lists. The ref is read/set
+  // synchronously, same as the membership toggle's pendingRef.
+  const creatingRef = useRef(false)
   // Date-picker pill: open state + the selected day (defaults to tomorrow, the common
   // "plan the next session" case). Picking a day fills the name field via formatListDate.
   const [dateOpen, setDateOpen] = useState(false)
@@ -128,10 +134,11 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
         description: e instanceof Error ? e.message : undefined,
         action: {
           label: 'Retry',
-          onClick: () =>
-            void (isMember
+          onClick: retryAction(() =>
+            isMember
               ? removeProblem(listId, sourceCatalogId)
-              : addProblem(listId, sourceCatalogId, board.layoutId)),
+              : addProblem(listId, sourceCatalogId, board.layoutId),
+          ),
         },
       })
     } finally {
@@ -142,7 +149,8 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
 
   async function handleCreate() {
     const name = trimListName(newName)
-    if (!name || creating) return
+    if (!name || creatingRef.current) return
+    creatingRef.current = true
     setCreating(true)
     setNewName('')
     // Two distinct failures, two distinct toasts (#7): a create that fails never created
@@ -155,6 +163,7 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
       toast.error('Could not create the list.', {
         description: e instanceof Error ? e.message : undefined,
       })
+      creatingRef.current = false
       setCreating(false)
       return
     }
@@ -163,9 +172,10 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
     } catch (e) {
       toast.error('List created, but the problem wasn’t added.', {
         description: e instanceof Error ? e.message : undefined,
-        action: { label: 'Retry', onClick: () => void addProblem(list.id, sourceCatalogId, board.layoutId) },
+        action: { label: 'Retry', onClick: retryAction(() => addProblem(list.id, sourceCatalogId, board.layoutId)) },
       })
     } finally {
+      creatingRef.current = false
       setCreating(false)
     }
   }
@@ -255,7 +265,7 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
               onChange={(e) => setNewName(e.target.value)}
               placeholder="New list name"
               aria-label="New list name"
-              maxLength={60}
+              maxLength={MAX_LIST_NAME}
             />
             <Button type="submit" disabled={creating || trimListName(newName).length === 0}>
               <Bookmark className="size-4" />

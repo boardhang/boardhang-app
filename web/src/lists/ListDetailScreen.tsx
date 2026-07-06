@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { cn } from '@/lib/utils'
 import { addProblem, loadLists, removeProblem, useSavedLists } from './listsStore'
+import { retryAction } from './retryAction'
 import { useListProblems } from './useListProblems'
 import { boardShortLabel } from './listsTypes'
 
@@ -123,7 +124,7 @@ export function ListDetailScreen() {
       .catch((e) =>
         toast.error(`Could not remove ${name}.`, {
           description: e instanceof Error ? e.message : undefined,
-          action: { label: 'Retry', onClick: () => void removeProblem(listId, catalogId) },
+          action: { label: 'Retry', onClick: retryAction(() => removeProblem(listId, catalogId)) },
         }),
       )
   }

@@ -34,7 +34,8 @@ import {
   useSavedLists,
 } from './listsStore'
 import { countListProblems } from './listsSync'
-import { boardShortLabel, trimListName, type SavedList } from './listsTypes'
+import { retryAction } from './retryAction'
+import { MAX_LIST_NAME, boardShortLabel, trimListName, type SavedList } from './listsTypes'
 
 export function ListsScreen() {
   const { status, isRestoring } = useAuth()
@@ -88,7 +89,7 @@ export function ListsScreen() {
     } catch (e) {
       toast.error('Could not create the list.', {
         description: e instanceof Error ? e.message : undefined,
-        action: { label: 'Retry', onClick: () => void createList(name, getActiveBoardId()) },
+        action: { label: 'Retry', onClick: retryAction(() => createList(name, getActiveBoardId())) },
       })
     }
   }
@@ -166,7 +167,7 @@ export function ListsScreen() {
           onChange={(e) => setNewName(e.target.value)}
           placeholder="New list name"
           aria-label="New list name"
-          maxLength={60}
+          maxLength={MAX_LIST_NAME}
         />
         <Button type="submit" disabled={trimListName(newName).length === 0}>
           Create
@@ -237,7 +238,7 @@ export function ListsScreen() {
                   void deleteList(target.id).catch((e) =>
                     toast.error('Could not delete the list.', {
                       description: e instanceof Error ? e.message : undefined,
-                      action: { label: 'Retry', onClick: () => void deleteList(target.id) },
+                      action: { label: 'Retry', onClick: retryAction(() => deleteList(target.id)) },
                     }),
                   )
                 }
@@ -284,7 +285,7 @@ function ListRowItem({
     } catch (e) {
       toast.error('Could not rename the list.', {
         description: e instanceof Error ? e.message : undefined,
-        action: { label: 'Retry', onClick: () => void renameList(list.id, name) },
+        action: { label: 'Retry', onClick: retryAction(() => renameList(list.id, name)) },
       })
     }
   }
@@ -297,7 +298,7 @@ function ListRowItem({
           onChange={(e) => setDraft(e.target.value)}
           aria-label={`Rename ${list.name}`}
           autoFocus
-          maxLength={60}
+          maxLength={MAX_LIST_NAME}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void save()
             if (e.key === 'Escape') onStopEdit()

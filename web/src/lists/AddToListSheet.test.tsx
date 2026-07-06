@@ -174,6 +174,20 @@ describe('AddToListSheet', () => {
     await waitFor(() => expect(addProblem).toHaveBeenCalledWith('new', 'cat-1', 7))
   })
 
+  it('a same-tick double-submit of the new-list form creates only one list', async () => {
+    createList.mockResolvedValue(savedList('new', 'Warmups', 7))
+    mount()
+    fireEvent.change(await screen.findByLabelText('New list name'), { target: { value: 'Warmups' } })
+
+    const form = screen.getByRole('button', { name: 'Save' }).closest('form')!
+    // Two submits in the same tick, before React re-renders the disabled state — the
+    // synchronous creatingRef lock must swallow the second (no duplicate list).
+    fireEvent.submit(form)
+    fireEvent.submit(form)
+
+    await waitFor(() => expect(createList).toHaveBeenCalledTimes(1))
+  })
+
   it('create succeeds but add fails: shows an add-failed toast, not create-failed (#7)', async () => {
     createList.mockResolvedValue(savedList('new', 'Warmups', 7))
     addProblem.mockRejectedValueOnce(new Error('offline'))
