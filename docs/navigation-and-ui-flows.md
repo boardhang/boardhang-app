@@ -114,6 +114,51 @@ calibration lives there now, not in Settings — see [ble-hardware.md](ble-hardw
 **Per board+angle (`_<boardId>_<angle>`):** `catalogLowerGrade_…`, `catalogUpperGrade_…`,
 `catalogRecentProblems_…` (CSV of problem ids, max 5, MRU).
 
+## Web PWA routing
+
+The `web/` PWA uses **TanStack Router** (`web/src/router.tsx`, code-based route tree, history
+mode). Unlike iOS's session-only `TabRouter`, **the URL is the sole source of truth** for what the
+catalog shows — browser back/forward works and every meaningful view is deep-linkable.
+
+**Route tree:**
+
+```
+/                        → redirect: no added boards → /boards, else the last-active
+                           board's catalog (URL built from the localStorage seed)
+/boards                  → MyBoards
+/logbook                 → LogbookScreen
+/board/$layoutId/catalog → CatalogScreen  (search params below)
+```
+
+Guards (route `beforeLoad`): an unknown `layoutId` (not in the board registry) bounces to `/boards`;
+a registry-valid but **un-added** board renders a read-only preview with an "Add this board" CTA
+(it does *not* bounce). Auth stays a header modal, not a route.
+
+**Catalog search params** (`web/src/catalog/catalogSearch.ts`) — the whole catalog view state:
+`q` (search), `grade` (ordinal `min-max` into `FONT_GRADES`), `bench`/`fav` (`1`), `stars`,
+`method`/`holds` (comma-joined), `sort`, `angle`, `problem` (open problem id). Every param is
+**omitted at its default** via a `stripSearchParams` middleware so URLs stay clean; `validateSearch`
+re-fills defaults on read. `sortSecondary` is deliberately *not* in the URL (fixed tie-breaker).
+
+**Load-bearing rules:**
+
+- **URL, not localStorage, is truth for explicit routes.** Per-`(board,angle)` filters live in
+  localStorage only as a **cold-launch seed** (`web/src/catalog/filterSeed.ts`) — the sole reader is
+  the bare-`/` redirect. `CatalogScreen` writes the seed through on every filter change but never
+  renders from it. There is no `searchStore`; the transient search query rides `?q`.
+- **`AppLayout`** (`web/src/shell/AppLayout.tsx`) is the router-aware shell that owns the persistent
+  search field: a debounced (`replace`) `?q` writer, the URL→input resync (Back/deep-link/board
+  switch), and dropping a pending write on board switch. `Navigation` is fully prop-driven.
+- **Angle** comes from `?angle` (never a fresh `getAngle()` in render); `CatalogScreen` mirrors the
+  resolved angle back into `boardStore` so `/boards` stays coherent with a deep link.
+- **Problem drawer**: opening pushes history (Back closes it), paging/swiping `replace`s (URL tracks
+  the current problem). A deep-linked problem resolves against the **full slab**, so it opens even
+  when the active filters exclude it (prev/next then disable).
+- **PWA**: `vite.config.ts` sets `navigateFallback: '/index.html'` (+ `/assets/` denylist) so deep
+  links and the OAuth return survive a hard load.
+- **Deferred**: scroll restoration (accepts jump-to-top on Back for now); the `holds` param is
+  reserved but its picker UI is not built yet.
+
 ## Gotchas summary
 
 - `TabRouter` is session-only; app always starts on Home. Use it (not global state) for cross-tab jumps.
