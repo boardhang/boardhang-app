@@ -38,22 +38,27 @@ export function RecentsSheet({ board, angle, problems, favoriteIds, onSelect }: 
       .filter((p): p is CatalogProblem => p !== undefined)
   }, [problems, recentIds])
 
-  // No history → no FAB (no empty state needed; matches iOS).
-  if (recentProblems.length === 0) return null
-
+  // The Drawer stays mounted so "Clear" (which empties recentProblems) closes it
+  // through its exit animation instead of yanking it out of the tree. Only the FAB
+  // trigger is gated on history: no recents → no FAB (no empty state needed; iOS parity).
   return (
     <Drawer open={open} onOpenChange={setOpen} showSwipeHandle>
       {/* Positioned by the parent's shared FAB column (CatalogScreen). */}
-      <FabTrigger aria-label="Recently viewed">
-        <History className="size-6" />
-      </FabTrigger>
+      {recentProblems.length > 0 && (
+        <FabTrigger aria-label="Recently viewed">
+          <History className="size-6" />
+        </FabTrigger>
+      )}
       <DrawerContent>
         <DrawerHeader className="flex flex-row items-center justify-between">
           <DrawerTitle>Recently viewed</DrawerTitle>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => clearRecents(board.layoutId, angle)}
+            onClick={() => {
+              setOpen(false)
+              clearRecents(board.layoutId, angle)
+            }}
           >
             Clear
           </Button>
