@@ -16,6 +16,7 @@ import { AccountMenu } from '../auth/AccountMenu'
 import { useBoardStore } from '../board/boardStore'
 import { catalogNavTarget } from '../catalog/catalogNav'
 import { Navigation, type NavView } from './Navigation'
+import { Toaster } from '@/components/ui/sonner'
 import { BleBrowserBanner } from './BleBrowserBanner'
 import { InstallBanner } from './InstallBanner'
 import { FullscreenTipBanner } from './FullscreenTipBanner'
@@ -138,6 +139,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         onClear={onClear}
         onNavigate={go}
       />
+      <Toaster position="bottom-center" />
     </div>
   )
 }
