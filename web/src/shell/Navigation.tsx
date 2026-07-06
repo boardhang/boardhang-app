@@ -98,7 +98,7 @@ function SearchField({
         onChange={(e) => onQueryChange(e.target.value)}
         placeholder="Name or setter"
         aria-label="Search problems"
-        className="h-9 rounded-md pr-8 pl-9 text-sm"
+        className="h-9 rounded-md pr-8 pl-9 text-base md:text-sm"
       />
       {query && (
         <button

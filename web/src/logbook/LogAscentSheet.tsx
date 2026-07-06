@@ -262,7 +262,7 @@ export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscen
               onChange={(e) => setComment(e.target.value)}
               placeholder="Notes (optional)"
               rows={2}
-              className="w-full resize-none rounded-md border border-input bg-input/30 px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="w-full resize-none rounded-md border border-input bg-input/30 px-3 py-2 text-base outline-none md:text-sm focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             />
           </label>
 
@@ -273,7 +273,7 @@ export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscen
               value={dateLocal}
               max={toLocalInput(new Date().toISOString())}
               onChange={(e) => setDateLocal(e.target.value)}
-              className="rounded-md border border-input bg-input/30 px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="rounded-md border border-input bg-input/30 px-2.5 py-1.5 text-base outline-none md:text-sm focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             />
           </label>
 
