@@ -36,6 +36,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/web-bluetooth": "^0.0.21",
     "@vitejs/plugin-react": "^6.0.3",
+    "fake-indexeddb": "^6.2.5",
     "jsdom": "^25.0.1",
     "oxlint": "^1.71.0",
     "sharp": "^0.35.3",

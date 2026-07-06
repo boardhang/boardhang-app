@@ -10,6 +10,7 @@ import {
 } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { isConfigured, supabase } from '../supabase/client'
+import { syncListsIdentity } from '../lists/listsStore'
 import { normalizeHandle } from './handle'
 import { profileFromRow, type AuthStatus, type Profile, type ProfileRow } from './types'
 
@@ -103,6 +104,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // fetch to a later tick: calling other Supabase methods inside the callback can
     // deadlock the client (documented supabase-js caveat).
     const resolveSession = async (session: Session | null) => {
+      // Cross-account cache safety (KTD-I9): clear the saved-lists store + IndexedDB
+      // whenever the signed-in identity changes — sign-out or a different user — so on a
+      // shared device user B never paints user A's cached lists. A restored same-user
+      // session is a no-op. Only touches localStorage/IndexedDB, so it's safe to await
+      // inside the auth callback (no re-entrant Supabase call).
+      await syncListsIdentity(session?.user.id ?? null)
       if (!session) {
         applyProfile(null)
         setStatus('signedOut')
