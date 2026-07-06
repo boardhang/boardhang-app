@@ -40,12 +40,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
     ? 'catalog'
     : matchRoute({ to: '/logbook' })
       ? 'logbook'
-      : 'boards'
+      : matchRoute({ to: '/settings' })
+        ? 'settings'
+        : 'boards'
 
   // The home tab shown on the collapsed catalog nav — the last home screen visited.
-  const [origin, setOrigin] = useState<'boards' | 'logbook'>('boards')
+  const [origin, setOrigin] = useState<'boards' | 'logbook' | 'settings'>('boards')
   useEffect(() => {
-    if (view === 'boards' || view === 'logbook') setOrigin(view)
+    if (view === 'boards' || view === 'logbook' || view === 'settings') setOrigin(view)
   }, [view])
 
   // ── Search field: local input + debounced write + resync ────────────────────
@@ -102,6 +104,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const go = (next: NavView) => {
     if (next === 'boards') void navigate({ to: '/boards' })
     else if (next === 'logbook') void navigate({ to: '/logbook' })
+    else if (next === 'settings') void navigate({ to: '/settings' })
     else {
       // Search button → the active board's catalog (falls back to the MRU front).
       const board = addedBoards.some((b) => b.layoutId === activeBoard.layoutId)

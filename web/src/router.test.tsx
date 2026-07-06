@@ -74,6 +74,14 @@ describe('catalog route guards', () => {
   })
 })
 
+describe('settings route', () => {
+  it('renders the Settings screen with the appearance toggle', async () => {
+    renderWithRouter('/settings')
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'System' })).toBeInTheDocument()
+  })
+})
+
 describe('URL is the source of truth', () => {
   it('seeds the search field from ?q on a deep link', async () => {
     addBoard(7)

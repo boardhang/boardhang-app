@@ -68,6 +68,33 @@ describe('Navigation', () => {
     expect(screen.queryByRole('button', { name: 'Logbook' })).toBeNull()
   })
 
+  it('shows the Settings tab on a home screen and navigates to it', () => {
+    const onNavigate = vi.fn()
+    render(<Navigation {...baseProps} view="boards" onNavigate={onNavigate} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(onNavigate).toHaveBeenCalledWith('settings')
+  })
+
+  it('marks Settings current when on the settings view, keeping Search rightmost', () => {
+    render(<Navigation {...baseProps} view="settings" onNavigate={noop} />)
+    expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument()
+  })
+
+  it('on the catalog with a Settings origin, shows only the Settings tab beside search', () => {
+    const onNavigate = vi.fn()
+    render(<Navigation {...baseProps} view="catalog" origin="settings" onNavigate={onNavigate} />)
+    expect(screen.getByRole('textbox', { name: 'Search problems' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Boards' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Logbook' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(onNavigate).toHaveBeenCalledWith('settings')
+  })
+
   it('reports typing through onQueryChange and clearing through onClear', () => {
     const onQueryChange = vi.fn()
     const onClear = vi.fn()

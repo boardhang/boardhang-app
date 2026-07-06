@@ -127,8 +127,22 @@ catalog shows — browser back/forward works and every meaningful view is deep-l
                            board's catalog (URL built from the localStorage seed)
 /boards                  → MyBoards
 /logbook                 → LogbookScreen
+/settings                → SettingsScreen (global; appearance/theme)
 /board/$layoutId/catalog → CatalogScreen  (search params below)
 ```
+
+The bottom bar (`web/src/shell/Navigation.tsx`) is four tabs: three home tabs clustered left
+(`Boards`, `Logbook`, `Settings`) and `Search` pinned rightmost — `[Boards] [Logbook] [Settings]
+… [Search]`. On the catalog the bar collapses to just the **origin** (the last home screen
+visited, now including Settings) plus the live search field: e.g. `[Settings] [search…]`.
+
+**Appearance / theme:** `web/src/shell/themeStore.ts` is a module store (mirrors `previewsStore`)
+under the `theme` localStorage key (`light` | `dark` | `system`, default `system`, matching iOS's
+appearance setting). It owns the imperative side-effects — toggling `.dark` on `<html>` and
+rewriting the `theme-color` meta — resolving `system` via `matchMedia` and re-applying live when the
+OS flips. A pre-paint inline script in `web/index.html` applies the saved theme before the bundle
+loads so there's no flash of the wrong theme (it duplicates the resolve logic — keep the two in
+sync). The light/dark token values live in `web/src/index.css` (`:root` / `.dark`).
 
 Guards (route `beforeLoad`): an unknown `layoutId` (not in the board registry) bounces to `/boards`;
 a registry-valid but **un-added** board renders a read-only preview with an "Add this board" CTA

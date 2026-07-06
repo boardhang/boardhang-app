@@ -6,7 +6,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   font-family: system-ui, -apple-system, sans-serif;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -58,8 +58,8 @@ body {
      scrolls, so the fixed-height grid can pin the nav as a real bottom row. */
   overflow: hidden;
   overscroll-behavior: none;
-  background: #111111;
-  color: #f3f3f3;
+  /* Colors come from the theme tokens via `@layer base` below (bg-background /
+     text-foreground) so light and dark both render — do NOT hardcode a color here. */
 }
 
 @theme inline {
@@ -106,6 +106,7 @@ body {
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);

@@ -3,6 +3,11 @@ import { createRoot } from 'react-dom/client'
 import { RouterProvider } from '@tanstack/react-router'
 import './index.css'
 import './App.css'
+// Side-effect: registers the theme store's cross-tab `storage` sync and the
+// System-preference matchMedia listener (live OS light/dark flips), independent of
+// whether the Settings screen is mounted. The pre-paint script in index.html has
+// already applied the initial theme; this keeps it reactive thereafter.
+import './shell/themeStore'
 import { AuthProvider } from './auth/AuthProvider'
 import { router } from './router'
 

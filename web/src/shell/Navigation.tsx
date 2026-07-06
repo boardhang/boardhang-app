@@ -1,23 +1,23 @@
 // Bottom bar — thumb-reachable navigation for a phone at the wall. Search (the catalog)
 // is ALWAYS the rightmost element.
 //
-// • On a home screen (Boards / Logbook) both home tabs show clustered on the left, with a
-//   compact Search tab (icon over label, styled like the home tabs) pinned to the far
-//   right: [Boards] [Logbook] … [Search].
+// • On a home screen (Boards / Logbook / Settings) the home tabs show clustered on the
+//   left, with a compact Search tab (icon over label, styled like the home tabs) pinned
+//   to the far right: [Boards] [Logbook] [Settings] … [Search].
 // • On the catalog, the bar collapses to just the tab you came from plus the live search
 //   field that expands to fill the width: [origin] [search…]. Only the origin (the last
-//   home screen visited before searching) is shown — the other home tab is hidden until
+//   home screen visited before searching) is shown — the other home tabs are hidden until
 //   you leave the catalog.
 //
 // "Detail" is a sub-view of the catalog and keeps the same bar. Fully prop-driven: the
 // search query and its writes are owned by the router-aware AppLayout, not this bar.
 
-import { BookOpen, Layers, Search, X } from 'lucide-react'
+import { BookOpen, Layers, Search, Settings, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
-export type NavView = 'boards' | 'catalog' | 'logbook'
-type HomeView = 'boards' | 'logbook'
+export type NavView = 'boards' | 'catalog' | 'logbook' | 'settings'
+type HomeView = 'boards' | 'logbook' | 'settings'
 
 interface NavigationProps {
   view: NavView
@@ -54,8 +54,10 @@ export function Navigation({
           <>
             {origin === 'boards' ? (
               <BoardsTab active={false} onClick={() => onNavigate('boards')} />
-            ) : (
+            ) : origin === 'logbook' ? (
               <LogbookTab active={false} onClick={() => onNavigate('logbook')} />
+            ) : (
+              <SettingsTab active={false} onClick={() => onNavigate('settings')} />
             )}
             <SearchField query={query} onQueryChange={onQueryChange} onClear={onClear} />
           </>
@@ -64,6 +66,7 @@ export function Navigation({
           <>
             <BoardsTab active={view === 'boards'} onClick={() => onNavigate('boards')} />
             <LogbookTab active={view === 'logbook'} onClick={() => onNavigate('logbook')} />
+            <SettingsTab active={view === 'settings'} onClick={() => onNavigate('settings')} />
             <TabButton
               label="Search"
               className="ml-auto"
@@ -132,6 +135,17 @@ function LogbookTab({ active, onClick }: { active: boolean; onClick: () => void 
       active={active}
       onClick={onClick}
       icon={<BookOpen className={cn('size-5', active && 'stroke-[2.5]')} />}
+    />
+  )
+}
+
+function SettingsTab({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <TabButton
+      label="Settings"
+      active={active}
+      onClick={onClick}
+      icon={<Settings className={cn('size-5', active && 'stroke-[2.5]')} />}
     />
   )
 }

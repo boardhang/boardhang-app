@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -14,6 +14,27 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Boardly" />
     <title>Boardly</title>
+    <!-- Pre-paint theme: set `.dark` + theme-color BEFORE the bundle loads, so a
+         saved Light/Dark/System preference never flashes the wrong theme on a cold
+         load. Runs after the theme-color meta above so it can rewrite it. Duplicates
+         the resolve logic in src/shell/themeStore.ts (the bundle isn't available
+         yet) — keep the two in sync. -->
+    <script>
+      ;(function () {
+        try {
+          var pref = localStorage.getItem('theme')
+          var dark =
+            pref === 'dark' ||
+            ((pref === null || pref === 'system') &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.classList.toggle('dark', dark)
+          var meta = document.querySelector('meta[name="theme-color"]')
+          if (meta) meta.setAttribute('content', dark ? '#111111' : '#ffffff')
+        } catch (e) {
+          /* localStorage/matchMedia can throw in restricted embedders; default light. */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

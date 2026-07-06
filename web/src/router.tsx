@@ -8,6 +8,7 @@
 //   /                        → redirect: no boards → /boards, else last catalog
 //   /boards                  → MyBoards (global, not board-scoped)
 //   /logbook                 → LogbookScreen
+//   /settings                → SettingsScreen (global; appearance/theme)
 //   /board/$layoutId/catalog → CatalogScreen  (search params: see catalogSearch.ts)
 //
 // The tree is built by a factory so tests can spin up an isolated memory-history
@@ -25,6 +26,7 @@ import {
 } from '@tanstack/react-router'
 import { AppLayout } from './shell/AppLayout'
 import { MyBoards } from './shell/MyBoards'
+import { SettingsScreen } from './shell/SettingsScreen'
 import { LogbookScreen } from './logbook/LogbookScreen'
 import { CatalogScreen } from './catalog/CatalogScreen'
 import { boardByLayoutId } from './board/boards'
@@ -79,6 +81,12 @@ function buildRouteTree() {
     component: LogbookScreen,
   })
 
+  const settingsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/settings',
+    component: SettingsScreen,
+  })
+
   const catalogRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/board/$layoutId/catalog',
@@ -95,7 +103,13 @@ function buildRouteTree() {
     component: CatalogScreen,
   })
 
-  return rootRoute.addChildren([indexRoute, boardsRoute, logbookRoute, catalogRoute])
+  return rootRoute.addChildren([
+    indexRoute,
+    boardsRoute,
+    logbookRoute,
+    settingsRoute,
+    catalogRoute,
+  ])
 }
 
 /** Build a router over a fresh route tree. `history` is omitted in the browser
