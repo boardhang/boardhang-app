@@ -1,11 +1,13 @@
 // Bottom bar — thumb-reachable navigation for a phone at the wall. Search (the catalog)
 // is ALWAYS the rightmost element.
 //
-// • On a home screen (Boards / Logbook) both home tabs show, with the Search field to
-//   their right: [Boards] [Logbook] [Search].
+// • On a home screen (Boards / Logbook) both home tabs show clustered on the left, with a
+//   compact Search tab (icon over label, styled like the home tabs) pinned to the far
+//   right: [Boards] [Logbook] … [Search].
 // • On the catalog, the bar collapses to just the tab you came from plus the live search
-//   field: [origin] [search…]. Only the origin (the last home screen visited before
-//   searching) is shown — the other home tab is hidden until you leave the catalog.
+//   field that expands to fill the width: [origin] [search…]. Only the origin (the last
+//   home screen visited before searching) is shown — the other home tab is hidden until
+//   you leave the catalog.
 //
 // "Detail" is a sub-view of the catalog and keeps the same bar.
 
@@ -45,24 +47,19 @@ export function Navigation({ view, onNavigate, origin = 'boards', disabled = [] 
             <SearchField />
           </>
         ) : (
-          // Home screens: both tabs, then the Search button (rightmost).
+          // Home screens: both tabs left-clustered, the compact Search tab pinned right.
           <>
             <BoardsTab active={view === 'boards'} onClick={() => onNavigate('boards')} />
             <LogbookTab active={view === 'logbook'} onClick={() => onNavigate('logbook')} />
-            <button
-              type="button"
-              aria-label="Search"
+            <TabButton
+              label="Search"
+              className="ml-auto"
+              active={false}
               disabled={searchDisabled}
               title={searchDisabled ? 'Add a board first' : undefined}
               onClick={() => onNavigate('catalog')}
-              className={cn(
-                'flex flex-1 items-center justify-center gap-1.5 rounded-md border border-input bg-input/30 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground',
-                searchDisabled && 'opacity-35',
-              )}
-            >
-              <Search className="size-4" />
-              Search
-            </button>
+              icon={<Search className="size-5" />}
+            />
           </>
         )}
       </div>
@@ -124,20 +121,30 @@ function TabButton({
   icon,
   active,
   onClick,
+  disabled = false,
+  title,
+  className,
 }: {
   label: string
   icon: React.ReactNode
   active: boolean
   onClick: () => void
+  disabled?: boolean
+  title?: string
+  className?: string
 }) {
   return (
     <button
       type="button"
       aria-current={active ? 'page' : undefined}
+      disabled={disabled}
+      title={title}
       onClick={onClick}
       className={cn(
         'flex flex-col items-center gap-0.5 px-2 py-2.5 text-[0.7rem] font-medium transition-colors',
         active ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
+        disabled && 'opacity-35',
+        className,
       )}
     >
       {icon}
