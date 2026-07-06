@@ -9,7 +9,7 @@
 // active filters exclude is not in it, so prev/next disable and it shows standalone.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, Repeat, Star } from 'lucide-react'
+import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, ListPlus, Repeat, Star } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInDialog } from '../auth/SignInDialog'
 import { addAttemptTries } from '../logbook/ascents'
@@ -24,6 +24,7 @@ import { recordRecent } from './recentsStore'
 import { useFavorites } from './favoritesStore'
 import type { HoldAssignment } from '../types'
 import { LogAscentSheet, type LogTarget } from '../logbook/LogAscentSheet'
+import { AddToListSheet } from '../lists/AddToListSheet'
 import { Button } from '@/components/ui/button'
 
 interface ProblemDetailProps {
@@ -67,6 +68,10 @@ export function ProblemDetail({
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null)
   const [logOpen, setLogOpen] = useState(false)
   const [signInOpen, setSignInOpen] = useState(false)
+  const [addToListOpen, setAddToListOpen] = useState(false)
+  // KTD3 resume: a signed-out tap on "Save to list" opens SignInDialog and remembers the
+  // intent; when the session lands, reopen the sheet on the same problem.
+  const [resumeAddToList, setResumeAddToList] = useState(false)
   // Inline "Log try" stepper state: session-local pending tries for the shown problem,
   // written (merged) to the unsent-attempt row only when leaving the problem (iOS parity).
   // The pending problem is held as the object so a leave-flush needs no list lookup.
@@ -207,6 +212,24 @@ export function ProblemDetail({
     })
   }
 
+  function saveToList() {
+    if (!signedIn) {
+      setResumeAddToList(true)
+      setSignInOpen(true)
+      return
+    }
+    setAddToListOpen(true)
+  }
+
+  // Once sign-in completes after a signed-out "Save to list" tap, resume by opening the
+  // sheet on the same problem (KTD3).
+  useEffect(() => {
+    if (signedIn && resumeAddToList) {
+      setResumeAddToList(false)
+      setAddToListOpen(true)
+    }
+  }, [signedIn, resumeAddToList])
+
   // "Log ascent" opens the full sheet as a SEND, pre-seeding tries from the stepper.
   function logAscent() {
     if (!signedIn) {
@@ -280,6 +303,14 @@ export function ProblemDetail({
           <Button
             variant="ghost"
             size="icon"
+            aria-label="Save to list"
+            onClick={saveToList}
+          >
+            <ListPlus className="size-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             aria-label={isFav ? 'Unfavorite' : 'Favorite'}
             aria-pressed={isFav}
             onClick={() => toggleFavorite(currentId)}
@@ -333,7 +364,13 @@ export function ProblemDetail({
       <SignInDialog
         open={signInOpen}
         onOpenChange={setSignInOpen}
-        title="Sign in to log ascents"
+        title={resumeAddToList ? 'Sign in to save to a list' : 'Sign in to log ascents'}
+      />
+      <AddToListSheet
+        open={addToListOpen}
+        onOpenChange={setAddToListOpen}
+        sourceCatalogId={currentId}
+        board={board}
       />
     </div>
   )

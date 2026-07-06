@@ -134,6 +134,20 @@ export async function readListProblems(listId: string): Promise<SavedListProblem
   return rows.filter((r) => !r.deleted).map(fromListProblemRow)
 }
 
+/** The set of list ids that currently (live) contain a given catalog problem — the
+ *  membership checkmarks in the add-to-list sheet. */
+export async function listIdsContaining(sourceCatalogId: string): Promise<Set<string>> {
+  const db = await openDB()
+  const tx = db.transaction(PROBLEMS_STORE, 'readonly')
+  const rows = await requestResult<ListProblemRow[]>(tx.objectStore(PROBLEMS_STORE).getAll())
+  db.close()
+  const ids = new Set<string>()
+  for (const r of rows) {
+    if (!r.deleted && r.source_catalog_id === sourceCatalogId) ids.add(r.list_id)
+  }
+  return ids
+}
+
 /** Live problem counts per list id (for the index rows). */
 export async function countListProblems(): Promise<Map<string, number>> {
   const db = await openDB()
