@@ -23,7 +23,10 @@ export function LogbookScreen() {
   const { status: dataStatus, ascents, error } = useAscents()
   const navigate = useNavigate()
   const signedIn = status !== 'signedOut'
-  const hasBoard = addedBoards.length > 0
+  // The store defaults `activeBoard` to Mini 2025 even when it isn't among the added
+  // boards (adding a board doesn't activate it), so gate on membership — not just count —
+  // or the logbook would leak the default board for a user who added only a different one.
+  const activeBoardAdded = addedBoards.some((b) => b.layoutId === activeBoard.layoutId)
 
   const [target, setTarget] = useState<LogTarget | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -70,12 +73,12 @@ export function LogbookScreen() {
     setSheetOpen(true)
   }
 
-  // The board name only belongs here once the user has actually added a board —
+  // The board name only belongs here once the active board is one the user added —
   // otherwise the store's default board would leak a name for a board they never chose.
   const header = (
     <div className="mb-3 px-1">
       <h1 className="text-lg font-bold tracking-tight">Logbook</h1>
-      {hasBoard && <p className="text-xs text-muted-foreground">{activeBoard.name}</p>}
+      {activeBoardAdded && <p className="text-xs text-muted-foreground">{activeBoard.name}</p>}
     </div>
   )
 
@@ -95,11 +98,11 @@ export function LogbookScreen() {
     )
   }
 
-  // ── Signed in, but no board added yet ───────────────────────────────────────
-  // The logbook is board-scoped, so with no added board there's nothing to scope to.
-  // Guard here — ahead of the data checks — so cloud ascents on the store's default
-  // board never render a logbook for a board the user never added.
-  if (signedIn && !hasBoard) {
+  // ── Signed in, but the active board isn't one the user added ────────────────
+  // The logbook is board-scoped, so if the active board isn't in the added list there's
+  // nothing legitimate to scope to. Guard here — ahead of the data checks — so cloud
+  // ascents on the store's default board never render a logbook for a board never added.
+  if (signedIn && !activeBoardAdded) {
     return (
       <div className="flex flex-1 flex-col px-3">
         {header}
