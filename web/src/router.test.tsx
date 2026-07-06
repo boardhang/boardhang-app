@@ -1,8 +1,9 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithRouter } from './test/renderWithRouter'
-import { addBoard, getAngle } from './board/boardStore'
+import { addBoard, getAddedBoardIds, getAngle } from './board/boardStore'
 import { boardByLayoutId } from './board/boards'
+import { loadSeed } from './catalog/filterSeed'
 import type { CatalogProblem } from './catalog/catalogSync'
 
 // Keep the slab deterministic and network-free so route behavior is what's tested.
@@ -63,6 +64,14 @@ describe('catalog route guards', () => {
     // Still browsable — the slab renders behind the preview banner.
     expect(screen.getByText('Alpha')).toBeInTheDocument()
   })
+
+  it('adds the previewed board from the banner CTA and clears the banner', async () => {
+    addBoard(7)
+    renderWithRouter('/board/5/catalog')
+    fireEvent.click(await screen.findByRole('button', { name: 'Add this board' }))
+    await waitFor(() => expect(getAddedBoardIds()).toContain(5))
+    expect(screen.queryByText('Add this board')).toBeNull()
+  })
 })
 
 describe('URL is the source of truth', () => {
@@ -78,6 +87,20 @@ describe('URL is the source of truth', () => {
     renderWithRouter('/board/7/catalog?problem=b')
     // ProblemDetail renders the problem's name as a heading (uppercased via CSS).
     expect(await screen.findByRole('heading', { name: 'Bravo' })).toBeInTheDocument()
+  })
+
+  it('writes a filter change to the URL and through to the cold-launch seed', async () => {
+    addBoard(7)
+    const { router } = renderWithRouter('/board/7/catalog')
+    await screen.findByText('Alpha')
+
+    // Open the filter sheet and toggle Benchmarks.
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Benchmarks' }))
+
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ bench: 1 }))
+    // Written through to the seed so a cold launch reproduces it.
+    expect(loadSeed(7, 40).benchmarkOnly).toBe(true)
   })
 
   it('mirrors a deep-linked ?angle back into boardStore', async () => {
@@ -123,6 +146,25 @@ describe('drawer history semantics', () => {
     expect(router.state.location.search).toMatchObject({ problem: 'b' })
 
     // Back closes the drawer (removes ?problem) and stays on the catalog.
+    router.history.back()
+    await waitFor(() => expect(router.state.location.search).not.toHaveProperty('problem'))
+    expect(router.state.location.pathname).toBe('/board/7/catalog')
+  })
+
+  it('pages with replace so a single Back returns to the catalog, not prior problems', async () => {
+    addBoard(7)
+    const { router } = renderWithRouter('/board/7/catalog')
+    await screen.findByText('Alpha')
+
+    // Open the first problem (push), then page forward twice (each a replace).
+    fireEvent.click(screen.getByText('Alpha'))
+    await screen.findByRole('heading', { name: 'Alpha' })
+    fireEvent.click(screen.getByRole('button', { name: 'Next problem' }))
+    expect(await screen.findByRole('heading', { name: 'Bravo' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Next problem' }))
+    expect(await screen.findByRole('heading', { name: 'Charlie' })).toBeInTheDocument()
+
+    // One Back skips the replaced pages and lands on the clean catalog entry.
     router.history.back()
     await waitFor(() => expect(router.state.location.search).not.toHaveProperty('problem'))
     expect(router.state.location.pathname).toBe('/board/7/catalog')
