@@ -3,11 +3,13 @@
 // the iOS Home logbook section + full LogbookView combined onto one screen. Data comes
 // straight from the shared Supabase `ascents` table (online-first; see ascents.ts).
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInPanel } from '../auth/SignInPanel'
 import { useBoardStore } from '../board/boardStore'
 import { getCatalogProblemsByIds, type CatalogProblem } from '../catalog/catalogSync'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { loadAscents, resetAscents, useAscents, type Ascent } from './ascents'
 import { AscentRow } from './AscentRow'
@@ -17,9 +19,14 @@ import { sessions } from './sessions'
 
 export function LogbookScreen() {
   const { status, isRestoring } = useAuth()
-  const { activeBoard } = useBoardStore()
+  const { addedBoards, activeBoard } = useBoardStore()
   const { status: dataStatus, ascents, error } = useAscents()
+  const navigate = useNavigate()
   const signedIn = status !== 'signedOut'
+  // The store defaults `activeBoard` to Mini 2025 even when it isn't among the added
+  // boards (adding a board doesn't activate it), so gate on membership — not just count —
+  // or the logbook would leak the default board for a user who added only a different one.
+  const activeBoardAdded = addedBoards.some((b) => b.layoutId === activeBoard.layoutId)
 
   const [target, setTarget] = useState<LogTarget | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -66,10 +73,12 @@ export function LogbookScreen() {
     setSheetOpen(true)
   }
 
+  // The board name only belongs here once the active board is one the user added —
+  // otherwise the store's default board would leak a name for a board they never chose.
   const header = (
     <div className="mb-3 px-1">
       <h1 className="text-lg font-bold tracking-tight">Logbook</h1>
-      <p className="text-xs text-muted-foreground">{activeBoard.name}</p>
+      {activeBoardAdded && <p className="text-xs text-muted-foreground">{activeBoard.name}</p>}
     </div>
   )
 
@@ -85,6 +94,23 @@ export function LogbookScreen() {
           </p>
           <SignInPanel />
         </div>
+      </div>
+    )
+  }
+
+  // ── Signed in, but the active board isn't one the user added ────────────────
+  // The logbook is board-scoped, so if the active board isn't in the added list there's
+  // nothing legitimate to scope to. Guard here — ahead of the data checks — so cloud
+  // ascents on the store's default board never render a logbook for a board never added.
+  if (signedIn && !activeBoardAdded) {
+    return (
+      <div className="flex flex-1 flex-col px-3">
+        {header}
+        <EmptyState
+          title="Add a board to start your logbook"
+          body="Your logbook tracks your ascents on each board. Add a board and your climbing history will show up here."
+          action={<Button onClick={() => void navigate({ to: '/boards' })}>Add a board</Button>}
+        />
       </div>
     )
   }
@@ -170,11 +196,20 @@ export function LogbookScreen() {
   )
 }
 
-function EmptyState({ title, body }: { title: string; body: string }) {
+function EmptyState({
+  title,
+  body,
+  action,
+}: {
+  title: string
+  body: string
+  action?: ReactNode
+}) {
   return (
     <div className="mt-6 rounded-lg border border-dashed border-border p-6 text-center">
       <h2 className="text-sm font-semibold">{title}</h2>
       <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">{body}</p>
+      {action && <div className="mt-4">{action}</div>}
     </div>
   )
 }
