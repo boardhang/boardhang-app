@@ -5,16 +5,23 @@ import { boardByLayoutId } from '../board/boards'
 import type { SavedList } from './listsTypes'
 import { AddToListSheet } from './AddToListSheet'
 
+const authStatus = { value: 'signedInWithProfile' as string }
+vi.mock('../auth/AuthProvider', () => ({
+  useAuth: () => ({ status: authStatus.value }),
+}))
+
 let lists: SavedList[] = []
 let changeListener: (() => void) | null = null
 const createList = vi.fn()
 const addProblem = vi.fn().mockResolvedValue(undefined)
 const removeProblem = vi.fn().mockResolvedValue(undefined)
+const loadLists = vi.fn().mockResolvedValue(undefined)
 vi.mock('./listsStore', () => ({
   useSavedLists: () => ({ status: 'loaded', lists, error: null }),
   createList: (...a: unknown[]) => createList(...a),
   addProblem: (...a: unknown[]) => addProblem(...a),
   removeProblem: (...a: unknown[]) => removeProblem(...a),
+  loadLists: (...a: unknown[]) => loadLists(...a),
   subscribeListProblemsChanged: (cb: () => void) => {
     changeListener = cb
     return () => {
@@ -45,14 +52,15 @@ function savedList(id: string, name: string, boardLayoutId: number): SavedList {
   }
 }
 
+const sheet = () => <AddToListSheet open onOpenChange={() => {}} sourceCatalogId="cat-1" board={board} />
+
 function mount() {
-  return render(
-    <AddToListSheet open onOpenChange={() => {}} sourceCatalogId="cat-1" board={board} />,
-  )
+  return render(sheet())
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  authStatus.value = 'signedInWithProfile'
   lists = []
   changeListener = null
   listIdsContaining.mockResolvedValue(new Set<string>())
@@ -175,5 +183,32 @@ describe('AddToListSheet', () => {
     first.resolve(new Set(['l7'])) // stale, must be ignored
     await Promise.resolve()
     expect(screen.getByRole('button', { name: /Sevens/ })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('hydrates the store on open so catalog-cold lists render, not the empty state (BUG A)', async () => {
+    // Store is empty on open (never visited /lists this page-load).
+    lists = []
+    const { rerender } = mount()
+    await waitFor(() => expect(loadLists).toHaveBeenCalled())
+    expect(screen.getByText('Create your first list')).toBeInTheDocument()
+
+    // loadLists populates the store with a matching-board list → it renders.
+    lists = [savedList('l7', 'Sevens', 7)]
+    rerender(sheet())
+    expect(await screen.findByText('Sevens')).toBeInTheDocument()
+    expect(screen.queryByText('Create your first list')).toBeNull()
+  })
+
+  it('an in-flight toggle blocks a concurrent double-fire on the same list (BUG B)', async () => {
+    lists = [savedList('l7', 'Sevens', 7)]
+    addProblem.mockReturnValue(new Promise(() => {})) // never resolves → stays in flight
+    mount()
+
+    const row = await screen.findByRole('button', { name: /Sevens/ })
+    fireEvent.click(row)
+    fireEvent.click(row) // blocked (disabled + in-flight ref guard)
+
+    expect(addProblem).toHaveBeenCalledTimes(1)
+    expect(removeProblem).not.toHaveBeenCalled()
   })
 })

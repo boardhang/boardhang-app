@@ -6,9 +6,10 @@
 // this sheet on success — KTD3 resume). Write failures roll back in the store and raise a
 // sonner Retry toast (D3).
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Bookmark, Check, Plus } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '../auth/AuthProvider'
 import type { CatalogBoardDef } from '../board/boards'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +23,7 @@ import { cn } from '@/lib/utils'
 import {
   addProblem,
   createList,
+  loadLists,
   removeProblem,
   subscribeListProblemsChanged,
   useSavedLists,
@@ -37,12 +39,27 @@ interface AddToListSheetProps {
 }
 
 export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: AddToListSheetProps) {
+  const { status } = useAuth()
+  const signedIn = status !== 'signedOut'
   const { lists } = useSavedLists()
   const boardLists = lists.filter((l) => l.boardLayoutId === board.layoutId)
 
   const [members, setMembers] = useState<Set<string>>(new Set())
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
+  // Membership rows with a mutation in flight — blocks a concurrent double-fire and dims
+  // the row (BUG B). The ref is the synchronous guard (a second click in the same tick
+  // reads it before React re-renders); the state mirror drives the disabled UI.
+  const pendingRef = useRef<Set<string>>(new Set())
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
+
+  // Hydrate the store when the sheet opens (BUG A). Outside the Lists screens nothing
+  // calls loadLists, so opening the sheet from the catalog — the default landing surface —
+  // would otherwise show an empty "Create your first list" despite having cloud lists.
+  // loadLists is cached-first: instant from IndexedDB when warm, one pull when cold.
+  useEffect(() => {
+    if (open && signedIn) void loadLists()
+  }, [open, signedIn])
 
   // Keep the membership checkmarks in sync with the cache (initial read + after any
   // mutation nudges the problem cache).
@@ -71,6 +88,13 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
   }, [open, sourceCatalogId])
 
   async function toggle(listId: string, isMember: boolean) {
+    // In-flight lock (BUG B): ignore a second toggle for a list whose mutation hasn't
+    // settled — a fast double-click would otherwise fire two concurrent adds for the same
+    // never-added problem and one loses the partial unique index (23505). The ref check is
+    // synchronous, so it catches a same-tick double-fire the optimistic state can't.
+    if (pendingRef.current.has(listId)) return
+    pendingRef.current.add(listId)
+    setPendingIds(new Set(pendingRef.current))
     // Optimistic checkmark; the store owns cache + rollback, and the subscription above
     // reconciles us afterward.
     setMembers((prev) => {
@@ -93,6 +117,9 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
               : addProblem(listId, sourceCatalogId, board.layoutId)),
         },
       })
+    } finally {
+      pendingRef.current.delete(listId)
+      setPendingIds(new Set(pendingRef.current))
     }
   }
 
@@ -145,13 +172,18 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
           ) : (
             boardLists.map((list) => {
               const isMember = members.has(list.id)
+              const isPending = pendingIds.has(list.id)
               return (
                 <button
                   key={list.id}
                   type="button"
                   aria-pressed={isMember}
+                  disabled={isPending}
                   onClick={() => void toggle(list.id, isMember)}
-                  className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/50',
+                    isPending && 'opacity-60',
+                  )}
                 >
                   <span
                     className={cn(
