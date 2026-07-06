@@ -57,10 +57,14 @@ export function ListsScreen() {
   // whenever a mutation nudges the problem cache).
   useEffect(() => {
     let cancelled = false
+    // Generation guard: a burst of notifies can start overlapping count reads that
+    // resolve out of order — only the latest issued read applies (#3).
+    let latest = 0
     const read = () => {
+      const seq = ++latest
       countListProblems()
         .then((m) => {
-          if (!cancelled) setCounts(m)
+          if (!cancelled && seq === latest) setCounts(m)
         })
         .catch(() => {
           /* counts are best-effort */

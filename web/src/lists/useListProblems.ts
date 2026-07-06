@@ -24,12 +24,19 @@ export function useListProblems(listId: string): ListProblemsState {
 
   useEffect(() => {
     let cancelled = false
+    // Monotonic generation guard: a rapid burst of subscribeListProblemsChanged notifies
+    // can start overlapping reads that resolve out of order. Each read captures its `seq`
+    // and only applies its `problems` when it's still the latest issued read (#3).
+    let latest = 0
+
     setState({ problems: [], loading: true, degraded: false })
 
-    const reread = () => {
-      readListProblems(listId)
+    // A cache read that only owns the `problems` slot (used by the fast path + notifies).
+    const read = () => {
+      const seq = ++latest
+      return readListProblems(listId)
         .then((problems) => {
-          if (!cancelled) setState((s) => ({ ...s, problems }))
+          if (!cancelled && seq === latest) setState((s) => ({ ...s, problems }))
         })
         .catch(() => {
           /* cache read failures are non-fatal */
@@ -38,24 +45,24 @@ export function useListProblems(listId: string): ListProblemsState {
 
     async function load() {
       // Fast path: whatever is cached, before the network round-trip.
-      try {
-        const cached = await readListProblems(listId)
-        if (!cancelled) setState({ problems: cached, loading: true, degraded: false })
-      } catch {
-        /* non-fatal */
-      }
-      // Best-effort refresh: pull list_problems deltas, then re-read from the cache.
+      await read()
+      // Best-effort refresh: pull list_problems deltas, then re-read from the cache. The
+      // loading→false / degraded transition always applies (a one-time first-load signal),
+      // but a newer read's `problems` is never clobbered by this stale final read.
       const { synced } = await refreshLists()
+      const seq = ++latest
       try {
         const fresh = await readListProblems(listId)
-        if (!cancelled) setState({ problems: fresh, loading: false, degraded: !synced })
+        if (cancelled) return
+        if (seq === latest) setState({ problems: fresh, loading: false, degraded: !synced })
+        else setState((s) => ({ ...s, loading: false, degraded: !synced }))
       } catch {
         if (!cancelled) setState((s) => ({ ...s, loading: false, degraded: true }))
       }
     }
 
     void load()
-    const unsub = subscribeListProblemsChanged(reread)
+    const unsub = subscribeListProblemsChanged(() => void read())
     return () => {
       cancelled = true
       unsub()

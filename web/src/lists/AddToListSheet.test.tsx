@@ -6,6 +6,7 @@ import type { SavedList } from './listsTypes'
 import { AddToListSheet } from './AddToListSheet'
 
 let lists: SavedList[] = []
+let changeListener: (() => void) | null = null
 const createList = vi.fn()
 const addProblem = vi.fn().mockResolvedValue(undefined)
 const removeProblem = vi.fn().mockResolvedValue(undefined)
@@ -14,7 +15,12 @@ vi.mock('./listsStore', () => ({
   createList: (...a: unknown[]) => createList(...a),
   addProblem: (...a: unknown[]) => addProblem(...a),
   removeProblem: (...a: unknown[]) => removeProblem(...a),
-  subscribeListProblemsChanged: () => () => {},
+  subscribeListProblemsChanged: (cb: () => void) => {
+    changeListener = cb
+    return () => {
+      changeListener = null
+    }
+  },
 }))
 
 const listIdsContaining = vi.fn().mockResolvedValue(new Set<string>())
@@ -48,8 +54,17 @@ function mount() {
 beforeEach(() => {
   vi.clearAllMocks()
   lists = []
+  changeListener = null
   listIdsContaining.mockResolvedValue(new Set<string>())
 })
+
+function defer<T>() {
+  let resolve!: (v: T) => void
+  const promise = new Promise<T>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
 
 describe('AddToListSheet', () => {
   it('shows only lists for the current board, with membership checkmarks', async () => {
@@ -118,5 +133,33 @@ describe('AddToListSheet', () => {
     lists = [savedList('l5', 'Fives', 5)]
     mount()
     expect(await screen.findByText('Create your first list')).toBeInTheDocument()
+  })
+
+  it('rapid membership notifies apply the latest read, not a stale one (#3)', async () => {
+    lists = [savedList('l7', 'Sevens', 7)]
+    // Mount read: currently a member.
+    listIdsContaining.mockResolvedValueOnce(new Set(['l7']))
+    mount()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Sevens/ })).toHaveAttribute('aria-pressed', 'true'),
+    )
+
+    // Two rapid notifies: read A (issued first) resolves LAST with a stale "member" set;
+    // read B (issued second) resolves first with the fresh "not a member" set.
+    const first = defer<Set<string>>()
+    const second = defer<Set<string>>()
+    listIdsContaining.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+
+    changeListener!() // read A (stale)
+    changeListener!() // read B (fresh, latest)
+
+    second.resolve(new Set<string>())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Sevens/ })).toHaveAttribute('aria-pressed', 'false'),
+    )
+
+    first.resolve(new Set(['l7'])) // stale, must be ignored
+    await Promise.resolve()
+    expect(screen.getByRole('button', { name: /Sevens/ })).toHaveAttribute('aria-pressed', 'false')
   })
 })

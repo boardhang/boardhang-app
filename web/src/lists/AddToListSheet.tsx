@@ -49,10 +49,14 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
   useEffect(() => {
     if (!open) return
     let cancelled = false
+    // Generation guard: overlapping reads from a burst of notifies can resolve out of
+    // order and leave a stale checkmark set — only the latest issued read applies (#3).
+    let latest = 0
     const read = () => {
+      const seq = ++latest
       listIdsContaining(sourceCatalogId)
         .then((ids) => {
-          if (!cancelled) setMembers(ids)
+          if (!cancelled && seq === latest) setMembers(ids)
         })
         .catch(() => {
           /* best-effort */
