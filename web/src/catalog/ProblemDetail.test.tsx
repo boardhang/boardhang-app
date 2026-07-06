@@ -55,6 +55,7 @@ function Pager({ id, displayed, slab = list }: { id: string; displayed: CatalogP
         board={board}
         angle={40}
         favoriteIds={new Set()}
+        sentIds={new Set()}
         onNavigate={setCurrent}
       />
     </AuthProvider>

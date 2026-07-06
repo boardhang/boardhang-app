@@ -207,7 +207,7 @@ export function CatalogScreen() {
                 board={board}
                 angle={angle}
                 favoriteIds={favoriteIds}
-                isSent={sentIds.has(current.source_catalog_id)}
+                sentIds={sentIds}
                 highlightHolds={highlightHolds}
                 onNavigate={showProblem}
               />

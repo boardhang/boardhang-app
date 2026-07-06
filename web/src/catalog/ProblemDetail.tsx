@@ -34,8 +34,8 @@ interface ProblemDetailProps {
   board: CatalogBoardDef
   angle: number
   favoriteIds: Set<string>
-  /** The user has a logged send for this problem — shows the green sent check (iOS parity). */
-  isSent?: boolean
+  /** Catalog ids the user has a logged send for — drives the green sent check (iOS parity). */
+  sentIds: Set<string>
   /** "col-row" positions from the active holds filter to ring on the board. */
   highlightHolds?: Set<string>
   /** Page to another problem (replace-navigates ?problem). */
@@ -52,7 +52,7 @@ export function ProblemDetail({
   board,
   angle,
   favoriteIds,
-  isSent = false,
+  sentIds,
   highlightHolds,
   onNavigate,
 }: ProblemDetailProps) {
@@ -139,6 +139,7 @@ export function ProblemDetail({
   const pos = displayed.findIndex((p) => p.source_catalog_id === currentId)
   const { visible } = holdSetContext(board.membershipResource, getActiveHoldSetsRaw(board.layoutId))
   const isFav = favoriteIds.has(currentId)
+  const isSent = sentIds.has(currentId)
 
   async function lightUp() {
     if (busy) return
