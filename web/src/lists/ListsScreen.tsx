@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInPanel } from '../auth/SignInPanel'
 import { boardByLayoutId } from '../board/boards'
+import { CatalogBoard } from '../board/CatalogBoard'
 import { getActiveBoardId } from '../board/boardStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -224,7 +225,7 @@ export function ListsScreen() {
               This removes the list and its saved problems. This can’t be undone here.
             </p>
           </DrawerHeader>
-          <DrawerFooter className="flex-row gap-2">
+          <DrawerFooter className="flex-row gap-2 pt-4">
             <DrawerClose render={<Button variant="outline" className="flex-1">Cancel</Button>} />
             <Button
               variant="destructive"
@@ -317,11 +318,18 @@ function ListRowItem({
       <Link
         to="/lists/$listId"
         params={{ listId: list.id }}
-        className="min-w-0 flex-1 px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
+        className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
       >
-        <div className="truncate text-sm font-semibold">{list.name}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">
-          {label} · {count} {count === 1 ? 'problem' : 'problems'}
+        {board && (
+          <div className="w-12 shrink-0">
+            <CatalogBoard board={board} holds={[]} />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold">{list.name}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {label} · {count} {count === 1 ? 'problem' : 'problems'}
+          </div>
         </div>
       </Link>
       <Button variant="ghost" size="icon-sm" aria-label={`Rename ${list.name}`} onClick={onStartEdit}>

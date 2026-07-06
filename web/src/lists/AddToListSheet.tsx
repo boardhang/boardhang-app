@@ -7,7 +7,7 @@
 // sonner Retry toast (D3).
 
 import { useEffect, useRef, useState } from 'react'
-import { Bookmark, Check, Plus } from 'lucide-react'
+import { Bookmark, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '../auth/AuthProvider'
 import type { CatalogBoardDef } from '../board/boards'
@@ -30,6 +30,9 @@ import {
 } from './listsStore'
 import { listIdsContaining } from './listsSync'
 import { boardShortLabel, trimListName } from './listsTypes'
+
+/** Common list names offered as quick-fill pills under the new-list input. */
+const NAME_SUGGESTIONS = ['Projects', 'Warmups', 'Ticklist', 'To try'] as const
 
 interface AddToListSheetProps {
   open: boolean
@@ -158,7 +161,6 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
       <DrawerContent>
         <DrawerHeader>
           <DrawerTitle>Save to list</DrawerTitle>
-          <p className="text-sm text-muted-foreground">{boardShortLabel(board.name)}</p>
         </DrawerHeader>
 
         <div className="max-h-[60vh] space-y-1 overflow-y-auto px-3 pb-2">
@@ -202,26 +204,41 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
 
         {/* New list — inline name → create + add the current problem. */}
         <form
-          className="flex gap-2 border-t border-border px-3 py-3"
+          className="flex flex-col gap-2 border-t border-border px-3 py-3"
           onSubmit={(e) => {
             e.preventDefault()
             void handleCreate()
           }}
         >
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
-            <Plus className="size-4" />
-          </span>
-          <Input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="New list name"
-            aria-label="New list name"
-            maxLength={60}
-          />
-          <Button type="submit" disabled={creating || trimListName(newName).length === 0}>
-            <Bookmark className="size-4" />
-            Save
-          </Button>
+          {/* Quick-fill suggestions — only while the field is empty. Tapping fills the
+              input (doesn't submit) so the name is still editable. */}
+          {trimListName(newName).length === 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {NAME_SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setNewName(s)}
+                  className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="New list name"
+              aria-label="New list name"
+              maxLength={60}
+            />
+            <Button type="submit" disabled={creating || trimListName(newName).length === 0}>
+              <Bookmark className="size-4" />
+              Save
+            </Button>
+          </div>
         </form>
       </DrawerContent>
     </Drawer>
