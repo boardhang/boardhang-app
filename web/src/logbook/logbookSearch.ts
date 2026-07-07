@@ -11,8 +11,10 @@ export interface LogbookSearch {
   problem?: string
 }
 
-/** The default (stripped) value of every param. */
-export const LOGBOOK_SEARCH_DEFAULTS = {
+/** The default (stripped) value of every param. `Required<…>` forces every schema key to
+ *  appear here, so a future param can't be silently omitted from the strip middleware and
+ *  re-bloat the URL — the guard `catalogSearch.ts` gets from its non-optional schema. */
+export const LOGBOOK_SEARCH_DEFAULTS: Required<LogbookSearch> = {
   problem: '',
 }
 

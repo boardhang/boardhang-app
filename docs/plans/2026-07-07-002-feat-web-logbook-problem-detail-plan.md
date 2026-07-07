@@ -39,11 +39,15 @@ drawer off a history-integrated search param makes Back close the drawer and sta
 
 1. **History-integrated drawer** via a `?problem=<source_catalog_id>` search param on
    `/logbook`, mirroring CatalogScreen. Back closes the drawer and stays on the tab.
-2. **No pager** — pass `displayed={[current]}` so prev/next is disabled. A plan review
-   flagged that a deduped, newest-first "distinct problems" pager maps to no on-screen
-   order (a problem logged on 3 days shows 3 rows, but "next" would jump to a different
-   problem, skipping visible neighbors). A logbook row is a single event, so tapping
-   opens that problem's detail with nothing to page through.
+2. **Session-scoped pager** — prev/next walks the tapped row's **day-session** only: its
+   resolvable problems, deduped by `source_catalog_id` in on-screen order. A one-problem
+   day has no arrows; a 7-problem day pages within those 7 and never crosses the date
+   boundary. (An earlier revision shipped *no* pager after a review flagged that a
+   whole-logbook deduped list maps to no on-screen order; scoping to the session restores
+   paging while keeping the order faithful to what's on screen.) The session is a **state
+   snapshot** captured at tap time — `?problem` can't name the session (a problem logged
+   on two days shares one id), mirroring CatalogScreen's recents `pagerStack`; a cold
+   deep-link/refresh falls back to the single open problem.
 3. **Non-resolvable rows** are not tappable (no `onSelect`), no error UI, no
    fetch-on-demand. They stay visually identical to tappable rows (iOS parity) and keep
    their edit pencil.
@@ -73,14 +77,20 @@ drawer off a history-integrated search param makes Back close the drawer and sta
   lists derivation, scoped to `activeBoard.layoutId`).
 - Open (push): `pushed.current = true; navigate({ search: prev => ({ ...prev, problem: id }) })`.
   Close: `pushed.current ? router.history.back() : navigate({ search: prev => ({ ...prev, problem: '' }), replace: true })`.
+- Per day-session, precompute `resolveSession(session.ascents, catalogById)` — the
+  session's resolvable problems, deduped by `source_catalog_id` in on-screen order.
+- On tap, `openProblem(id, sessionProblems)` stashes that session array as `sessionStack`
+  state and pushes `?problem`. `displayed = sessionStack ?? (current ? [current] : [])`;
+  clear `sessionStack` in an effect when `?problem` clears. `current` resolves the id
+  against `sessionStack` first, then `catalogById` (so a deep-link still resolves).
 - Render `<Drawer open={current !== undefined} onOpenChange={open => !open && closeDrawer()} showSwipeHandle>`
   with `DrawerContent`, sr-only `DrawerTitle`, scroll container, and — guarded by
-  `{current && (...)}` — `<ProblemDetail problem={current} displayed={[current]}
+  `{current && (...)}` — `<ProblemDetail problem={current} displayed={displayed}
   board={activeBoard} angle={current.angle} favoriteIds={favoriteIds} sentIds={sentIds}
   onNavigate={showProblem} />`. The `{current && ...}` guard is required so
   `current.angle` is never read while the drawer is closed (`current` undefined).
 - Pass `onSelect` to `AscentRow` only when the row's catalog entry resolves:
-  `onSelect={catalog ? () => openProblem(ascent.sourceCatalogId!) : undefined}`.
+  `onSelect={catalog ? () => openProblem(ascent.sourceCatalogId!, sessionProblems) : undefined}`.
 
 ### `web/src/logbook/AscentRow.tsx`
 - Change `onSelect?: (ascent: Ascent) => void` to `onSelect?: () => void`.
@@ -90,7 +100,8 @@ drawer off a history-integrated search param makes Back close the drawer and sta
   Remove the old thumbnail-only inner button.
 
 ## Out of scope
-- Prev/next paging (decision 2 — single-item domain).
+- Cross-day paging (decision 2 — the pager stays within one day-session).
+- Pagination surviving a refresh / cold deep-link (session snapshot is state, not URL).
 - Opening detail for user-created / uncached rows (decision 3).
 - A pending/loading spinner for a deep-linked `?problem` before the cache resolves
   (CatalogScreen has one; the logbook's cache is small and best-effort — v1 skips it).

@@ -40,9 +40,18 @@ export function LogbookScreen() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [catalogById, setCatalogById] = useState<Map<string, CatalogProblem>>(new Map())
 
-  // Enrich rows with cached catalog entries (setter / benchmark / thumbnail).
+  // Board-scoped view, mirroring iOS (the pyramid + list follow the active board).
+  const boardAscents = useMemo(
+    () => ascents.filter((a) => a.boardLayoutId === activeBoard.layoutId),
+    [ascents, activeBoard.layoutId],
+  )
+
+  // Enrich rows with cached catalog entries (setter / benchmark / thumbnail). Scoped to
+  // the *active board's* ascents — not all ascents — so a `?problem` deep-link can only
+  // ever resolve to a problem on the active board, never another board's holds rendered
+  // on this board's grid (the drawer renders `board={activeBoard}`).
   useEffect(() => {
-    const ids = ascents.map((a) => a.sourceCatalogId).filter((x): x is string => x !== null)
+    const ids = boardAscents.map((a) => a.sourceCatalogId).filter((x): x is string => x !== null)
     if (ids.length === 0) {
       setCatalogById(new Map())
       return
@@ -58,13 +67,7 @@ export function LogbookScreen() {
     return () => {
       cancelled = true
     }
-  }, [ascents])
-
-  // Board-scoped view, mirroring iOS (the pyramid + list follow the active board).
-  const boardAscents = useMemo(
-    () => ascents.filter((a) => a.boardLayoutId === activeBoard.layoutId),
-    [ascents, activeBoard.layoutId],
-  )
+  }, [boardAscents])
   const daySessions = useMemo(() => sessions(boardAscents), [boardAscents])
   const hasSends = boardAscents.some((a) => a.sent)
 
@@ -76,11 +79,26 @@ export function LogbookScreen() {
   // ── Problem detail drawer, driven by ?problem (CatalogScreen pattern) ────────
   // /logbook is a tab root, so the drawer rides a history-integrated search param:
   // Back closes it and stays on the tab (a pure-local-state drawer would eject the
-  // user from the whole Logbook tab on Back). Push on open so Back closes; no pager
-  // (a logbook row is a single event — `displayed={[current]}` disables prev/next).
+  // user from the whole Logbook tab on Back). Push on open so Back closes.
+  //
+  // The pager *domain* is the tapped row's day-session (deduped, resolvable problems
+  // in on-screen order), captured as a state snapshot at open time — `?problem` alone
+  // can't name the session (a problem logged on two days shares one id), mirroring
+  // CatalogScreen's recents `pagerStack`. A cold deep-link / refresh has no snapshot →
+  // falls back to a single-problem view (prev/next off).
   const search = routeApi.useSearch()
   const openId = search.problem
-  const current = openId ? catalogById.get(openId) : undefined
+  const [sessionStack, setSessionStack] = useState<CatalogProblem[] | null>(null)
+  const current = openId
+    ? (sessionStack?.find((p) => p.source_catalog_id === openId) ?? catalogById.get(openId))
+    : undefined
+  const displayed = sessionStack ?? (current ? [current] : [])
+
+  // Drop the session snapshot whenever the drawer closes (?problem cleared by any means:
+  // Back, gesture, deep-link removal) so a later tap never pages over a stale session.
+  useEffect(() => {
+    if (!openId) setSessionStack(null)
+  }, [openId])
 
   const { favoriteIds } = useFavorites()
   // Logged sends → the green sent check on the detail (iOS parity), mirroring
@@ -97,8 +115,9 @@ export function LogbookScreen() {
 
   // Push-opened drawers close on Back; there's nothing to go Back to for a cold deep link.
   const pushed = useRef(false)
-  function openProblem(id: string) {
+  function openProblem(id: string, sessionProblems: CatalogProblem[]) {
     pushed.current = true
+    setSessionStack(sessionProblems)
     void navigate({ search: (prev) => ({ ...prev, problem: id }) })
   }
   function showProblem(id: string) {
@@ -210,35 +229,42 @@ export function LogbookScreen() {
       )}
 
       <div className="space-y-4">
-        {daySessions.map((session) => (
-          <section key={session.dayKey}>
-            <h2 className="px-1 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {session.title}
-            </h2>
-            <div className="overflow-hidden rounded-lg border border-border">
-              {session.ascents.map((ascent) => {
-                // Only rows whose catalog entry resolved open the detail drawer; a
-                // user-created or uncached row gets no onSelect (not tappable).
-                const catalog = ascent.sourceCatalogId
-                  ? catalogById.get(ascent.sourceCatalogId)
-                  : undefined
-                return (
-                  <AscentRow
-                    key={ascent.id}
-                    ascent={ascent}
-                    catalog={catalog}
-                    board={activeBoard}
-                    showThumbnail
-                    onEdit={openEdit}
-                    onSelect={
-                      catalog ? () => openProblem(ascent.sourceCatalogId as string) : undefined
-                    }
-                  />
-                )
-              })}
-            </div>
-          </section>
-        ))}
+        {daySessions.map((session) => {
+          // This day's pager domain: its resolvable problems, deduped, in on-screen
+          // order. Tapping any row in the session pages within exactly this list.
+          const sessionProblems = resolveSession(session.ascents, catalogById)
+          return (
+            <section key={session.dayKey}>
+              <h2 className="px-1 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {session.title}
+              </h2>
+              <div className="overflow-hidden rounded-lg border border-border">
+                {session.ascents.map((ascent) => {
+                  // Only rows whose catalog entry resolved open the detail drawer; a
+                  // user-created or uncached row gets no onSelect (not tappable).
+                  const catalog = ascent.sourceCatalogId
+                    ? catalogById.get(ascent.sourceCatalogId)
+                    : undefined
+                  return (
+                    <AscentRow
+                      key={ascent.id}
+                      ascent={ascent}
+                      catalog={catalog}
+                      board={activeBoard}
+                      showThumbnail
+                      onEdit={openEdit}
+                      onSelect={
+                        catalog
+                          ? () => openProblem(ascent.sourceCatalogId as string, sessionProblems)
+                          : undefined
+                      }
+                    />
+                  )
+                })}
+              </div>
+            </section>
+          )
+        })}
       </div>
 
       {error && <ErrorNote error={error} />}
@@ -252,7 +278,7 @@ export function LogbookScreen() {
             {current && (
               <ProblemDetail
                 problem={current}
-                displayed={[current]}
+                displayed={displayed}
                 board={activeBoard}
                 angle={current.angle}
                 favoriteIds={favoriteIds}
@@ -265,6 +291,25 @@ export function LogbookScreen() {
       </Drawer>
     </div>
   )
+}
+
+/** A day-session's pager domain: its resolvable problems in on-screen order, deduped by
+ *  `source_catalog_id` (keep the first/topmost occurrence). Non-resolvable ascents
+ *  (user-created or uncached) are skipped — they were never tappable. */
+function resolveSession(
+  ascents: Ascent[],
+  catalogById: Map<string, CatalogProblem>,
+): CatalogProblem[] {
+  const seen = new Set<string>()
+  const out: CatalogProblem[] = []
+  for (const a of ascents) {
+    if (!a.sourceCatalogId || seen.has(a.sourceCatalogId)) continue
+    const problem = catalogById.get(a.sourceCatalogId)
+    if (!problem) continue
+    seen.add(a.sourceCatalogId)
+    out.push(problem)
+  }
+  return out
 }
 
 function EmptyState({

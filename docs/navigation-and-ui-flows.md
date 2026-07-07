@@ -170,11 +170,15 @@ re-fills defaults on read. `sortSecondary` is deliberately *not* in the URL (fix
   when the active filters exclude it (prev/next then disable).
 - **Logbook problem drawer**: `/logbook` reuses the same `ProblemDetail` in its own `?problem`
   drawer (`web/src/logbook/logbookSearch.ts` — one param, same `stripSearchParams` + push-on-open /
-  `router.history.back()` close as the catalog). Two deliberate differences: it's history-integrated
-  precisely *because* `/logbook` is a tab root (a pure-local-state drawer would make Back leave the
-  tab), and it passes `displayed={[current]}` so there's **no pager** — a logbook row is a single
-  event, and a deduped cross-problem sequence would map to no on-screen order. Rows whose ascent has
-  no resolvable catalog entry (user-created or uncached) aren't tappable.
+  `router.history.back()` close as the catalog). It's history-integrated precisely *because*
+  `/logbook` is a tab root (a pure-local-state drawer would make Back leave the tab). The pager
+  **domain is the tapped row's day-session** — its resolvable problems, deduped by
+  `source_catalog_id` in on-screen order — so prev/next stays within that date and never crosses
+  into another day. Like CatalogScreen's recents `pagerStack`, the session is a state snapshot
+  captured at tap time (the id in `?problem` can't name the session, since a problem logged on two
+  days shares one id); a cold deep-link/refresh has no snapshot and falls back to the single open
+  problem (prev/next off). Rows whose ascent has no resolvable catalog entry (user-created or
+  uncached) aren't tappable.
 - **PWA**: `vite.config.ts` sets `navigateFallback: '/index.html'` (+ `/assets/` denylist) so deep
   links and the OAuth return survive a hard load. `AppLayout` also mounts two iOS-only, environment-
   gated shell banners (`web/src/shell/{BleBrowserBanner,InstallBanner}.tsx`), driven by the detection
