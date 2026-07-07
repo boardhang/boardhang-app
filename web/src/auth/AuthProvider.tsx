@@ -11,6 +11,7 @@ import {
 import type { Session } from '@supabase/supabase-js'
 import { isConfigured, supabase } from '../supabase/client'
 import { syncListsIdentity } from '../lists/listsStore'
+import { syncSessionsIdentity } from '../sessions/sessionsStore'
 import { normalizeHandle } from './handle'
 import { profileFromRow, type AuthStatus, type Profile, type ProfileRow } from './types'
 
@@ -116,6 +117,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Clearing the cache is best-effort; the gate stays un-advanced (see
         // syncListsIdentity) so a later auth event retries. Auth must proceed.
       }
+      // Same cross-account safety for the active collaboration session (device-local
+      // pointer + per-member chip selections): drop them when the identity changes so a
+      // shared device never inherits the previous user's session. Sync + localStorage-only.
+      syncSessionsIdentity(session?.user.id ?? null)
       if (!session) {
         applyProfile(null)
         setStatus('signedOut')
