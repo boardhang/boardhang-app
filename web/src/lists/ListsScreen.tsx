@@ -12,7 +12,7 @@ import { useAuth } from '../auth/AuthProvider'
 import { SignInPanel } from '../auth/SignInPanel'
 import { boardByLayoutId } from '../board/boards'
 import { CatalogBoard } from '../board/CatalogBoard'
-import { getActiveBoardId } from '../board/boardStore'
+import { useBoardStore } from '../board/boardStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -40,6 +40,7 @@ import { MAX_LIST_NAME, boardShortLabel, trimListName, type SavedList } from './
 export function ListsScreen() {
   const { status, isRestoring } = useAuth()
   const { status: dataStatus, lists, error } = useSavedLists()
+  const { activeBoard } = useBoardStore()
   const signedIn = status !== 'signedOut'
 
   const [counts, setCounts] = useState<Map<string, number>>(new Map())
@@ -84,12 +85,16 @@ export function ListsScreen() {
     const name = trimListName(newName)
     if (!name) return // blank rejected
     setNewName('')
+    // Scope the list to the board the user sees as active (the resolved snapshot
+    // board, always one they own) — not the raw stored id, which can lag behind
+    // for legacy state and would orphan the list to an un-owned board.
+    const boardId = activeBoard.layoutId
     try {
-      await createList(name, getActiveBoardId())
+      await createList(name, boardId)
     } catch (e) {
       toast.error('Could not create the list.', {
         description: e instanceof Error ? e.message : undefined,
-        action: { label: 'Retry', onClick: retryAction(() => createList(name, getActiveBoardId())) },
+        action: { label: 'Retry', onClick: retryAction(() => createList(name, boardId)) },
       })
     }
   }
