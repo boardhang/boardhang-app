@@ -59,7 +59,18 @@ describe('applyFilters — sort', () => {
       p({ source_catalog_id: 'easyB', grade: '6A', repeats: 9 }),
     ]
     // primary easiest (6A before 7A), secondary repeats (desc) within the tie.
-    expect(ids(applyFilters(list, state(), ctx))).toEqual(['easyB', 'easyA', 'hard'])
+    const s = state({ sortPrimary: 'easiest', sortSecondary: 'repeats' })
+    expect(ids(applyFilters(list, s, ctx))).toEqual(['easyB', 'easyA', 'hard'])
+  })
+
+  it('defaults to Most repeats, then Easiest first', () => {
+    const list = [
+      p({ source_catalog_id: 'popularHard', grade: '7A', repeats: 9 }),
+      p({ source_catalog_id: 'nicheEasy', grade: '6A', repeats: 1 }),
+      p({ source_catalog_id: 'popularEasy', grade: '6A', repeats: 9 }),
+    ]
+    // Default: repeats desc first (9s before the 1), then easiest grade within the tie.
+    expect(ids(applyFilters(list, state(), ctx))).toEqual(['popularEasy', 'popularHard', 'nicheEasy'])
   })
 
   it('hardest-first reverses the grade order', () => {

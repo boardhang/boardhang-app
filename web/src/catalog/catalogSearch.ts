@@ -11,11 +11,19 @@
 //
 // Encodings (plan §4): booleans as `1` (present) / omitted; grade as ordinal
 // `min-max` into FONT_GRADES; methods/holds comma-joined; angle `0` = "use the
-// board's default". `sortSecondary` is deliberately NOT in the URL — it is a
-// fixed tie-breaker, so shared links reproduce the default secondary sort.
+// board's default". The secondary sort rides `sortThenBy` (a SortKey or `none` for
+// no tiebreak), stripped at its default; a secondary that shares the primary's
+// dimension is dropped on read so URL state matches the "Then by" control.
 
 import { FONT_GRADES } from '../board/grades'
-import { DEFAULT_FILTERS, STATUS_KEYS, type FilterState, type SortKey, type StatusKey } from './filters'
+import {
+  DEFAULT_FILTERS,
+  STATUS_KEYS,
+  sortDimension,
+  type FilterState,
+  type SortKey,
+  type StatusKey,
+} from './filters'
 
 const SORT_KEYS: readonly SortKey[] = ['easiest', 'hardest', 'rated', 'repeats']
 
@@ -35,6 +43,8 @@ export interface CatalogSearch {
   fav: 0 | 1
   /** Primary sort key. */
   sort: SortKey
+  /** Secondary ("Then by") sort key, or `'none'` for no tiebreak. */
+  sortThenBy: SortKey | 'none'
   /** Wall angle; `0` = "use the board's default" (resolved in the route). */
   angle: number
   /** Comma-joined `"col-row"` positions a problem must include; `''` = none. */
@@ -53,7 +63,8 @@ export const CATALOG_SEARCH_DEFAULTS: CatalogSearch = {
   stars: 0,
   method: '',
   fav: 0,
-  sort: 'easiest',
+  sort: DEFAULT_FILTERS.sortPrimary,
+  sortThenBy: DEFAULT_FILTERS.sortSecondary ?? 'none',
   angle: 0,
   holds: '',
   status: '',
@@ -71,7 +82,11 @@ const num = (v: unknown): number => {
 /** Coerce a raw parsed search object into the typed schema, defaulting anything
  *  missing or malformed. This is the route's `validateSearch`. */
 export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSearch {
-  const sort = SORT_KEYS.includes(raw.sort as SortKey) ? (raw.sort as SortKey) : 'easiest'
+  const sort = SORT_KEYS.includes(raw.sort as SortKey) ? (raw.sort as SortKey) : DEFAULT_FILTERS.sortPrimary
+  const sortThenBy =
+    raw.sortThenBy === 'none' || SORT_KEYS.includes(raw.sortThenBy as SortKey)
+      ? (raw.sortThenBy as SortKey | 'none')
+      : DEFAULT_FILTERS.sortSecondary ?? 'none'
   return {
     q: str(raw.q),
     grade: str(raw.grade),
@@ -80,6 +95,7 @@ export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSear
     method: str(raw.method),
     fav: num(raw.fav) === 1 ? 1 : 0,
     sort,
+    sortThenBy,
     angle: Math.max(0, Math.round(num(raw.angle))),
     holds: str(raw.holds),
     status: str(raw.status),
@@ -142,6 +158,7 @@ export function filtersToSearch(f: FilterState): Omit<CatalogSearch, 'angle' | '
     method: f.methods.join(','),
     fav: f.favoritesOnly ? 1 : 0,
     sort: f.sortPrimary,
+    sortThenBy: f.sortSecondary ?? 'none',
     holds: f.holdsFilter.join(','),
     status: encodeStatus(f.statusFilters),
   }
@@ -151,10 +168,15 @@ export function filtersToSearch(f: FilterState): Omit<CatalogSearch, 'angle' | '
  *  transient search query rides `q` here (it is no longer a separate store);
  *  `sortSecondary` is forced to its default (it is not URL-addressable). */
 export function searchToFilters(s: CatalogSearch): FilterState {
+  const secondary = s.sortThenBy === 'none' ? null : s.sortThenBy
+  // Drop a secondary that shares the primary's dimension (a same-dimension tiebreak is
+  // meaningless and the "Then by" control never offers it), keeping URL state coherent.
+  const sortSecondary =
+    secondary && sortDimension(secondary) === sortDimension(s.sort) ? null : secondary
   return {
     search: s.q,
     sortPrimary: s.sort,
-    sortSecondary: DEFAULT_FILTERS.sortSecondary,
+    sortSecondary,
     gradeRange: decodeGrade(s.grade),
     benchmarkOnly: s.bench === 1,
     minStars: s.stars,

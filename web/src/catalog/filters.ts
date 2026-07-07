@@ -54,8 +54,10 @@ export interface FilterState {
 
 export const DEFAULT_FILTERS: FilterState = {
   search: '',
-  sortPrimary: 'easiest',
-  sortSecondary: 'repeats',
+  // Default sort: Most repeats, then Easiest first (popular problems first, ties
+  // broken by grade). The two keys must stay on different sort dimensions.
+  sortPrimary: 'repeats',
+  sortSecondary: 'easiest',
   gradeRange: null,
   benchmarkOnly: false,
   minStars: 0,

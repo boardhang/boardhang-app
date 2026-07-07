@@ -42,7 +42,7 @@ describe('catalogSearch round-trip', () => {
     const f: FilterState = {
       search: 'crimp',
       sortPrimary: 'hardest',
-      sortSecondary: 'repeats', // fixed default; not in URL
+      sortSecondary: 'repeats', // different dimension from primary — round-trips via sortThenBy
       gradeRange: [3, 12],
       benchmarkOnly: true,
       minStars: 4,
@@ -54,9 +54,21 @@ describe('catalogSearch round-trip', () => {
     expect(roundTrip(f)).toEqual(f)
   })
 
-  it('forces sortSecondary back to the default (not URL-addressable)', () => {
+  it('round-trips a chosen secondary sort (Then by)', () => {
+    const f: FilterState = { ...DEFAULT_FILTERS, sortPrimary: 'easiest', sortSecondary: 'rated' }
+    expect(roundTrip(f).sortSecondary).toBe('rated')
+  })
+
+  it('round-trips "No tiebreak" (null secondary)', () => {
     const f: FilterState = { ...DEFAULT_FILTERS, sortSecondary: null }
-    expect(roundTrip(f).sortSecondary).toBe(DEFAULT_FILTERS.sortSecondary)
+    expect(roundTrip(f).sortSecondary).toBeNull()
+  })
+
+  it('drops a secondary sort that shares the primary dimension on read', () => {
+    // hardest + easiest are both the grade dimension: a same-dimension tiebreak is
+    // meaningless, so it decodes to null (mirrors the "Then by" control's options).
+    const f: FilterState = { ...DEFAULT_FILTERS, sortPrimary: 'hardest', sortSecondary: 'easiest' }
+    expect(roundTrip(f).sortSecondary).toBeNull()
   })
 
   it('encodes booleans as 1 and omits them when off', () => {
@@ -128,8 +140,9 @@ describe('validateCatalogSearch', () => {
   })
 
   it('coerces malformed values to safe defaults', () => {
-    const s = validateCatalogSearch({ sort: 'bogus', stars: '99', bench: 'x', angle: -5 })
-    expect(s.sort).toBe('easiest')
+    const s = validateCatalogSearch({ sort: 'bogus', sortThenBy: 'bogus', stars: '99', bench: 'x', angle: -5 })
+    expect(s.sort).toBe(DEFAULT_FILTERS.sortPrimary)
+    expect(s.sortThenBy).toBe(DEFAULT_FILTERS.sortSecondary)
     expect(s.stars).toBe(5) // clamped
     expect(s.bench).toBe(0)
     expect(s.angle).toBe(0)
