@@ -6,20 +6,20 @@
 // tapped positions into state.holdsFilter (applyFilters matches problems that
 // use all selected holds).
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import { FONT_GRADES } from '../board/grades'
 import { HoldFilterPicker } from './HoldFilterPicker'
 import {
   SORT_LABELS,
-  hasActiveFilters,
-  resetFilters,
+  STATUS_KEYS,
+  STATUS_LABELS,
   sortDimension,
   type FilterState,
   type SortKey,
+  type StatusKey,
 } from './filters'
-import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Toggle } from '@/components/ui/toggle'
+import { cn } from '@/lib/utils'
 
 const SORT_KEYS: SortKey[] = ['easiest', 'hardest', 'rated', 'repeats']
 const RATING_LABELS: Record<string, string> = {
@@ -49,20 +50,43 @@ interface FilterControlsProps {
   gradeSpan: [number, number]
   /** Distinct method labels present in the slab. */
   methods: string[]
+  /** Signed in AND ascents loaded — gates the status filter's count + Reset. */
+  statusReady: boolean
+  /** Definitively signed out — disables the status chips and shows the hint. */
+  signedOut: boolean
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  className,
+  children,
+}: {
+  label: string
+  className?: string
+  children: React.ReactNode
+}) {
   return (
-    <div className="space-y-1.5">
+    <div className={cn('space-y-1.5', className)}>
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
       {children}
     </div>
   )
 }
 
-export function FilterControls({ state, onChange, board, gradeSpan, methods }: FilterControlsProps) {
+export function FilterControls({
+  state,
+  onChange,
+  board,
+  gradeSpan,
+  methods,
+  statusReady,
+  signedOut,
+}: FilterControlsProps) {
   const set = (patch: Partial<FilterState>) => onChange({ ...state, ...patch })
   const [holdPickerOpen, setHoldPickerOpen] = useState(false)
+  const statusHintId = useId()
+  const toggleStatus = (k: StatusKey, active: boolean) =>
+    set({ statusFilters: active ? [...state.statusFilters, k] : state.statusFilters.filter((x) => x !== k) })
   const range = state.gradeRange ?? gradeSpan
   const secondaryOptions = SORT_KEYS.filter(
     (k) => sortDimension(k) !== sortDimension(state.sortPrimary),
@@ -78,11 +102,11 @@ export function FilterControls({ state, onChange, board, gradeSpan, methods }: F
   }
 
   return (
-    <div className="space-y-4">
-      <Field label="Sort">
-        <div className="flex gap-2">
+    <div className="space-y-5">
+      <div className="flex gap-2">
+        <Field label="Sort" className="flex-1">
           <Select items={SORT_LABELS} value={state.sortPrimary} onValueChange={(v) => changePrimary(v as SortKey)}>
-            <SelectTrigger className="flex-1">
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -93,12 +117,14 @@ export function FilterControls({ state, onChange, board, gradeSpan, methods }: F
               ))}
             </SelectContent>
           </Select>
+        </Field>
+        <Field label="Then by" className="flex-1">
           <Select
             items={secondaryItems}
             value={state.sortSecondary ?? 'none'}
             onValueChange={(v) => set({ sortSecondary: v === 'none' ? null : (v as SortKey) })}
           >
-            <SelectTrigger className="flex-1">
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -110,8 +136,8 @@ export function FilterControls({ state, onChange, board, gradeSpan, methods }: F
               ))}
             </SelectContent>
           </Select>
-        </div>
-      </Field>
+        </Field>
+      </div>
 
       <Field label={`Grade · ${FONT_GRADES[range[0]]} – ${FONT_GRADES[range[1]]}`}>
         <Slider
@@ -140,26 +166,55 @@ export function FilterControls({ state, onChange, board, gradeSpan, methods }: F
         </button>
       </Field>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Toggle variant="outline" size="sm" pressed={state.benchmarkOnly} onPressedChange={(v) => set({ benchmarkOnly: v })}>
-          Benchmarks
-        </Toggle>
-        <Toggle variant="outline" size="sm" pressed={state.favoritesOnly} onPressedChange={(v) => set({ favoritesOnly: v })}>
-          Favorites
-        </Toggle>
-        <Select items={RATING_LABELS} value={String(state.minStars)} onValueChange={(v) => set({ minStars: Number(v) })}>
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(RATING_LABELS).map(([v, label]) => (
-              <SelectItem key={v} value={v}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {/* Benchmarks, Favorites, and the three ascent-status chips share one flat row
+          (iOS parity); the min-rating select trails them. The sign-in hint sits under
+          the row so it's read before the disabled status chips it describes. */}
+      <Field label="Filter">
+        <div className="flex flex-wrap items-center gap-2">
+          <Toggle variant="outline" size="sm" pressed={state.benchmarkOnly} onPressedChange={(v) => set({ benchmarkOnly: v })}>
+            Benchmarks
+          </Toggle>
+          <Toggle variant="outline" size="sm" pressed={state.favoritesOnly} onPressedChange={(v) => set({ favoritesOnly: v })}>
+            Favorites
+          </Toggle>
+          {STATUS_KEYS.map((k) => (
+            <Toggle
+              key={k}
+              variant="outline"
+              size="sm"
+              // Interactive only when the status filter can actually apply
+              // (statusReady = signed in AND ascents loaded). This keeps chip state
+              // honest: a pressed chip never coexists with a skipped predicate — the
+              // signed-in-but-ascents-loading/error window disables rather than showing
+              // an enabled-but-inert chip. The sign-in hint stays gated on `signedOut`
+              // so a returning user mid-restore sees neither the hint nor a live chip.
+              disabled={!statusReady}
+              aria-describedby={signedOut ? statusHintId : undefined}
+              pressed={state.statusFilters.includes(k)}
+              onPressedChange={(active) => toggleStatus(k, active)}
+            >
+              {STATUS_LABELS[k]}
+            </Toggle>
+          ))}
+          <Select items={RATING_LABELS} value={String(state.minStars)} onValueChange={(v) => set({ minStars: Number(v) })}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(RATING_LABELS).map(([v, label]) => (
+                <SelectItem key={v} value={v}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {signedOut && (
+          <div id={statusHintId} className="text-xs text-muted-foreground">
+            Sign in to filter by status
+          </div>
+        )}
+      </Field>
 
       {methods.length > 0 && (
         <Field label="Method">
@@ -179,12 +234,6 @@ export function FilterControls({ state, onChange, board, gradeSpan, methods }: F
             ))}
           </div>
         </Field>
-      )}
-
-      {hasActiveFilters(state) && (
-        <Button variant="ghost" size="sm" onClick={() => onChange(resetFilters(state))}>
-          Reset filters
-        </Button>
       )}
 
       <HoldFilterPicker

@@ -20,7 +20,13 @@ const PAGE = 30
 // No-transform default: apply DEFAULT_FILTERS (all no-op filters + the default
 // grade sort) so the unfiltered list matches exactly what U9's transform yields
 // before any filter is set — the two "default sorts" can't drift.
-const DEFAULT_CONTEXT: FilterContext = { favoriteIds: new Set(), isClimbable: () => true }
+const DEFAULT_CONTEXT: FilterContext = {
+  favoriteIds: new Set(),
+  isClimbable: () => true,
+  sentIds: new Set(),
+  loggedIds: new Set(),
+  statusReady: false,
+}
 
 interface CatalogListProps {
   board: CatalogBoardDef

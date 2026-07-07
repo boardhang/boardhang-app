@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CatalogHold, CatalogProblem } from './catalogSync'
 import {
   DEFAULT_FILTERS,
+  activeFilterCount,
   applyFilters,
   hasActiveFilters,
   resetFilters,
@@ -26,7 +27,15 @@ function p(over: Partial<CatalogProblem> & { source_catalog_id: string }): Catal
   }
 }
 
-const ctx: FilterContext = { favoriteIds: new Set(), isClimbable: () => true }
+const mkCtx = (over: Partial<FilterContext> = {}): FilterContext => ({
+  favoriteIds: new Set(),
+  isClimbable: () => true,
+  sentIds: new Set(),
+  loggedIds: new Set(),
+  statusReady: false,
+  ...over,
+})
+const ctx: FilterContext = mkCtx()
 const state = (over: Partial<FilterState> = {}): FilterState => ({ ...DEFAULT_FILTERS, ...over })
 const ids = (list: CatalogProblem[]) => list.map((x) => x.source_catalog_id)
 
@@ -50,7 +59,18 @@ describe('applyFilters — sort', () => {
       p({ source_catalog_id: 'easyB', grade: '6A', repeats: 9 }),
     ]
     // primary easiest (6A before 7A), secondary repeats (desc) within the tie.
-    expect(ids(applyFilters(list, state(), ctx))).toEqual(['easyB', 'easyA', 'hard'])
+    const s = state({ sortPrimary: 'easiest', sortSecondary: 'repeats' })
+    expect(ids(applyFilters(list, s, ctx))).toEqual(['easyB', 'easyA', 'hard'])
+  })
+
+  it('defaults to Most repeats, then Easiest first', () => {
+    const list = [
+      p({ source_catalog_id: 'popularHard', grade: '7A', repeats: 9 }),
+      p({ source_catalog_id: 'nicheEasy', grade: '6A', repeats: 1 }),
+      p({ source_catalog_id: 'popularEasy', grade: '6A', repeats: 9 }),
+    ]
+    // Default: repeats desc first (9s before the 1), then easiest grade within the tie.
+    expect(ids(applyFilters(list, state(), ctx))).toEqual(['popularEasy', 'popularHard', 'nicheEasy'])
   })
 
   it('hardest-first reverses the grade order', () => {
@@ -97,7 +117,7 @@ describe('applyFilters — filters', () => {
 
   it('favorites-only uses the context favorite set', () => {
     const list = [p({ source_catalog_id: 'a' }), p({ source_catalog_id: 'b' })]
-    const favCtx: FilterContext = { favoriteIds: new Set(['b']), isClimbable: () => true }
+    const favCtx = mkCtx({ favoriteIds: new Set(['b']) })
     expect(ids(applyFilters(list, state({ favoritesOnly: true }), favCtx))).toEqual(['b'])
   })
 
@@ -113,11 +133,79 @@ describe('applyFilters — filters', () => {
 
   it('applies the installed-hold-set climbable filter (AE1)', () => {
     const list = [p({ source_catalog_id: 'a' }), p({ source_catalog_id: 'b' })]
-    const climbCtx: FilterContext = {
-      favoriteIds: new Set(),
-      isClimbable: (holds) => holds === list[0].holds, // only 'a' climbable
-    }
+    const climbCtx = mkCtx({ isClimbable: (holds) => holds === list[0].holds }) // only 'a' climbable
     expect(ids(applyFilters(list, state(), climbCtx))).toEqual(['a'])
+  })
+})
+
+describe('applyFilters — status (ascent state)', () => {
+  // a = sent, b = attempted (logged, not sent), c = never logged.
+  const list = [p({ source_catalog_id: 'a' }), p({ source_catalog_id: 'b' }), p({ source_catalog_id: 'c' })]
+  const readyCtx = mkCtx({
+    statusReady: true,
+    sentIds: new Set(['a']),
+    loggedIds: new Set(['a', 'b']), // any ascent (sent OR attempt)
+  })
+
+  it('sent keeps only ids in sentIds', () => {
+    expect(ids(applyFilters(list, state({ statusFilters: ['sent'] }), readyCtx))).toEqual(['a'])
+  })
+
+  it('attempted keeps logged-but-not-sent', () => {
+    expect(ids(applyFilters(list, state({ statusFilters: ['attempted'] }), readyCtx))).toEqual(['b'])
+  })
+
+  it('unlogged keeps ids absent from loggedIds', () => {
+    expect(ids(applyFilters(list, state({ statusFilters: ['unlogged'] }), readyCtx))).toEqual(['c'])
+  })
+
+  it('ORs the selected states together', () => {
+    expect(ids(applyFilters(list, state({ statusFilters: ['sent', 'unlogged'] }), readyCtx))).toEqual([
+      'a',
+      'c',
+    ])
+  })
+
+  it('classifies a problem with both a send and an attempt as sent (sent wins)', () => {
+    const bothCtx = mkCtx({ statusReady: true, sentIds: new Set(['a']), loggedIds: new Set(['a']) })
+    expect(ids(applyFilters(list, state({ statusFilters: ['sent'] }), bothCtx))).toEqual(['a'])
+    // 'a' has an attempt row too, but 'attempted' must exclude it.
+    expect(ids(applyFilters(list, state({ statusFilters: ['attempted'] }), bothCtx))).toEqual([])
+  })
+
+  it('ANDs status with other filters (sent AND benchmark)', () => {
+    const benchList = [
+      p({ source_catalog_id: 'a', is_benchmark: true }),
+      p({ source_catalog_id: 'b', is_benchmark: false }),
+    ]
+    const ctx2 = mkCtx({ statusReady: true, sentIds: new Set(['a', 'b']), loggedIds: new Set(['a', 'b']) })
+    expect(
+      ids(applyFilters(benchList, state({ statusFilters: ['sent'], benchmarkOnly: true }), ctx2)),
+    ).toEqual(['a'])
+  })
+
+  it('is a no-op when statusFilters is empty', () => {
+    expect(ids(applyFilters(list, state({ statusFilters: [] }), readyCtx))).toHaveLength(3)
+  })
+
+  it('skips the status predicate when not ready (signed-out OR ascents not loaded)', () => {
+    // Not ready + non-empty sets: still returns everything, never blanks a ?status link.
+    const notReady = mkCtx({ statusReady: false, sentIds: new Set(['a']), loggedIds: new Set(['a', 'b']) })
+    expect(ids(applyFilters(list, state({ statusFilters: ['sent'] }), notReady))).toHaveLength(3)
+  })
+})
+
+describe('activeFilterCount — status', () => {
+  it('counts status only when ready', () => {
+    expect(activeFilterCount(state({ statusFilters: ['sent'] }), true)).toBe(1)
+    expect(activeFilterCount(state({ statusFilters: ['sent'] }), false)).toBe(0)
+    expect(activeFilterCount(state({ statusFilters: [] }), true)).toBe(0)
+    // default param (omitted) counts as ready
+    expect(activeFilterCount(state({ statusFilters: ['sent', 'unlogged'] }))).toBe(1)
+  })
+
+  it('resetFilters clears statusFilters', () => {
+    expect(resetFilters(state({ statusFilters: ['sent'] })).statusFilters).toEqual([])
   })
 })
 

@@ -25,6 +25,7 @@ import { saveSeed } from './filterSeed'
 import { useFavorites } from './favoritesStore'
 import { useSlab } from './useSlab'
 import { useEnsureAscentsLoaded } from '../logbook/ascents'
+import { useAuth } from '../auth/AuthProvider'
 import type { CatalogProblem } from './catalogSync'
 
 const routeApi = getRouteApi('/board/$layoutId/catalog')
@@ -57,7 +58,16 @@ export function CatalogScreen() {
   // Logged sends → the green "sent" check on rows/detail (iOS parity). The ascents
   // store is a global singleton the Logbook tab also feeds; ensure it's loaded here too
   // so the check appears even when the catalog is opened without first visiting the logbook.
-  const { ascents } = useEnsureAscentsLoaded()
+  const { ascents, status: ascentsStatus } = useEnsureAscentsLoaded()
+  const { status: authStatus, isRestoring } = useAuth()
+  // Two derived gates (see plan KTD5): `statusReady` decides whether the status
+  // predicate + count run (needs ascents actually loaded, else a ?status= deep-link
+  // would blank the list before data arrives); `signedOut` decides whether the chips
+  // are disabled with the sign-in hint (definitively signed out, not mid-restore, so
+  // a returning user never sees a "Sign in" flash).
+  const signedIn = authStatus !== 'signedOut'
+  const statusReady = signedIn && ascentsStatus === 'loaded'
+  const signedOut = !isRestoring && authStatus === 'signedOut'
   // Board-scoped, mirroring the Logbook tab: a send counts for this board's catalog
   // only. `sent === false` rows (attempts) are excluded — only true sends get the check.
   const sentIds = useMemo(
@@ -65,6 +75,17 @@ export function CatalogScreen() {
       new Set(
         ascents
           .filter((a) => a.sent && a.boardLayoutId === board.layoutId && a.sourceCatalogId)
+          .map((a) => a.sourceCatalogId as string),
+      ),
+    [ascents, board.layoutId],
+  )
+  // Any ascent (sent OR unsent attempt) → "logged" for the status filter. No `a.sent`
+  // filter, unlike sentIds; a problem in loggedIds but not sentIds is "Attempted".
+  const loggedIds = useMemo(
+    () =>
+      new Set(
+        ascents
+          .filter((a) => a.boardLayoutId === board.layoutId && a.sourceCatalogId)
           .map((a) => a.sourceCatalogId as string),
       ),
     [ascents, board.layoutId],
@@ -95,8 +116,14 @@ export function CatalogScreen() {
   const activeHoldSetsRaw = getActiveHoldSetsRaw(board.layoutId)
   const context = useMemo<FilterContext>(() => {
     const { membership, active } = holdSetContext(board.membershipResource, activeHoldSetsRaw)
-    return { favoriteIds, isClimbable: (holds) => isClimbable(membership, holds, active) }
-  }, [board, favoriteIds, activeHoldSetsRaw])
+    return {
+      favoriteIds,
+      isClimbable: (holds) => isClimbable(membership, holds, active),
+      sentIds,
+      loggedIds,
+      statusReady,
+    }
+  }, [board, favoriteIds, activeHoldSetsRaw, sentIds, loggedIds, statusReady])
 
   const transform = useMemo(
     () => (list: CatalogProblem[]) => applyFilters(list, filters, context),
@@ -185,7 +212,7 @@ export function CatalogScreen() {
           keeps it there as a long list scrolls; pointer-events fall through. */}
       <div className="pointer-events-none sticky bottom-4 z-30 mt-auto flex flex-col items-end gap-3">
         <RecentsSheet board={board} angle={angle} problems={problems} favoriteIds={favoriteIds} sentIds={sentIds} onSelect={openRecent} />
-        <FilterSheet state={filters} onChange={setFilters} board={board} gradeSpan={gradeSpan} methods={methods} />
+        <FilterSheet state={filters} onChange={setFilters} board={board} gradeSpan={gradeSpan} methods={methods} statusReady={statusReady} signedOut={signedOut} />
       </div>
 
       <Drawer open={drawerOpen} onOpenChange={(open) => !open && closeDrawer()} showSwipeHandle>

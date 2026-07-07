@@ -7,7 +7,7 @@ import { FilterControls } from './FilterControls'
 const gradeSpan: [number, number] = [3, 15]
 const board = boardByLayoutId(7)!
 
-function setup(over: Partial<FilterState> = {}) {
+function setup(over: Partial<FilterState> = {}, auth: { statusReady?: boolean; signedOut?: boolean } = {}) {
   const state = { ...DEFAULT_FILTERS, ...over }
   const onChange = vi.fn()
   render(
@@ -17,6 +17,8 @@ function setup(over: Partial<FilterState> = {}) {
       board={board}
       gradeSpan={gradeSpan}
       methods={['Footless', 'No kickboard']}
+      statusReady={auth.statusReady ?? true}
+      signedOut={auth.signedOut ?? false}
     />,
   )
   return { onChange }
@@ -35,12 +37,29 @@ describe('FilterControls', () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ methods: ['Footless'] }))
   })
 
-  it('shows Reset only when a filter is active, and resets on click', () => {
-    setup() // no active filters
-    expect(screen.queryByRole('button', { name: /reset filters/i })).toBeNull()
-
-    const { onChange } = setup({ benchmarkOnly: true })
-    fireEvent.click(screen.getByRole('button', { name: /reset filters/i }))
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ benchmarkOnly: false }))
+  it('toggles status chips (multi-select) when signed in', () => {
+    const { onChange } = setup({ statusFilters: ['sent'] })
+    // 'Sent' already pressed; add 'Not logged'.
+    fireEvent.click(screen.getByRole('button', { name: 'Not logged' }))
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ statusFilters: ['sent', 'unlogged'] }),
+    )
   })
+
+  it('disables status chips with a sign-in hint when signed out', () => {
+    setup({}, { signedOut: true, statusReady: false })
+    expect(screen.getByText('Sign in to filter by status')).toBeInTheDocument()
+    const sent = screen.getByRole('button', { name: 'Sent' })
+    expect(sent).toBeDisabled()
+    expect(sent).toHaveAttribute('aria-describedby')
+  })
+
+  it('disables status chips WITHOUT a sign-in hint while signed in but ascents not loaded', () => {
+    // statusReady false (ascents loading/error) but not signedOut: chips must be
+    // disabled (a pressed chip can't imply an unapplied filter) yet show no sign-in hint.
+    setup({ statusFilters: ['sent'] }, { signedOut: false, statusReady: false })
+    expect(screen.getByRole('button', { name: 'Sent' })).toBeDisabled()
+    expect(screen.queryByText('Sign in to filter by status')).toBeNull()
+  })
+
 })

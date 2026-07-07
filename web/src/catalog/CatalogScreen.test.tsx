@@ -7,6 +7,7 @@ import { renderWithRouter } from '../test/renderWithRouter'
 import { useSlab } from './useSlab'
 import { useEnsureAscentsLoaded } from '../logbook/ascents'
 import type { Ascent } from '../logbook/ascents'
+import { useAuth } from '../auth/AuthProvider'
 
 // Board 7 / angle 40 is the default board+angle (board 7's only angle is 40).
 const LAYOUT = 7
@@ -74,6 +75,30 @@ function ascent(over: Partial<Ascent> = {}): Ascent {
   }
 }
 
+// useAuth drives the status-filter gates (statusReady / signedOut). Keep the real
+// AuthProvider (renderWithRouter mounts it) but stub useAuth so tests can pick the
+// auth state. Default: signed out — matching the untouched suite's expectations.
+vi.mock('../auth/AuthProvider', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../auth/AuthProvider')>()
+  return { ...actual, useAuth: vi.fn(() => authValue('signedOut')) }
+})
+
+function authValue(status: 'signedOut' | 'signedInWithProfile') {
+  return {
+    status,
+    profile: null,
+    isRestoring: false,
+    isConfigured: status !== 'signedOut',
+    sendEmailCode: vi.fn(),
+    verifyEmailCode: vi.fn(),
+    signInWithGoogle: vi.fn(),
+    signOut: vi.fn(),
+    deleteAccount: vi.fn(),
+    isHandleAvailable: vi.fn(),
+    saveProfile: vi.fn(),
+  }
+}
+
 // ProblemDetail (opened by tapping a recent) reaches for Web Bluetooth.
 vi.mock('../ble/useBle', () => ({
   useBle: vi.fn(() => ({ state: 'disconnected', deviceName: null, error: null })),
@@ -88,6 +113,10 @@ beforeEach(() => {
   window.dispatchEvent(new StorageEvent('storage'))
   vi.clearAllMocks()
   vi.mocked(useSlab).mockReturnValue({ problems: SLAB, loading: false, degraded: false })
+  // clearAllMocks keeps mockReturnValue overrides, so reset the auth + ascents stubs
+  // to their defaults each test (else a signed-in / ascent-heavy test leaks forward).
+  vi.mocked(useAuth).mockReturnValue(authValue('signedOut'))
+  vi.mocked(useEnsureAscentsLoaded).mockReturnValue({ status: 'loaded', ascents: [], error: null })
 })
 
 describe('CatalogScreen — recents open as their own stack', () => {
@@ -195,6 +224,62 @@ describe('CatalogScreen — sent indicator', () => {
     renderWithRouter(`/board/${LAYOUT}/catalog`)
     await screen.findByText('Visible')
     expect(within(rowFor('Visible')).queryByLabelText('Sent')).toBeNull()
+  })
+})
+
+describe('CatalogScreen — ascent-status filter', () => {
+  it('filters to attempted (logged-not-sent) problems when signed in', async () => {
+    vi.mocked(useAuth).mockReturnValue(authValue('signedInWithProfile'))
+    vi.mocked(useEnsureAscentsLoaded).mockReturnValue({
+      status: 'loaded',
+      error: null,
+      ascents: [
+        ascent({ sourceCatalogId: 'a', sent: true }), // sent
+        ascent({ sourceCatalogId: 'b', sent: false }), // attempt only → "attempted"
+        // 'c' has no ascent → "not logged"
+      ],
+    })
+    addBoard(LAYOUT)
+    renderWithRouter(`/board/${LAYOUT}/catalog?status=attempted`)
+
+    // Only HiddenB (attempted) survives; Visible (sent) and HiddenC (unlogged) are hidden.
+    expect(await screen.findByText('HiddenB')).toBeInTheDocument()
+    expect(screen.queryByText('Visible')).toBeNull()
+    expect(screen.queryByText('HiddenC')).toBeNull()
+  })
+
+  it('ignores the status filter when signed out — a shared ?status= link does not blank the list', async () => {
+    // Default useAuth mock is signed out; statusReady is false so status is skipped.
+    addBoard(LAYOUT)
+    renderWithRouter(`/board/${LAYOUT}/catalog?status=sent`)
+    // All three problems remain visible despite ?status=sent.
+    expect(await screen.findByText('Visible')).toBeInTheDocument()
+    expect(screen.getByText('HiddenB')).toBeInTheDocument()
+    expect(screen.getByText('HiddenC')).toBeInTheDocument()
+  })
+
+  it('does not blank a ?status= link while signed in but ascents are still loading', async () => {
+    // statusReady requires ascents 'loaded'; during the load the predicate must be
+    // skipped so a deep-linked ?status=sent shows the full list, not an empty one.
+    vi.mocked(useAuth).mockReturnValue(authValue('signedInWithProfile'))
+    vi.mocked(useEnsureAscentsLoaded).mockReturnValue({ status: 'loading', ascents: [], error: null })
+    addBoard(LAYOUT)
+    renderWithRouter(`/board/${LAYOUT}/catalog?status=sent`)
+    expect(await screen.findByText('Visible')).toBeInTheDocument()
+    expect(screen.getByText('HiddenB')).toBeInTheDocument()
+    expect(screen.getByText('HiddenC')).toBeInTheDocument()
+  })
+
+  it('does not flash the sign-in hint during session restore (isRestoring)', async () => {
+    // Mid-restore auth reads status:'signedOut' while isRestoring is true; the derived
+    // `signedOut` must stay false so a returning user never sees the sign-in hint.
+    vi.mocked(useAuth).mockReturnValue({ ...authValue('signedOut'), isRestoring: true })
+    addBoard(LAYOUT)
+    renderWithRouter(`/board/${LAYOUT}/catalog`)
+    await screen.findByText('Visible')
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByText('Sign in to filter by status')).toBeNull()
   })
 })
 
