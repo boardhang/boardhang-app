@@ -63,6 +63,14 @@ describe('FilterControls', () => {
     expect(sent).toHaveAttribute('aria-describedby')
   })
 
+  it('disables status chips WITHOUT a sign-in hint while signed in but ascents not loaded', () => {
+    // statusReady false (ascents loading/error) but not signedOut: chips must be
+    // disabled (a pressed chip can't imply an unapplied filter) yet show no sign-in hint.
+    setup({ statusFilters: ['sent'] }, { signedOut: false, statusReady: false })
+    expect(screen.getByRole('button', { name: 'Sent' })).toBeDisabled()
+    expect(screen.queryByText('Sign in to filter by status')).toBeNull()
+  })
+
   it('does not count status toward Reset when signed out (statusReady false)', () => {
     // A shared ?status= link decodes statusFilters while signed out; Reset must stay hidden.
     setup({ statusFilters: ['sent'] }, { signedOut: true, statusReady: false })

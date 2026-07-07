@@ -257,6 +257,30 @@ describe('CatalogScreen — ascent-status filter', () => {
     expect(screen.getByText('HiddenB')).toBeInTheDocument()
     expect(screen.getByText('HiddenC')).toBeInTheDocument()
   })
+
+  it('does not blank a ?status= link while signed in but ascents are still loading', async () => {
+    // statusReady requires ascents 'loaded'; during the load the predicate must be
+    // skipped so a deep-linked ?status=sent shows the full list, not an empty one.
+    vi.mocked(useAuth).mockReturnValue(authValue('signedInWithProfile'))
+    vi.mocked(useEnsureAscentsLoaded).mockReturnValue({ status: 'loading', ascents: [], error: null })
+    addBoard(LAYOUT)
+    renderWithRouter(`/board/${LAYOUT}/catalog?status=sent`)
+    expect(await screen.findByText('Visible')).toBeInTheDocument()
+    expect(screen.getByText('HiddenB')).toBeInTheDocument()
+    expect(screen.getByText('HiddenC')).toBeInTheDocument()
+  })
+
+  it('does not flash the sign-in hint during session restore (isRestoring)', async () => {
+    // Mid-restore auth reads status:'signedOut' while isRestoring is true; the derived
+    // `signedOut` must stay false so a returning user never sees the sign-in hint.
+    vi.mocked(useAuth).mockReturnValue({ ...authValue('signedOut'), isRestoring: true })
+    addBoard(LAYOUT)
+    renderWithRouter(`/board/${LAYOUT}/catalog`)
+    await screen.findByText('Visible')
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByText('Sign in to filter by status')).toBeNull()
+  })
 })
 
 describe('CatalogScreen — hold filter over routing', () => {

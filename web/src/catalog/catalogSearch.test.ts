@@ -94,9 +94,15 @@ describe('grade ordinal encoding', () => {
 })
 
 describe('status param', () => {
-  it('round-trips a subset of status keys', () => {
+  it('decodes status keys into canonical order regardless of URL order', () => {
     const f: FilterState = { ...DEFAULT_FILTERS, statusFilters: ['unlogged', 'sent'] }
-    expect(roundTrip(f).statusFilters).toEqual(['unlogged', 'sent'])
+    // Canonical STATUS_KEYS order (sent, attempted, unlogged) — stable URLs + seed keys.
+    expect(roundTrip(f).statusFilters).toEqual(['sent', 'unlogged'])
+  })
+
+  it('de-duplicates repeated tokens from a hand-edited URL', () => {
+    const decoded = searchToFilters(validateCatalogSearch({ status: 'unlogged,sent,sent' }))
+    expect(decoded.statusFilters).toEqual(['sent', 'unlogged'])
   })
 
   it('encodes empty status as an omitted param', () => {

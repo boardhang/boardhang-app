@@ -94,11 +94,14 @@ export function encodeStatus(keys: StatusKey[]): string {
   return keys.join(',')
 }
 
-/** Decode a comma-joined status string, keeping only valid keys in order
- *  (drops unknown/empty tokens from a hand-edited URL). */
+/** Decode a comma-joined status string into valid keys in canonical order,
+ *  deduplicated — so a hand-edited `?status=unlogged,sent,sent` normalizes to the
+ *  same `['sent','unlogged']` the UI produces (stable URLs + seed keys; unknown and
+ *  empty tokens dropped). */
 export function decodeStatus(s: string): StatusKey[] {
   if (!s) return []
-  return s.split(',').filter((k): k is StatusKey => (STATUS_KEYS as readonly string[]).includes(k))
+  const tokens = new Set(s.split(','))
+  return STATUS_KEYS.filter((k) => tokens.has(k))
 }
 
 // ─── Grade ordinal <-> "min-max" ────────────────────────────────────────────

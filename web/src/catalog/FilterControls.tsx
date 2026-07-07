@@ -191,7 +191,13 @@ export function FilterControls({
               key={k}
               variant="outline"
               size="sm"
-              disabled={signedOut}
+              // Interactive only when the status filter can actually apply
+              // (statusReady = signed in AND ascents loaded). This keeps chip state
+              // honest: a pressed chip never coexists with a skipped predicate — the
+              // signed-in-but-ascents-loading/error window disables rather than showing
+              // an enabled-but-inert chip. The sign-in hint stays gated on `signedOut`
+              // so a returning user mid-restore sees neither the hint nor a live chip.
+              disabled={!statusReady}
               aria-describedby={signedOut ? statusHintId : undefined}
               pressed={state.statusFilters.includes(k)}
               onPressedChange={(active) => toggleStatus(k, active)}
