@@ -33,6 +33,7 @@ import { LogbookScreen } from './logbook/LogbookScreen'
 import { ListsScreen } from './lists/ListsScreen'
 import { ListDetailScreen } from './lists/ListDetailScreen'
 import { CatalogScreen } from './catalog/CatalogScreen'
+import { JoinSession } from './sessions/JoinSession'
 import { boardByLayoutId } from './board/boards'
 import { getActiveBoardId, getAddedBoardIds } from './board/boardStore'
 import { catalogNavTarget } from './catalog/catalogNav'
@@ -122,6 +123,13 @@ function buildRouteTree() {
     component: CatalogScreen,
   })
 
+  // Join-by-link: sign in (if needed) → consent → join → land in the board catalog (U8).
+  const joinSessionRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/session/join/$token',
+    component: JoinSession,
+  })
+
   return rootRoute.addChildren([
     indexRoute,
     boardsRoute,
@@ -130,6 +138,7 @@ function buildRouteTree() {
     listsRoute,
     listDetailRoute,
     catalogRoute,
+    joinSessionRoute,
   ])
 }
 

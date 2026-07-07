@@ -22,6 +22,8 @@ import { InstallBanner } from './InstallBanner'
 import { FullscreenTipBanner } from './FullscreenTipBanner'
 import { SessionPill } from './SessionPill'
 import { initSessions } from '../sessions/sessionsStore'
+import { PENDING_JOIN_KEY } from '../sessions/JoinSession'
+import { useAuth } from '../auth/AuthProvider'
 import { CATALOG_SEARCH_DEFAULTS, type CatalogSearch } from '../catalog/catalogSearch'
 
 const Q_DEBOUNCE_MS = 250
@@ -30,6 +32,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const matchRoute = useMatchRoute()
   const { addedBoards, activeBoard } = useBoardStore()
+  const { status: authStatus } = useAuth()
 
   const catalogMatch = matchRoute({ to: '/board/$layoutId/catalog' })
   const onCatalog = catalogMatch !== false
@@ -55,6 +58,21 @@ export function AppLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     initSessions()
   }, [])
+
+  // Resume a pending join after sign-in (U8): an OAuth round-trip returns to `/` and drops
+  // the join route, so once a session lands we bounce back to /session/join/$token. The
+  // on-page email-code flow keeps the route mounted and never needs this.
+  useEffect(() => {
+    if (authStatus === 'signedOut') return
+    if (matchRoute({ to: '/session/join/$token' }) !== false) return
+    let pending: string | null = null
+    try {
+      pending = localStorage.getItem(PENDING_JOIN_KEY)
+    } catch {
+      /* ignore */
+    }
+    if (pending) void navigate({ to: '/session/join/$token', params: { token: pending } })
+  }, [authStatus, matchRoute, navigate])
 
   // The home tab shown on the collapsed catalog nav — the last home screen visited.
   const [origin, setOrigin] = useState<'boards' | 'logbook' | 'settings'>('boards')
