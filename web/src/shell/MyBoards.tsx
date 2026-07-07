@@ -6,7 +6,7 @@
 // mirroring iOS, where board config lives behind a separate sheet. Also the
 // first-run surface (zero added boards).
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Settings2 } from 'lucide-react'
 import { BOARDS, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
@@ -35,6 +35,24 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   const addedIds = new Set(addedBoards.map((b) => b.layoutId))
   const addable = BOARDS.filter((b) => !addedIds.has(b.layoutId))
 
+  // Freeze the row order for this mount. "Set as active" promotes the board to
+  // the MRU front in the store, but the list must not reshuffle under the user's
+  // finger — only the Active badge / Browse button swap in place. A fresh mount
+  // re-reads the MRU order (active board on top). Boards added this session
+  // append; removed ones drop out — membership stays live, only order is frozen.
+  const orderRef = useRef<number[]>(addedBoards.map((b) => b.layoutId))
+  const byId = new Map(addedBoards.map((b) => [b.layoutId, b] as const))
+  const orderedBoards: CatalogBoardDef[] = []
+  for (const id of orderRef.current) {
+    const b = byId.get(id)
+    if (b) {
+      orderedBoards.push(b)
+      byId.delete(id)
+    }
+  }
+  for (const b of addedBoards) if (byId.has(b.layoutId)) orderedBoards.push(b) // newly added this session
+  orderRef.current = orderedBoards.map((b) => b.layoutId)
+
   return (
     <div className="space-y-4">
       {addedBoards.length === 0 ? (
@@ -47,7 +65,7 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             My boards
           </h2>
-          {addedBoards.map((board) => (
+          {orderedBoards.map((board) => (
             <BoardCard
               key={board.layoutId}
               board={board}
@@ -104,7 +122,7 @@ function BoardCard({ board, active, onBrowse, onSetActive, onRemove, onAngle, on
   const subtitle = [hasAngleChoice(board) ? `${angle}°` : null, holdSummary].filter(Boolean).join(' · ')
 
   return (
-    <Card className={cn('py-3', active && 'border-primary/60 bg-primary/5')}>
+    <Card className={cn('py-3', active ? 'border-primary/60 bg-primary/5' : 'bg-transparent')}>
       <CardContent className="flex items-center gap-2 px-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
