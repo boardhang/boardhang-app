@@ -19,7 +19,7 @@ import { RecentsSheet } from './RecentsSheet'
 import { ProblemDetail } from './ProblemDetail'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { Button } from '@/components/ui/button'
-import { applyFilters, type FilterContext, type FilterState } from './filters'
+import { applyFilters, type FilterContext, type FilterState, type StatusKey } from './filters'
 import { filtersToSearch, searchToFilters } from './catalogSearch'
 import { saveSeed } from './filterSeed'
 import { useFavorites } from './favoritesStore'
@@ -27,6 +27,10 @@ import { useSlab } from './useSlab'
 import { useProblemDrawer } from './useProblemDrawer'
 import { useEnsureAscentsLoaded } from '../logbook/ascents'
 import { useAuth } from '../auth/AuthProvider'
+import { getSessionsSnapshot, refreshActiveSession, setMemberStatus, useSessions } from '../sessions/sessionsStore'
+import { refreshMemberAscents, useMemberAscents } from '../sessions/memberAscentsStore'
+import { memberInitials, memberLabel } from '../sessions/sessionsTypes'
+import type { SessionFilterUI } from './FilterControls'
 import type { CatalogProblem } from './catalogSync'
 
 const routeApi = getRouteApi('/board/$layoutId/catalog')
@@ -91,6 +95,14 @@ export function CatalogScreen() {
     [ascents, board.layoutId],
   )
 
+  // ── Collaboration session (board-scoped) ─────────────────────────────────────
+  // A session targets one board; only apply it on its own board's catalog. When a session
+  // for a different board is active, this passes null so the projection clears here.
+  const { activeSession, roster, memberStatus, selfId } = useSessions()
+  const sessionForBoard =
+    activeSession && activeSession.boardLayoutId === board.layoutId ? activeSession : null
+  const memberAsc = useMemberAscents(sessionForBoard?.id ?? null)
+
   const filters = useMemo(() => searchToFilters(search), [search])
 
   // Persist filter changes to the URL (source of truth) and write them through to the
@@ -122,8 +134,72 @@ export function CatalogScreen() {
       sentIds,
       loggedIds,
       statusReady,
+      // In a session the per-member clause replaces the single-user one (self = row #1);
+      // gated on the projection's atomic readiness so the list is never blanked mid-load.
+      session: sessionForBoard
+        ? {
+            ready: memberAsc.ready,
+            members: memberAsc.members,
+            memberStatus,
+            sets: memberAsc.bySets,
+          }
+        : undefined,
     }
-  }, [board, favoriteIds, activeHoldSetsRaw, sentIds, loggedIds, statusReady])
+  }, [
+    board,
+    favoriteIds,
+    activeHoldSetsRaw,
+    sentIds,
+    loggedIds,
+    statusReady,
+    sessionForBoard,
+    memberStatus,
+    memberAsc.ready,
+    memberAsc.members,
+    memberAsc.bySets,
+  ])
+
+  // Per-member "Ascent status" rows for the Filters sheet — self first, labels from the
+  // roster, the rendered member set keyed off the server-consistent projection snapshot so
+  // the rows shown and the members filtered are always the same set (roster supplies labels).
+  const sessionFilterUI = useMemo<SessionFilterUI | undefined>(() => {
+    if (!sessionForBoard) return undefined
+    const rosterById = new Map(roster.map((m) => [m.userId, m]))
+    const memberIds = memberAsc.members.length > 0 ? memberAsc.members : roster.map((m) => m.userId)
+    const ordered = [...memberIds].sort((a, b) => (a === selfId ? -1 : b === selfId ? 1 : 0))
+    const rows = ordered.map((uid) => {
+      const isSelf = uid === selfId
+      const m = rosterById.get(uid)
+      const label = isSelf
+        ? 'You'
+        : m
+          ? memberLabel(m)
+          : memberInitials({ userId: uid, displayName: null, handle: null })
+      return {
+        userId: uid,
+        label,
+        isSelf,
+        selected: memberStatus[uid] ?? [],
+        onToggle: (k: StatusKey, active: boolean) => {
+          const cur = getSessionsSnapshot().memberStatus[uid] ?? []
+          setMemberStatus(uid, active ? [...cur, k] : cur.filter((x) => x !== k))
+        },
+      }
+    })
+    const state: SessionFilterUI['state'] = memberAsc.ready
+      ? 'ready'
+      : memberAsc.stale || memberAsc.error
+        ? 'paused'
+        : 'loading'
+    return {
+      rows,
+      state,
+      onRefresh: () => {
+        void refreshMemberAscents()
+        void refreshActiveSession({ manual: true })
+      },
+    }
+  }, [sessionForBoard, roster, memberStatus, selfId, memberAsc.members, memberAsc.ready, memberAsc.stale, memberAsc.error])
 
   const transform = useMemo(
     () => (list: CatalogProblem[]) => applyFilters(list, filters, context),
@@ -187,7 +263,7 @@ export function CatalogScreen() {
           keeps it there as a long list scrolls; pointer-events fall through. */}
       <div className="pointer-events-none sticky bottom-4 z-30 mt-auto flex flex-col items-end gap-3">
         <RecentsSheet board={board} angle={angle} problems={problems} favoriteIds={favoriteIds} sentIds={sentIds} onSelect={openRecent} />
-        <FilterSheet state={filters} onChange={setFilters} board={board} gradeSpan={gradeSpan} methods={methods} statusReady={statusReady} signedOut={signedOut} />
+        <FilterSheet state={filters} onChange={setFilters} board={board} gradeSpan={gradeSpan} methods={methods} statusReady={statusReady} signedOut={signedOut} session={sessionFilterUI} />
       </div>
 
       <Drawer open={drawerOpen} onOpenChange={(open) => !open && closeDrawer()} showSwipeHandle>

@@ -36,6 +36,8 @@ export interface SessionsState {
   roster: SessionMember[]
   /** Per-member chip selections for the active session (R3/R14). */
   memberStatus: MemberStatus
+  /** The signed-in user's id — identifies the self ("You") member row (R5). */
+  selfId: string | null
   error: string | null
 }
 
@@ -44,6 +46,7 @@ let state: SessionsState = {
   activeSession: null,
   roster: [],
   memberStatus: {},
+  selfId: null,
   error: null,
 }
 const listeners = new Set<() => void>()
@@ -77,6 +80,13 @@ async function currentUserId(): Promise<string | null> {
 
 function isLocallyExpired(session: Session): boolean {
   return Date.now() > Date.parse(session.expiresAt) + EXPIRY_SKEW_MS
+}
+
+/** Resolve + cache the signed-in user id (identifies the self member row). Best-effort. */
+async function ensureSelfId(): Promise<void> {
+  if (state.selfId) return
+  const id = await currentUserId()
+  if (id && !state.selfId) setState({ selfId: id })
 }
 
 // ─── Persistence (localStorage; best-effort, private-mode safe) ───────────────
@@ -208,6 +218,7 @@ export function initSessions(): void {
     return
   }
   setState({ status: 'active', activeSession: cached, memberStatus: readMemberStatus(cached.id) })
+  void ensureSelfId()
   void refreshActiveSession()
 }
 
@@ -222,6 +233,7 @@ export async function createSession(boardLayoutId: number, name = ''): Promise<S
   if (!supabase) throw new Error('Sign-in isn’t set up in this build.')
   const userId = await currentUserId()
   if (!userId) throw new Error('You need to be signed in to start a session.')
+  setState({ selfId: userId })
 
   const { data, error } = await supabase
     .from('sessions')
@@ -256,6 +268,7 @@ export async function joinSession(token: string): Promise<Session> {
   if (gen !== generation) return session
   setActiveSession(session)
   setState({ memberStatus: readMemberStatus(session.id) })
+  void ensureSelfId()
   void loadRoster(session, gen)
   return session
 }
@@ -388,7 +401,7 @@ export function setMemberStatus(userId: string, keys: StatusKey[]): void {
 export function clearSessionsCache(): void {
   generation += 1
   for (const k of Object.keys(volatileTokens)) delete volatileTokens[k]
-  setState({ status: 'idle', activeSession: null, roster: [], memberStatus: {}, error: null })
+  setState({ status: 'idle', activeSession: null, roster: [], memberStatus: {}, selfId: null, error: null })
   removeAllSessionStorage()
 }
 

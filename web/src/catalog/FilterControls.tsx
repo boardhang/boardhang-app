@@ -7,14 +7,13 @@
 // use all selected holds).
 
 import { useId, useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, RefreshCw } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import { FONT_GRADES } from '../board/grades'
 import { HoldFilterPicker } from './HoldFilterPicker'
+import { MemberStatusRow } from './MemberStatusRow'
 import {
   SORT_LABELS,
-  STATUS_KEYS,
-  STATUS_LABELS,
   sortDimension,
   type FilterState,
   type SortKey,
@@ -41,6 +40,27 @@ const RATING_LABELS: Record<string, string> = {
   '5': '5★ and up',
 }
 
+/** One member's row in the per-member "Ascent status" section (U5). */
+export interface MemberFilterRow {
+  userId: string
+  /** Visible label — "You" for the self row, else the member's display label/initials. */
+  label: string
+  isSelf: boolean
+  selected: StatusKey[]
+  onToggle: (k: StatusKey, active: boolean) => void
+}
+
+/** Active-session status UI, threaded from CatalogScreen. When present the "Ascent status"
+ *  section renders one row per member (self first) instead of the single self row. */
+export interface SessionFilterUI {
+  rows: MemberFilterRow[]
+  /** 'loading' = projection unready (first load); 'ready' = live; 'paused' = projection
+   *  errored or dropped by max-age, so cross-member filtering is off and the list is widened. */
+  state: 'loading' | 'ready' | 'paused'
+  /** Re-fetch the projection to reapply (wired to the session bar's refresh — U7). */
+  onRefresh: () => void
+}
+
 interface FilterControlsProps {
   state: FilterState
   onChange: (state: FilterState) => void
@@ -54,6 +74,9 @@ interface FilterControlsProps {
   statusReady: boolean
   /** Definitively signed out — disables the status chips and shows the hint. */
   signedOut: boolean
+  /** Active collaboration session (U5). When set, per-member status rows replace the single
+   *  self row; when absent, the single-user status row is shown (unchanged behavior). */
+  session?: SessionFilterUI
 }
 
 function Field({
@@ -81,6 +104,7 @@ export function FilterControls({
   methods,
   statusReady,
   signedOut,
+  session,
 }: FilterControlsProps) {
   const set = (patch: Partial<FilterState>) => onChange({ ...state, ...patch })
   const [holdPickerOpen, setHoldPickerOpen] = useState(false)
@@ -166,9 +190,8 @@ export function FilterControls({
         </button>
       </Field>
 
-      {/* Benchmarks, Favorites, and the three ascent-status chips share one flat row
-          (iOS parity); the min-rating select trails them. The sign-in hint sits under
-          the row so it's read before the disabled status chips it describes. */}
+      {/* Benchmarks + Favorites + the min-rating select share one flat row (iOS parity).
+          Ascent status now lives in its own section below (per-member in a session). */}
       <Field label="Filter">
         <div className="flex flex-wrap items-center gap-2">
           <Toggle variant="outline" size="sm" pressed={state.benchmarkOnly} onPressedChange={(v) => set({ benchmarkOnly: v })}>
@@ -177,25 +200,6 @@ export function FilterControls({
           <Toggle variant="outline" size="sm" pressed={state.favoritesOnly} onPressedChange={(v) => set({ favoritesOnly: v })}>
             Favorites
           </Toggle>
-          {STATUS_KEYS.map((k) => (
-            <Toggle
-              key={k}
-              variant="outline"
-              size="sm"
-              // Interactive only when the status filter can actually apply
-              // (statusReady = signed in AND ascents loaded). This keeps chip state
-              // honest: a pressed chip never coexists with a skipped predicate — the
-              // signed-in-but-ascents-loading/error window disables rather than showing
-              // an enabled-but-inert chip. The sign-in hint stays gated on `signedOut`
-              // so a returning user mid-restore sees neither the hint nor a live chip.
-              disabled={!statusReady}
-              aria-describedby={signedOut ? statusHintId : undefined}
-              pressed={state.statusFilters.includes(k)}
-              onPressedChange={(active) => toggleStatus(k, active)}
-            >
-              {STATUS_LABELS[k]}
-            </Toggle>
-          ))}
           <Select items={RATING_LABELS} value={String(state.minStars)} onValueChange={(v) => set({ minStars: Number(v) })}>
             <SelectTrigger className="w-32">
               <SelectValue />
@@ -209,10 +213,55 @@ export function FilterControls({
             </SelectContent>
           </Select>
         </div>
-        {signedOut && (
-          <div id={statusHintId} className="text-xs text-muted-foreground">
-            Sign in to filter by status
+      </Field>
+
+      {/* Ascent status: one self row when solo, one row per member (self first) in a session.
+          Soft-caps at ~8 rows; the section scrolls within the sheet on mobile. */}
+      <Field label="Ascent status">
+        {session ? (
+          <div className="space-y-2">
+            {session.state === 'paused' && (
+              <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
+                <span>Cross-member filtering paused — showing all problems.</span>
+                <button
+                  type="button"
+                  onClick={session.onRefresh}
+                  className="flex shrink-0 items-center gap-1 font-medium text-foreground hover:underline"
+                >
+                  <RefreshCw className="size-3" />
+                  Refresh
+                </button>
+              </div>
+            )}
+            <div className="max-h-52 space-y-2 overflow-y-auto">
+              {session.rows.map((row) => (
+                <MemberStatusRow
+                  key={row.userId}
+                  label={row.label}
+                  isSelf={row.isSelf}
+                  ariaLabel={row.isSelf ? 'Your ascent status' : `${row.label}’s ascent status`}
+                  selected={row.selected}
+                  onToggle={row.onToggle}
+                  rowState={session.state === 'loading' ? 'loading' : 'ready'}
+                />
+              ))}
+            </div>
           </div>
+        ) : (
+          <>
+            <MemberStatusRow
+              ariaLabel="Your ascent status"
+              selected={state.statusFilters}
+              onToggle={toggleStatus}
+              rowState={signedOut ? 'signed-out' : statusReady ? 'ready' : 'loading'}
+              hintId={statusHintId}
+            />
+            {signedOut && (
+              <div id={statusHintId} className="mt-1.5 text-xs text-muted-foreground">
+                Sign in to filter by status
+              </div>
+            )}
+          </>
         )}
       </Field>
 

@@ -39,6 +39,9 @@ export interface MemberAscentsState {
   members: string[]
   /** Non-fatal error from the last fetch (keeps the last-good map). */
   error: string | null
+  /** The map was dropped by max-age after having loaded (KTD-5) — distinguishes "cross-member
+   *  filtering paused, list widened" from a first-load "loading". */
+  stale: boolean
   /** When the current map was fetched (ms) — drives max-age. Null when empty/dropped. */
   fetchedAt: number | null
 }
@@ -48,7 +51,7 @@ export interface MemberAscentsState {
 export const MAX_AGE_MS = 5 * 60_000
 const STALE_CHECK_MS = 30_000
 
-const EMPTY: MemberAscentsState = { ready: false, bySets: {}, members: [], error: null, fetchedAt: null }
+const EMPTY: MemberAscentsState = { ready: false, bySets: {}, members: [], error: null, stale: false, fetchedAt: null }
 
 let state: MemberAscentsState = EMPTY
 const listeners = new Set<() => void>()
@@ -68,7 +71,7 @@ function setState(next: MemberAscentsState): void {
  *  Returns whether it changed. */
 function applyStaleness(): boolean {
   if (state.fetchedAt !== null && Date.now() - state.fetchedAt > MAX_AGE_MS) {
-    state = { ready: false, bySets: {}, members: [], error: state.error, fetchedAt: null }
+    state = { ready: false, bySets: {}, members: [], error: state.error, stale: true, fetchedAt: null }
     return true
   }
   return false
@@ -103,7 +106,7 @@ async function fetchMemberAscents(sessionId: string): Promise<void> {
   if (!supabase) {
     // Unconfigured: nothing to project, but mark ready so the predicate treats the (absent)
     // session clause as a no-op rather than blanking the list.
-    setState({ ready: true, bySets: {}, members: [], error: null, fetchedAt: Date.now() })
+    setState({ ready: true, bySets: {}, members: [], error: null, stale: false, fetchedAt: Date.now() })
     return
   }
   const { data, error } = await supabase.rpc('session_member_ascents', { p_session_id: sessionId })
@@ -115,7 +118,7 @@ async function fetchMemberAscents(sessionId: string): Promise<void> {
   }
   const rows = (data ?? []) as { user_id: string; source_catalog_id: string | null; status: string | null }[]
   const { bySets, members } = buildMemberSets(rows)
-  setState({ ready: true, bySets, members, error: null, fetchedAt: Date.now() })
+  setState({ ready: true, bySets, members, error: null, stale: false, fetchedAt: Date.now() })
 }
 
 function onVisibility(): void {
