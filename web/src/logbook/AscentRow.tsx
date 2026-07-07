@@ -3,11 +3,13 @@
 // entry is cached — with setter, benchmark flag and a board thumbnail. Mirrors iOS
 // `AscentRow`.
 //
-// Rows are not yet tappable-into-detail (the web app has no problem route yet): the
-// `onSelect` hook is here so wiring row → problem detail is a one-liner once the router
-// lands. The pencil opens the edit sheet.
+// When `onSelect` is provided (the row's catalog entry resolved), the whole content area
+// is a button that opens the problem detail drawer; the pencil (a sibling button) opens
+// the edit sheet. Rows whose problem can't be resolved (user-created or uncached) get no
+// `onSelect` and render the content as a plain div — not tappable, edit still reachable.
 
 import { ArrowDown, ArrowUp, BadgeCheck, CheckCircle2, Pencil, Star } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { CatalogBoardDef } from '../board/boards'
 import { CatalogBoard } from '../board/CatalogBoard'
 import { gradeIndex } from '../board/grades'
@@ -23,8 +25,9 @@ interface AscentRowProps {
   board: CatalogBoardDef
   showThumbnail?: boolean
   onEdit: (ascent: Ascent) => void
-  /** Future: navigate to problem detail. Unwired until the router lands. */
-  onSelect?: (ascent: Ascent) => void
+  /** Open this ascent's problem detail. Omitted when the problem can't be resolved
+   *  (user-created or uncached) — the content area then renders as a non-interactive div. */
+  onSelect?: () => void
 }
 
 /** +1 harder / -1 softer / 0 same, comparing voted vs official grade. */
@@ -48,17 +51,14 @@ export function AscentRow({
   const holds = catalog?.holds
   const direction = ascent.sent ? voteDirection(ascent.votedGrade, ascent.problemGrade) : 0
 
-  return (
-    <div className="flex items-center gap-3 border-b border-border/50 px-3 py-2.5">
+  // The tappable content: thumbnail + name/meta/comment + grade pill. Rendered inside a
+  // button when the row opens detail, else a plain div (see onSelect doc above).
+  const content: ReactNode = (
+    <>
       {showThumbnail && holds && (
-        <button
-          type="button"
-          onClick={() => onSelect?.(ascent)}
-          className="w-[64px] shrink-0"
-          aria-label={`Open ${ascent.problemName}`}
-        >
+        <div className="w-[64px] shrink-0">
           <CatalogBoard board={board} holds={holds} />
-        </button>
+        </div>
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -106,12 +106,30 @@ export function AscentRow({
           {ascent.problemGrade}
         </span>
       </div>
+    </>
+  )
+
+  return (
+    <div className="flex items-center border-b border-border/50">
+      {onSelect ? (
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-label={`Open ${ascent.problemName}`}
+          className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5">{content}</div>
+      )}
 
       <Button
         variant="ghost"
         size="icon-sm"
         aria-label={`Edit log for ${ascent.problemName}`}
         onClick={() => onEdit(ascent)}
+        className="mr-1 shrink-0"
       >
         <Pencil className="size-4" />
       </Button>

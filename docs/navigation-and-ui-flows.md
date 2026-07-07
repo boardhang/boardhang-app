@@ -168,6 +168,13 @@ re-fills defaults on read. `sortSecondary` is deliberately *not* in the URL (fix
 - **Problem drawer**: opening pushes history (Back closes it), paging/swiping `replace`s (URL tracks
   the current problem). A deep-linked problem resolves against the **full slab**, so it opens even
   when the active filters exclude it (prev/next then disable).
+- **Logbook problem drawer**: `/logbook` reuses the same `ProblemDetail` in its own `?problem`
+  drawer (`web/src/logbook/logbookSearch.ts` — one param, same `stripSearchParams` + push-on-open /
+  `router.history.back()` close as the catalog). Two deliberate differences: it's history-integrated
+  precisely *because* `/logbook` is a tab root (a pure-local-state drawer would make Back leave the
+  tab), and it passes `displayed={[current]}` so there's **no pager** — a logbook row is a single
+  event, and a deduped cross-problem sequence would map to no on-screen order. Rows whose ascent has
+  no resolvable catalog entry (user-created or uncached) aren't tappable.
 - **PWA**: `vite.config.ts` sets `navigateFallback: '/index.html'` (+ `/assets/` denylist) so deep
   links and the OAuth return survive a hard load. `AppLayout` also mounts two iOS-only, environment-
   gated shell banners (`web/src/shell/{BleBrowserBanner,InstallBanner}.tsx`), driven by the detection

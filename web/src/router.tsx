@@ -37,6 +37,7 @@ import { boardByLayoutId } from './board/boards'
 import { getActiveBoardId, getAddedBoardIds } from './board/boardStore'
 import { catalogNavTarget } from './catalog/catalogNav'
 import { CATALOG_SEARCH_DEFAULTS, validateCatalogSearch } from './catalog/catalogSearch'
+import { LOGBOOK_SEARCH_DEFAULTS, validateLogbookSearch } from './logbook/logbookSearch'
 
 function BoardsRoute() {
   const navigate = useNavigate()
@@ -82,6 +83,8 @@ function buildRouteTree() {
   const logbookRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/logbook',
+    validateSearch: validateLogbookSearch,
+    search: { middlewares: [stripSearchParams(LOGBOOK_SEARCH_DEFAULTS)] },
     component: LogbookScreen,
   })
 

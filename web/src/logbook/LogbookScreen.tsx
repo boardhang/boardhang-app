@@ -3,26 +3,33 @@
 // the iOS Home logbook section + full LogbookView combined onto one screen. Data comes
 // straight from the shared Supabase `ascents` table (online-first; see ascents.ts).
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { getRouteApi, useRouter } from '@tanstack/react-router'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInPanel } from '../auth/SignInPanel'
 import { useBoardStore } from '../board/boardStore'
 import { getCatalogProblemsByIds, type CatalogProblem } from '../catalog/catalogSync'
+import { useFavorites } from '../catalog/favoritesStore'
+import { ProblemDetail } from '../catalog/ProblemDetail'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { useEnsureAscentsLoaded, type Ascent } from './ascents'
 import { AscentRow } from './AscentRow'
 import { GradePyramid } from './GradePyramid'
 import { LogAscentSheet, type LogTarget } from './LogAscentSheet'
 import { sessions } from './sessions'
 
+const routeApi = getRouteApi('/logbook')
+
 export function LogbookScreen() {
   const { status, isRestoring } = useAuth()
   const { addedBoards, activeBoard } = useBoardStore()
   // Loads on sign-in / clears on sign-out (the shared auth-gated lifecycle).
   const { status: dataStatus, ascents, error } = useEnsureAscentsLoaded()
-  const navigate = useNavigate()
+  // Route-bound so the drawer's `search` reducer types against /logbook's params.
+  const navigate = routeApi.useNavigate()
+  const router = useRouter()
   const signedIn = status !== 'signedOut'
   // The store defaults `activeBoard` to Mini 2025 even when it isn't among the added
   // boards (adding a board doesn't activate it), so gate on membership — not just count —
@@ -64,6 +71,48 @@ export function LogbookScreen() {
   function openEdit(ascent: Ascent) {
     setTarget({ kind: 'edit', ascent })
     setSheetOpen(true)
+  }
+
+  // ── Problem detail drawer, driven by ?problem (CatalogScreen pattern) ────────
+  // /logbook is a tab root, so the drawer rides a history-integrated search param:
+  // Back closes it and stays on the tab (a pure-local-state drawer would eject the
+  // user from the whole Logbook tab on Back). Push on open so Back closes; no pager
+  // (a logbook row is a single event — `displayed={[current]}` disables prev/next).
+  const search = routeApi.useSearch()
+  const openId = search.problem
+  const current = openId ? catalogById.get(openId) : undefined
+
+  const { favoriteIds } = useFavorites()
+  // Logged sends → the green sent check on the detail (iOS parity), mirroring
+  // CatalogScreen. Board-scoped; attempts (sent === false) excluded.
+  const sentIds = useMemo(
+    () =>
+      new Set(
+        boardAscents
+          .filter((a) => a.sent && a.sourceCatalogId)
+          .map((a) => a.sourceCatalogId as string),
+      ),
+    [boardAscents],
+  )
+
+  // Push-opened drawers close on Back; there's nothing to go Back to for a cold deep link.
+  const pushed = useRef(false)
+  function openProblem(id: string) {
+    pushed.current = true
+    void navigate({ search: (prev) => ({ ...prev, problem: id }) })
+  }
+  function showProblem(id: string) {
+    void navigate({ search: (prev) => ({ ...prev, problem: id }), replace: true })
+  }
+  function closeDrawer() {
+    if (pushed.current) {
+      pushed.current = false
+      void router.history.back()
+    } else {
+      // Cold deep-link (not push-opened): drop ?problem in place. '' is its default,
+      // so the strip middleware removes it from the URL.
+      void navigate({ search: (prev) => ({ ...prev, problem: '' }), replace: true })
+    }
   }
 
   // The board name only belongs here once the active board is one the user added —
@@ -167,16 +216,26 @@ export function LogbookScreen() {
               {session.title}
             </h2>
             <div className="overflow-hidden rounded-lg border border-border">
-              {session.ascents.map((ascent) => (
-                <AscentRow
-                  key={ascent.id}
-                  ascent={ascent}
-                  catalog={ascent.sourceCatalogId ? catalogById.get(ascent.sourceCatalogId) : undefined}
-                  board={activeBoard}
-                  showThumbnail
-                  onEdit={openEdit}
-                />
-              ))}
+              {session.ascents.map((ascent) => {
+                // Only rows whose catalog entry resolved open the detail drawer; a
+                // user-created or uncached row gets no onSelect (not tappable).
+                const catalog = ascent.sourceCatalogId
+                  ? catalogById.get(ascent.sourceCatalogId)
+                  : undefined
+                return (
+                  <AscentRow
+                    key={ascent.id}
+                    ascent={ascent}
+                    catalog={catalog}
+                    board={activeBoard}
+                    showThumbnail
+                    onEdit={openEdit}
+                    onSelect={
+                      catalog ? () => openProblem(ascent.sourceCatalogId as string) : undefined
+                    }
+                  />
+                )
+              })}
             </div>
           </section>
         ))}
@@ -185,6 +244,25 @@ export function LogbookScreen() {
       {error && <ErrorNote error={error} />}
 
       <LogAscentSheet open={sheetOpen} onOpenChange={setSheetOpen} target={target} />
+
+      <Drawer open={current !== undefined} onOpenChange={(open) => !open && closeDrawer()} showSwipeHandle>
+        <DrawerContent>
+          <DrawerTitle className="sr-only">Problem details</DrawerTitle>
+          <div className="max-h-[85vh] overflow-y-auto px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+            {current && (
+              <ProblemDetail
+                problem={current}
+                displayed={[current]}
+                board={activeBoard}
+                angle={current.angle}
+                favoriteIds={favoriteIds}
+                sentIds={sentIds}
+                onNavigate={showProblem}
+              />
+            )}
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   )
 }
