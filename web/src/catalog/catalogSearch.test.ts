@@ -49,6 +49,7 @@ describe('catalogSearch round-trip', () => {
       methods: ['Feet follow hands', 'Footless'],
       favoritesOnly: true,
       holdsFilter: ['3-4', '5-6'],
+      statusFilters: ['sent', 'unlogged'],
     }
     expect(roundTrip(f)).toEqual(f)
   })
@@ -89,6 +90,29 @@ describe('grade ordinal encoding', () => {
     expect(decodeGrade('')).toBeNull()
     expect(decodeGrade('6A-7C')).toBeNull()
     expect(decodeGrade('garbage')).toBeNull()
+  })
+})
+
+describe('status param', () => {
+  it('round-trips a subset of status keys', () => {
+    const f: FilterState = { ...DEFAULT_FILTERS, statusFilters: ['unlogged', 'sent'] }
+    expect(roundTrip(f).statusFilters).toEqual(['unlogged', 'sent'])
+  })
+
+  it('encodes empty status as an omitted param', () => {
+    const off = stripDefaults(filtersToSearch(DEFAULT_FILTERS))
+    expect(off.status).toBeUndefined()
+    expect(filtersToSearch({ ...DEFAULT_FILTERS, statusFilters: ['sent'] }).status).toBe('sent')
+  })
+
+  it('drops unknown and empty tokens on decode', () => {
+    const decoded = searchToFilters(validateCatalogSearch({ status: 'sent,bogus,,attempted' }))
+    expect(decoded.statusFilters).toEqual(['sent', 'attempted'])
+  })
+
+  it('defaults status to an empty string', () => {
+    expect(CATALOG_SEARCH_DEFAULTS.status).toBe('')
+    expect(validateCatalogSearch({}).status).toBe('')
   })
 })
 

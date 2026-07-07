@@ -15,7 +15,7 @@
 // fixed tie-breaker, so shared links reproduce the default secondary sort.
 
 import { FONT_GRADES } from '../board/grades'
-import { DEFAULT_FILTERS, type FilterState, type SortKey } from './filters'
+import { DEFAULT_FILTERS, STATUS_KEYS, type FilterState, type SortKey, type StatusKey } from './filters'
 
 const SORT_KEYS: readonly SortKey[] = ['easiest', 'hardest', 'rated', 'repeats']
 
@@ -39,6 +39,8 @@ export interface CatalogSearch {
   angle: number
   /** Comma-joined `"col-row"` positions a problem must include; `''` = none. */
   holds: string
+  /** Comma-joined ascent-status keys (`sent`/`attempted`/`unlogged`); `''` = any. */
+  status: string
   /** Open problem's `source_catalog_id`; `''` = drawer closed. */
   problem: string
 }
@@ -54,6 +56,7 @@ export const CATALOG_SEARCH_DEFAULTS: CatalogSearch = {
   sort: 'easiest',
   angle: 0,
   holds: '',
+  status: '',
   problem: '',
 }
 
@@ -79,8 +82,23 @@ export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSear
     sort,
     angle: Math.max(0, Math.round(num(raw.angle))),
     holds: str(raw.holds),
+    status: str(raw.status),
     problem: str(raw.problem),
   }
+}
+
+// ─── Status keys <-> comma-joined string ────────────────────────────────────
+
+/** Encode selected status keys to a comma-joined string, `''` when none. */
+export function encodeStatus(keys: StatusKey[]): string {
+  return keys.join(',')
+}
+
+/** Decode a comma-joined status string, keeping only valid keys in order
+ *  (drops unknown/empty tokens from a hand-edited URL). */
+export function decodeStatus(s: string): StatusKey[] {
+  if (!s) return []
+  return s.split(',').filter((k): k is StatusKey => (STATUS_KEYS as readonly string[]).includes(k))
 }
 
 // ─── Grade ordinal <-> "min-max" ────────────────────────────────────────────
@@ -122,6 +140,7 @@ export function filtersToSearch(f: FilterState): Omit<CatalogSearch, 'angle' | '
     fav: f.favoritesOnly ? 1 : 0,
     sort: f.sortPrimary,
     holds: f.holdsFilter.join(','),
+    status: encodeStatus(f.statusFilters),
   }
 }
 
@@ -139,5 +158,6 @@ export function searchToFilters(s: CatalogSearch): FilterState {
     methods: s.method ? s.method.split(',').filter(Boolean) : [],
     favoritesOnly: s.fav === 1,
     holdsFilter: s.holds ? s.holds.split(',').filter(Boolean) : [],
+    statusFilters: decodeStatus(s.status),
   }
 }
