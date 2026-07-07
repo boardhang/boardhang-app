@@ -79,6 +79,29 @@ describe('active board', () => {
   it('defaults to Mini 2025 when unset', () => {
     expect(getActiveBoardId()).toBe(7)
   })
+
+  it('adopts the just-added board as active when the stored active is not owned', () => {
+    // Fresh install: stored active defaults to Mini 2025 (7), which isn't owned.
+    // Adding the first board must make it the active one so the list has a Browse.
+    expect(getActiveBoardId()).toBe(7)
+    addBoard(5)
+    expect(getActiveBoardId()).toBe(5)
+    // A second add does NOT steal active — the owned active board stays put.
+    addBoard(7)
+    expect(getActiveBoardId()).toBe(5)
+  })
+
+  it('surfaces the owned MRU front when stored active dangles to an un-owned board', () => {
+    // Legacy state predating the owned-active invariant: an added board plus a
+    // stored active id that was never added. The snapshot must show an owned
+    // board (id 5), so exactly one Browse renders — even though the raw stored
+    // id (untouched here) still reads 7.
+    localStorage.setItem('addedBoards', '5')
+    localStorage.setItem('activeBoardId', '7')
+    window.dispatchEvent(new StorageEvent('storage'))
+    const { result } = renderHook(() => useBoardStore())
+    expect(result.current.activeBoard.layoutId).toBe(5)
+  })
 })
 
 describe('per-board settings persist and survive reload', () => {

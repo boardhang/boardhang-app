@@ -1,10 +1,12 @@
 // "My Boards": the boards the user owns. Each board is a clean row (name +
-// config summary + Browse/Active); tapping the config button opens a bottom
-// drawer to edit its angle and installed hold sets (or remove it) — mirroring
-// iOS, where board config lives behind a separate sheet. Also the first-run
-// surface (zero added boards).
+// config summary). The active board shows a primary "Browse" action into its
+// catalog; every other owned board shows a secondary "Set as active" that just
+// switches the active board (staying on this list). Tapping the config button
+// opens a bottom drawer to edit angle and installed hold sets (or remove it) —
+// mirroring iOS, where board config lives behind a separate sheet. Also the
+// first-run surface (zero added boards).
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Settings2 } from 'lucide-react'
 import { BOARDS, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
@@ -33,6 +35,25 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   const addedIds = new Set(addedBoards.map((b) => b.layoutId))
   const addable = BOARDS.filter((b) => !addedIds.has(b.layoutId))
 
+  // Freeze the row order for this mount. "Set as active" promotes the board to
+  // the MRU front in the store, but the list must not reshuffle under the user's
+  // finger — only the Active badge / Browse button swap in place. A fresh mount
+  // re-reads the MRU order (active board on top). Boards added this session
+  // append; removed ones drop out — membership stays live, only order is frozen.
+  // Seeded empty; the append loop below fills it in MRU order on first render.
+  const orderRef = useRef<number[]>([])
+  const byId = new Map(addedBoards.map((b) => [b.layoutId, b] as const))
+  const orderedBoards: CatalogBoardDef[] = []
+  for (const id of orderRef.current) {
+    const b = byId.get(id)
+    if (b) {
+      orderedBoards.push(b)
+      byId.delete(id)
+    }
+  }
+  for (const b of addedBoards) if (byId.has(b.layoutId)) orderedBoards.push(b) // newly added this session
+  orderRef.current = orderedBoards.map((b) => b.layoutId)
+
   return (
     <div className="space-y-4">
       {addedBoards.length === 0 ? (
@@ -45,15 +66,15 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             My boards
           </h2>
-          {addedBoards.map((board) => (
+          {orderedBoards.map((board) => (
             <BoardCard
               key={board.layoutId}
               board={board}
               active={board.layoutId === activeBoard.layoutId}
-              onActivate={() => {
-                activateBoard(board.layoutId)
-                onActivated(board.layoutId)
-              }}
+              // Active board → browse its catalog (already active, no switch).
+              onBrowse={() => onActivated(board.layoutId)}
+              // Inactive board → just switch the active board; stay on this list.
+              onSetActive={() => activateBoard(board.layoutId)}
               onRemove={() => removeBoard(board.layoutId)}
               onAngle={(angle) => setAngle(board.layoutId, angle)}
               onHoldSets={(csv) => setActiveHoldSetsRaw(board.layoutId, csv)}
@@ -84,13 +105,14 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
 interface BoardCardProps {
   board: CatalogBoardDef
   active: boolean
-  onActivate: () => void
+  onBrowse: () => void
+  onSetActive: () => void
   onRemove: () => void
   onAngle: (angle: number) => void
   onHoldSets: (csv: string) => void
 }
 
-function BoardCard({ board, active, onActivate, onRemove, onAngle, onHoldSets }: BoardCardProps) {
+function BoardCard({ board, active, onBrowse, onSetActive, onRemove, onAngle, onHoldSets }: BoardCardProps) {
   const angle = getAngle(board)
   const { filterable, active: installed } = holdSetContext(
     board.membershipResource,
@@ -101,7 +123,7 @@ function BoardCard({ board, active, onActivate, onRemove, onAngle, onHoldSets }:
   const subtitle = [hasAngleChoice(board) ? `${angle}°` : null, holdSummary].filter(Boolean).join(' · ')
 
   return (
-    <Card className={cn('py-3', active && 'border-primary/60 bg-primary/5')}>
+    <Card className={cn('py-3', active ? 'border-primary/60 bg-primary/5' : 'bg-transparent')}>
       <CardContent className="flex items-center gap-2 px-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -112,9 +134,13 @@ function BoardCard({ board, active, onActivate, onRemove, onAngle, onHoldSets }:
           </div>
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         </div>
-        {!active && (
-          <Button size="sm" variant="outline" onClick={onActivate}>
+        {active ? (
+          <Button size="sm" onClick={onBrowse}>
             Browse
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={onSetActive}>
+            Set as active
           </Button>
         )}
         <BoardConfigDrawer
