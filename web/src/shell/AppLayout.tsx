@@ -20,6 +20,8 @@ import { Toaster } from '@/components/ui/sonner'
 import { BleBrowserBanner } from './BleBrowserBanner'
 import { InstallBanner } from './InstallBanner'
 import { FullscreenTipBanner } from './FullscreenTipBanner'
+import { SessionPill } from './SessionPill'
+import { initSessions } from '../sessions/sessionsStore'
 import { CATALOG_SEARCH_DEFAULTS, type CatalogSearch } from '../catalog/catalogSearch'
 
 const Q_DEBOUNCE_MS = 250
@@ -47,6 +49,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
         : onLists
           ? 'lists'
           : 'boards'
+
+  // Rehydrate any active collaboration session once on app start (R11): restores the pill +
+  // per-member chip selections from localStorage, retiring a locally-expired one (KTD-12).
+  useEffect(() => {
+    initSessions()
+  }, [])
 
   // The home tab shown on the collapsed catalog nav — the last home screen visited.
   const [origin, setOrigin] = useState<'boards' | 'logbook' | 'settings'>('boards')
@@ -125,6 +133,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <BleBrowserBanner />
         <InstallBanner />
         <FullscreenTipBanner />
+        <SessionPill suppressed={onCatalog} />
         <header className="mb-3 flex items-center justify-end gap-2">
           <AccountMenu />
         </header>
