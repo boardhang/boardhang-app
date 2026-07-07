@@ -15,6 +15,7 @@ import { getActiveHoldSetsRaw, getAngle, setAngle, useBoardStore } from '../boar
 import { holdSetContext, isClimbable } from '../board/holdSetMembership'
 import { CatalogList } from './CatalogList'
 import { FilterSheet } from './FilterSheet'
+import { SessionBar } from './SessionBar'
 import { RecentsSheet } from './RecentsSheet'
 import { ProblemDetail } from './ProblemDetail'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
@@ -245,6 +246,7 @@ export function CatalogScreen() {
   return (
     <div className="flex flex-1 flex-col">
       {!added && <UnaddedBoardBanner name={board.name} onAdd={() => addBoard(board.layoutId)} />}
+      <SessionBar board={board} />
       <CatalogList
         board={board}
         angle={angle}
