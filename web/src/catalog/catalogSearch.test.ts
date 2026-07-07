@@ -71,6 +71,19 @@ describe('catalogSearch round-trip', () => {
     expect(roundTrip(f).sortSecondary).toBeNull()
   })
 
+  it('keeps the default secondary through the strip/refill path under a non-grade primary', () => {
+    // sortThenBy='easiest' equals the default and is stripped from the URL, yet must
+    // refill+decode back to 'easiest' — grade differs from the 'rated' (stars) primary.
+    const f: FilterState = { ...DEFAULT_FILTERS, sortPrimary: 'rated', sortSecondary: 'easiest' }
+    expect(roundTrip(f).sortSecondary).toBe('easiest')
+  })
+
+  it('decodes a bare ?sort=easiest link to no tiebreak (default secondary shares its dimension)', () => {
+    // No sortThenBy in the URL → validate fills the default 'easiest', which shares the
+    // 'easiest' primary's grade dimension and is therefore dropped to null.
+    expect(searchToFilters(validateCatalogSearch({ sort: 'easiest' })).sortSecondary).toBeNull()
+  })
+
   it('encodes booleans as 1 and omits them when off', () => {
     const on = filtersToSearch({ ...DEFAULT_FILTERS, benchmarkOnly: true, favoritesOnly: true })
     expect(on.bench).toBe(1)
