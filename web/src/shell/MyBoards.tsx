@@ -1,8 +1,10 @@
 // "My Boards": the boards the user owns. Each board is a clean row (name +
-// config summary + Browse/Active); tapping the config button opens a bottom
-// drawer to edit its angle and installed hold sets (or remove it) — mirroring
-// iOS, where board config lives behind a separate sheet. Also the first-run
-// surface (zero added boards).
+// config summary). The active board shows a primary "Browse" action into its
+// catalog; every other owned board shows a secondary "Set as active" that just
+// switches the active board (staying on this list). Tapping the config button
+// opens a bottom drawer to edit angle and installed hold sets (or remove it) —
+// mirroring iOS, where board config lives behind a separate sheet. Also the
+// first-run surface (zero added boards).
 
 import { useState } from 'react'
 import { Settings2 } from 'lucide-react'
@@ -50,10 +52,10 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
               key={board.layoutId}
               board={board}
               active={board.layoutId === activeBoard.layoutId}
-              onActivate={() => {
-                activateBoard(board.layoutId)
-                onActivated(board.layoutId)
-              }}
+              // Active board → browse its catalog (already active, no switch).
+              onBrowse={() => onActivated(board.layoutId)}
+              // Inactive board → just switch the active board; stay on this list.
+              onSetActive={() => activateBoard(board.layoutId)}
               onRemove={() => removeBoard(board.layoutId)}
               onAngle={(angle) => setAngle(board.layoutId, angle)}
               onHoldSets={(csv) => setActiveHoldSetsRaw(board.layoutId, csv)}
@@ -84,13 +86,14 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
 interface BoardCardProps {
   board: CatalogBoardDef
   active: boolean
-  onActivate: () => void
+  onBrowse: () => void
+  onSetActive: () => void
   onRemove: () => void
   onAngle: (angle: number) => void
   onHoldSets: (csv: string) => void
 }
 
-function BoardCard({ board, active, onActivate, onRemove, onAngle, onHoldSets }: BoardCardProps) {
+function BoardCard({ board, active, onBrowse, onSetActive, onRemove, onAngle, onHoldSets }: BoardCardProps) {
   const angle = getAngle(board)
   const { filterable, active: installed } = holdSetContext(
     board.membershipResource,
@@ -112,9 +115,13 @@ function BoardCard({ board, active, onActivate, onRemove, onAngle, onHoldSets }:
           </div>
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         </div>
-        {!active && (
-          <Button size="sm" variant="outline" onClick={onActivate}>
+        {active ? (
+          <Button size="sm" onClick={onBrowse}>
             Browse
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={onSetActive}>
+            Set as active
           </Button>
         )}
         <BoardConfigDrawer

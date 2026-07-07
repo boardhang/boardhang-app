@@ -60,6 +60,13 @@ export function addBoard(layoutId: number): void {
   if (boardByLayoutId(layoutId) === undefined) return
   const rest = getAddedBoardIds().filter((id) => id !== layoutId)
   writeAddedBoardIds([layoutId, ...rest])
+  // Invariant: the active board is always one the user owns. Adding a board does
+  // not otherwise change the active board, but if the stored active board isn't
+  // owned (e.g. the fresh-install default), adopt this newly added one so the
+  // list always has exactly one active board to Browse.
+  if (!getAddedBoardIds().includes(getActiveBoardId())) {
+    writeLS(ACTIVE_KEY, String(layoutId))
+  }
   emit()
 }
 
@@ -137,7 +144,17 @@ function computeSnapshot(): StoreSnapshot {
   const addedBoards = getAddedBoardIds()
     .map((id) => boardByLayoutId(id))
     .filter((b): b is CatalogBoardDef => b !== undefined)
-  const activeBoard = boardByLayoutId(getActiveBoardId()) ?? boardByLayoutId(DEFAULT_ACTIVE)!
+  // The active board is always shown as one the user owns: prefer the stored
+  // active board when it's owned, else fall back to the MRU front (mirrors the
+  // cold-launch redirect in router.tsx). Guards legacy state where the stored
+  // active board predates the added list. Empty added list → first-run screen,
+  // so the DEFAULT_ACTIVE fallback is never actually surfaced there.
+  const activeId = getActiveBoardId()
+  const activeBoard =
+    addedBoards.find((b) => b.layoutId === activeId) ??
+    addedBoards[0] ??
+    boardByLayoutId(activeId) ??
+    boardByLayoutId(DEFAULT_ACTIVE)!
   return { addedBoards, activeBoard }
 }
 
