@@ -3,14 +3,15 @@
 // the iOS Home logbook section + full LogbookView combined onto one screen. Data comes
 // straight from the shared Supabase `ascents` table (online-first; see ascents.ts).
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { getRouteApi, useRouter } from '@tanstack/react-router'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { getRouteApi } from '@tanstack/react-router'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInPanel } from '../auth/SignInPanel'
 import { useBoardStore } from '../board/boardStore'
 import { getCatalogProblemsByIds, type CatalogProblem } from '../catalog/catalogSync'
 import { useFavorites } from '../catalog/favoritesStore'
 import { ProblemDetail } from '../catalog/ProblemDetail'
+import { useProblemDrawer } from '../catalog/useProblemDrawer'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
@@ -29,7 +30,6 @@ export function LogbookScreen() {
   const { status: dataStatus, ascents, error } = useEnsureAscentsLoaded()
   // Route-bound so the drawer's `search` reducer types against /logbook's params.
   const navigate = routeApi.useNavigate()
-  const router = useRouter()
   const signedIn = status !== 'signedOut'
   // The store defaults `activeBoard` to Mini 2025 even when it isn't among the added
   // boards (adding a board doesn't activate it), so gate on membership — not just count —
@@ -76,29 +76,27 @@ export function LogbookScreen() {
     setSheetOpen(true)
   }
 
-  // ── Problem detail drawer, driven by ?problem (CatalogScreen pattern) ────────
+  // ── Problem detail drawer, driven by ?problem (shared useProblemDrawer hook) ─
   // /logbook is a tab root, so the drawer rides a history-integrated search param:
   // Back closes it and stays on the tab (a pure-local-state drawer would eject the
-  // user from the whole Logbook tab on Back). Push on open so Back closes.
-  //
-  // The pager *domain* is the tapped row's day-session (deduped, resolvable problems
-  // in on-screen order), captured as a state snapshot at open time — `?problem` alone
-  // can't name the session (a problem logged on two days shares one id), mirroring
-  // CatalogScreen's recents `pagerStack`. A cold deep-link / refresh has no snapshot →
-  // falls back to a single-problem view (prev/next off).
+  // user from the whole Logbook tab on Back). The hook owns the push/close/history
+  // protocol; the pager *domain* it snapshots here is the tapped row's day-session
+  // (deduped, resolvable problems in on-screen order — see openProblem call below).
   const search = routeApi.useSearch()
-  const openId = search.problem
-  const [sessionStack, setSessionStack] = useState<CatalogProblem[] | null>(null)
+  const openId = search.problem ?? ''
+  const { pagerStack, openProblem, showProblem, closeDrawer } = useProblemDrawer({
+    openId,
+    pushProblem: (id) => void navigate({ search: (prev) => ({ ...prev, problem: id }) }),
+    replaceProblem: (id) =>
+      void navigate({ search: (prev) => ({ ...prev, problem: id }), replace: true }),
+    clearProblem: () => void navigate({ search: (prev) => ({ ...prev, problem: '' }), replace: true }),
+  })
+  // Resolve the open id against the captured session snapshot, falling back to the cached
+  // catalog map for a cold deep-link (no snapshot → single-problem view, prev/next off).
   const current = openId
-    ? (sessionStack?.find((p) => p.source_catalog_id === openId) ?? catalogById.get(openId))
+    ? (pagerStack?.find((p) => p.source_catalog_id === openId) ?? catalogById.get(openId))
     : undefined
-  const displayed = sessionStack ?? (current ? [current] : [])
-
-  // Drop the session snapshot whenever the drawer closes (?problem cleared by any means:
-  // Back, gesture, deep-link removal) so a later tap never pages over a stale session.
-  useEffect(() => {
-    if (!openId) setSessionStack(null)
-  }, [openId])
+  const displayed = pagerStack ?? (current ? [current] : [])
 
   const { favoriteIds } = useFavorites()
   // Logged sends → the green sent check on the detail (iOS parity), mirroring
@@ -112,27 +110,6 @@ export function LogbookScreen() {
       ),
     [boardAscents],
   )
-
-  // Push-opened drawers close on Back; there's nothing to go Back to for a cold deep link.
-  const pushed = useRef(false)
-  function openProblem(id: string, sessionProblems: CatalogProblem[]) {
-    pushed.current = true
-    setSessionStack(sessionProblems)
-    void navigate({ search: (prev) => ({ ...prev, problem: id }) })
-  }
-  function showProblem(id: string) {
-    void navigate({ search: (prev) => ({ ...prev, problem: id }), replace: true })
-  }
-  function closeDrawer() {
-    if (pushed.current) {
-      pushed.current = false
-      void router.history.back()
-    } else {
-      // Cold deep-link (not push-opened): drop ?problem in place. '' is its default,
-      // so the strip middleware removes it from the URL.
-      void navigate({ search: (prev) => ({ ...prev, problem: '' }), replace: true })
-    }
-  }
 
   // The board name only belongs here once the active board is one the user added —
   // otherwise the store's default board would leak a name for a board they never chose.

@@ -6,9 +6,9 @@
 // the single useSlab and derives the filter context (favorites + installed-hold-set
 // climbable check).
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Loader2 } from 'lucide-react'
-import { getRouteApi, useRouter } from '@tanstack/react-router'
+import { getRouteApi } from '@tanstack/react-router'
 import { FONT_GRADES, gradeIndex } from '../board/grades'
 import { boardByLayoutId, defaultAngle } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, setAngle, useBoardStore } from '../board/boardStore'
@@ -24,6 +24,7 @@ import { filtersToSearch, searchToFilters } from './catalogSearch'
 import { saveSeed } from './filterSeed'
 import { useFavorites } from './favoritesStore'
 import { useSlab } from './useSlab'
+import { useProblemDrawer } from './useProblemDrawer'
 import { useEnsureAscentsLoaded } from '../logbook/ascents'
 import { useAuth } from '../auth/AuthProvider'
 import type { CatalogProblem } from './catalogSync'
@@ -31,7 +32,6 @@ import type { CatalogProblem } from './catalogSync'
 const routeApi = getRouteApi('/board/$layoutId/catalog')
 
 export function CatalogScreen() {
-  const router = useRouter()
   const { layoutId } = routeApi.useParams()
   const search = routeApi.useSearch()
   const navigate = routeApi.useNavigate()
@@ -134,13 +134,19 @@ export function CatalogScreen() {
   // Ring the actively-filtered holds on thumbnails + the detail board (iOS parity).
   const highlightHolds = useMemo(() => new Set(filters.holdsFilter), [filters.holdsFilter])
 
-  // ── Problem drawer, driven by ?problem ──────────────────────────────────────
-  // The open problem's id lives in ?problem (deep-linkable). The pager *domain* is
-  // session state: a recents snapshot when opened from the recents sheet (so paging
-  // stays within recents, filter-independent — iOS parity), else the filtered
-  // `displayed` list. Push on open (Back closes the drawer), replace on paging.
-  const [pagerStack, setPagerStack] = useState<CatalogProblem[] | null>(null)
+  // ── Problem drawer, driven by ?problem (shared useProblemDrawer hook) ───────
+  // The open problem's id lives in ?problem (deep-linkable); the hook owns the
+  // push/close/history protocol. The pager *domain* it snapshots is a recents snapshot
+  // when opened from the recents sheet (so paging stays within recents, filter-
+  // independent — iOS parity), else null → the filtered `displayed` list.
   const openId = search.problem
+  const { pagerStack, openProblem: openDrawer, showProblem, closeDrawer } = useProblemDrawer({
+    openId,
+    pushProblem: (id) => void navigate({ search: (prev) => ({ ...prev, problem: id }) }),
+    replaceProblem: (id) =>
+      void navigate({ search: (prev) => ({ ...prev, problem: id }), replace: true }),
+    clearProblem: () => void navigate({ search: (prev) => ({ ...prev, problem: '' }), replace: true }),
+  })
   const pagerList = pagerStack ?? displayed
   // Resolve against the active pager domain, falling back to the full slab so a
   // deep-linked problem the filters exclude still opens (standalone, prev/next off).
@@ -154,42 +160,11 @@ export function CatalogScreen() {
   const problemPending = Boolean(openId) && !current && loading
   const drawerOpen = current !== undefined || problemPending
 
-  // Drop the recents pager source whenever the drawer closes (?problem cleared by any
-  // means: Back, gesture, deep-link removal) so a later list tap or deep link never
-  // pages over a stale recents snapshot.
-  useEffect(() => {
-    if (!openId) setPagerStack(null)
-  }, [openId])
-
-  // Whether this drawer session was push-opened (so Back should close it) rather than
-  // entered cold via a deep link (nothing to go Back to).
-  const pushed = useRef(false)
-
-  // List taps: page over the filtered list.
-  const openProblem = (problem: CatalogProblem) => {
-    pushed.current = true
-    setPagerStack(null)
-    void navigate({ search: (prev) => ({ ...prev, problem: problem.source_catalog_id }) })
-  }
-  // Recent taps: page over the recents snapshot RecentsSheet hands over.
-  const openRecent = (stack: CatalogProblem[], index: number) => {
-    pushed.current = true
-    setPagerStack(stack)
-    void navigate({ search: (prev) => ({ ...prev, problem: stack[index].source_catalog_id }) })
-  }
-  const showProblem = (id: string) => {
-    void navigate({ search: (prev) => ({ ...prev, problem: id }), replace: true })
-  }
-  const closeDrawer = () => {
-    if (pushed.current) {
-      pushed.current = false
-      void router.history.back()
-    } else {
-      // Not push-opened (cold deep-link): drop ?problem in place. '' is its default,
-      // so the strip middleware removes it from the URL.
-      void navigate({ search: (prev) => ({ ...prev, problem: '' }), replace: true })
-    }
-  }
+  // List taps: page over the filtered list (no snapshot). Recent taps: page over the
+  // recents snapshot RecentsSheet hands over.
+  const openProblem = (problem: CatalogProblem) => openDrawer(problem.source_catalog_id)
+  const openRecent = (stack: CatalogProblem[], index: number) =>
+    openDrawer(stack[index].source_catalog_id, stack)
 
   return (
     <div className="flex flex-1 flex-col">
