@@ -127,10 +127,15 @@ export function ShareSession() {
   }
 
   return (
-    <div className="flex w-full flex-col items-center gap-4">
+    // min-w-0: this is a grid item in DialogContent; without it the item's min-content (the
+    // unbreakable join URL) forces the whole dialog wider than its max-width instead of the
+    // link ellipsizing. min-w-0 lets the width cap propagate down so the chip truncates.
+    <div className="flex w-full min-w-0 flex-col items-center gap-4">
       <QrImage url={url} />
 
-      {/* Truncated link chip: hover for the full URL, click to copy (with feedback). */}
+      {/* Truncated link chip: hover for the full URL, click to copy (with feedback). The
+          wrapper is w-full/min-w-0 so the chip fills a bounded width and the URL ellipsizes
+          inside it (flex-1 basis-0 span) instead of stretching the dialog. */}
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger
@@ -139,11 +144,11 @@ export function ShareSession() {
                 type="button"
                 onClick={() => void copyLink()}
                 aria-label="Copy join link"
-                className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                className="flex w-full min-w-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
               />
             }
           >
-            <span className="min-w-0 truncate">{url}</span>
+            <span className="min-w-0 flex-1 truncate text-left">{url}</span>
             {copied ? (
               <Check className="size-3.5 shrink-0 text-primary" />
             ) : (
