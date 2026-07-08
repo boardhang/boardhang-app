@@ -76,9 +76,9 @@ describe('FilterControls', () => {
 function sessionSetup(over: Partial<SessionFilterUI> = {}) {
   const onRefresh = vi.fn()
   const rows: SessionFilterUI['rows'] = over.rows ?? [
-    { userId: 'me', label: 'You', isSelf: true, selected: [], onToggle: vi.fn() },
-    { userId: 'alice', label: 'Alice', isSelf: false, selected: ['sent'], onToggle: vi.fn() },
-    { userId: 'bob', label: 'Bob', isSelf: false, selected: [], onToggle: vi.fn() },
+    { userId: 'me', label: 'You', initials: 'ME', isSelf: true, selected: [], onToggle: vi.fn() },
+    { userId: 'alice', label: 'Alice', initials: 'AL', isSelf: false, selected: ['sent'], onToggle: vi.fn() },
+    { userId: 'bob', label: 'Bob', initials: 'BO', isSelf: false, selected: [], onToggle: vi.fn() },
   ]
   h.session = { rows, state: over.state ?? 'ready', onRefresh }
   render(
@@ -103,7 +103,9 @@ describe('FilterControls — per-member session status (U5)', () => {
       .map((g) => g.getAttribute('aria-label'))
       .filter((l) => l?.endsWith('ascent status'))
     expect(groups).toEqual(['Your ascent status', 'Alice’s ascent status', 'Bob’s ascent status'])
-    expect(screen.getByText('You')).toBeInTheDocument()
+    // Self is shown as an avatar whose accessible name is "You".
+    expect(screen.getByLabelText('You')).toBeInTheDocument()
+    expect(screen.getByText('ME')).toBeInTheDocument()
   })
 
   it('loading state marks rows aria-busy and non-interactive', () => {

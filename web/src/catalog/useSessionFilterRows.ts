@@ -16,8 +16,10 @@ import type { StatusKey } from './filters'
 /** One member's row in the per-member "Ascent status" section (U5). */
 export interface MemberFilterRow {
   userId: string
-  /** Visible label — "You" for the self row, else the member's display label/initials. */
+  /** Name shown on the avatar's hover tooltip — "You" for self, else the member's label. */
   label: string
+  /** Member initials for the avatar. */
+  initials: string
   isSelf: boolean
   selected: StatusKey[]
   onToggle: (k: StatusKey, active: boolean) => void
@@ -54,14 +56,13 @@ export function useSessionFilterRows(board: CatalogBoardDef): SessionFilterUI | 
     const rows = ordered.map((uid) => {
       const isSelf = uid === selfId
       const m = rosterById.get(uid)
-      const label = isSelf
-        ? 'You'
-        : m
-          ? memberLabel(m)
-          : memberInitials({ userId: uid, displayName: null, handle: null })
+      const synthetic = { userId: uid, displayName: null, handle: null }
+      const label = isSelf ? 'You' : m ? memberLabel(m) : memberInitials(synthetic)
+      const initials = memberInitials(m ?? synthetic)
       return {
         userId: uid,
         label,
+        initials,
         isSelf,
         selected: memberStatus[uid] ?? [],
         onToggle: (k: StatusKey, active: boolean) => {

@@ -219,6 +219,7 @@ export function FilterControls({
                 <MemberStatusRow
                   key={row.userId}
                   label={row.label}
+                  initials={row.initials}
                   isSelf={row.isSelf}
                   ariaLabel={row.isSelf ? 'Your ascent status' : `${row.label}’s ascent status`}
                   selected={row.selected}

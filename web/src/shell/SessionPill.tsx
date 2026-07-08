@@ -8,6 +8,7 @@
 import { Users } from 'lucide-react'
 import { leaveSession, removeMember, useSessions } from '../sessions/sessionsStore'
 import { ShareSession } from '../sessions/ShareSession'
+import { MemberAvatar } from '../sessions/MemberAvatar'
 import { memberInitials, memberLabel } from '../sessions/sessionsTypes'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { Button } from '@/components/ui/button'
@@ -45,9 +46,7 @@ export function SessionPill({ suppressed }: { suppressed?: boolean }) {
                   const isSelf = m.userId === selfId
                   return (
                     <li key={m.userId} className="flex items-center gap-2.5">
-                      <span className="flex size-7 items-center justify-center rounded-full bg-primary/15 text-[0.65rem] font-semibold text-foreground">
-                        {memberInitials(m)}
-                      </span>
+                      <MemberAvatar initials={memberInitials(m)} isSelf={isSelf} />
                       <span className="min-w-0 flex-1 truncate text-sm">
                         {isSelf ? 'You' : memberLabel(m)}
                       </span>

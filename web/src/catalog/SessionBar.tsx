@@ -17,6 +17,7 @@ import {
 } from '../sessions/sessionsStore'
 import { refreshMemberAscents } from '../sessions/memberAscentsStore'
 import { defaultSessionName, MAX_SESSION_NAME, memberInitials } from '../sessions/sessionsTypes'
+import { MemberAvatar } from '../sessions/MemberAvatar'
 import { ShareSession } from '../sessions/ShareSession'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -124,19 +125,18 @@ function ActiveBar({ board, onShare }: { board: CatalogBoardDef; onShare: () => 
         {shown.length === 0
           ? // Roster still loading — neutral placeholder dots (never raw user-ids).
             [0, 1].map((i) => (
-              <span key={i} className="size-6 rounded-full border border-background bg-muted-foreground/20" />
+              <span key={i} className="size-6 rounded-full ring-2 ring-background bg-muted-foreground/20" />
             ))
           : shown.map((m) => (
-              <span
+              <MemberAvatar
                 key={m.userId}
+                initials={memberInitials(m)}
                 title={m.displayName ?? m.handle ?? undefined}
-                className="flex size-6 items-center justify-center rounded-full border border-background bg-primary/15 text-[0.6rem] font-semibold text-foreground"
-              >
-                {memberInitials(m)}
-              </span>
+                className="ring-2 ring-background"
+              />
             ))}
         {extra > 0 && (
-          <span className="flex size-6 items-center justify-center rounded-full border border-background bg-muted text-[0.6rem] font-medium text-muted-foreground">
+          <span className="flex size-6 items-center justify-center rounded-full ring-2 ring-background bg-muted text-[0.6rem] font-medium text-muted-foreground">
             +{extra}
           </span>
         )}
