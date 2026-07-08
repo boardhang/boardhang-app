@@ -1,15 +1,16 @@
 // The global "in session" pill (U6): a slim, self-gating chrome element shown on every
 // route while a collaboration session is active — EXCEPT the catalog, where the richer
 // SessionBar already owns that surface (avoids two concurrent Leave/Share controls). Tapping
-// it opens a panel with the roster, the shared ShareSession affordance, and a deliberate
-// Leave. When the current user is the owner, each other roster row carries a remove control
-// (owner-removes-member, KTD-11) — the UI consumer of the owner-only DELETE policy.
+// it opens a panel with the roster (a stacked AvatarGroup, names on hover), the shared
+// ShareSession affordance, and a deliberate Leave. The owner-removes-member control (KTD-11)
+// lives in the SessionBar's ⋯ menu.
 
 import { Users } from 'lucide-react'
-import { leaveSession, removeMember, useSessions } from '../sessions/sessionsStore'
+import { leaveSession, useSessions } from '../sessions/sessionsStore'
 import { ShareSession } from '../sessions/ShareSession'
 import { MemberAvatar } from '../sessions/MemberAvatar'
 import { memberInitials, memberLabel } from '../sessions/sessionsTypes'
+import { AvatarGroup } from '@/components/ui/avatar'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { Button } from '@/components/ui/button'
 
@@ -19,7 +20,6 @@ export function SessionPill({ suppressed }: { suppressed?: boolean }) {
   // route (the SessionBar owns that surface).
   if (!activeSession || suppressed) return null
 
-  const isOwner = !!selfId && activeSession.ownerId === selfId
   const count = roster.length || 1
 
   return (
@@ -36,36 +36,22 @@ export function SessionPill({ suppressed }: { suppressed?: boolean }) {
           <DrawerHeader>
             <DrawerTitle>{activeSession.name || 'Session'}</DrawerTitle>
           </DrawerHeader>
-          <div className="max-h-[70vh] space-y-5 overflow-y-auto px-4 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-            {/* Roster */}
-            <ul className="space-y-1.5">
-              {roster.length === 0 ? (
-                <li className="text-sm text-muted-foreground">Loading members…</li>
-              ) : (
-                roster.map((m) => {
-                  const isSelf = m.userId === selfId
-                  return (
-                    <li key={m.userId} className="flex items-center gap-2.5">
-                      <MemberAvatar initials={memberInitials(m)} isSelf={isSelf} />
-                      <span className="min-w-0 flex-1 truncate text-sm">
-                        {isSelf ? 'You' : memberLabel(m)}
-                      </span>
-                      {isOwner && !isSelf && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-destructive"
-                          aria-label={`Remove ${memberLabel(m)}`}
-                          onClick={() => void removeMember(m.userId)}
-                        >
-                          Remove
-                        </Button>
-                      )}
-                    </li>
-                  )
-                })
-              )}
-            </ul>
+          <div className="max-h-[70vh] space-y-5 overflow-y-auto px-4 pt-1 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+            {/* Roster — a stacked AvatarGroup; hover an avatar for the member's name. */}
+            {roster.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Loading members…</p>
+            ) : (
+              <AvatarGroup aria-label={`${count} ${count === 1 ? 'member' : 'members'}`}>
+                {roster.map((m) => (
+                  <MemberAvatar
+                    key={m.userId}
+                    initials={memberInitials(m)}
+                    isSelf={m.userId === selfId}
+                    title={m.userId === selfId ? 'You' : memberLabel(m)}
+                  />
+                ))}
+              </AvatarGroup>
+            )}
 
             {/* Share */}
             <ShareSession />

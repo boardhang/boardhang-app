@@ -4,7 +4,7 @@
 // DIFFERENT board is active it renders nothing (the global pill surfaces that one).
 
 import { useCallback, useRef, useState } from 'react'
-import { MoreHorizontal, RefreshCw, Share2, Users } from 'lucide-react'
+import { MoreHorizontal, RefreshCw, Share2, Users, X } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import { boardShortLabel } from '../lists/listsTypes'
 import { useAuth } from '../auth/AuthProvider'
@@ -12,11 +12,12 @@ import {
   createSession,
   leaveSession,
   refreshActiveSession,
+  removeMember,
   renameSession,
   useSessions,
 } from '../sessions/sessionsStore'
 import { refreshMemberAscents } from '../sessions/memberAscentsStore'
-import { defaultSessionName, MAX_SESSION_NAME, memberInitials } from '../sessions/sessionsTypes'
+import { defaultSessionName, MAX_SESSION_NAME, memberInitials, memberLabel } from '../sessions/sessionsTypes'
 import { MemberAvatar } from '../sessions/MemberAvatar'
 import { ShareSession } from '../sessions/ShareSession'
 import { AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar'
@@ -101,9 +102,11 @@ function StartBar({
 }
 
 function ActiveBar({ board, onShare }: { board: CatalogBoardDef; onShare: () => void }) {
-  const { activeSession, roster } = useSessions()
+  const { activeSession, roster, selfId } = useSessions()
   const [refreshing, setRefreshing] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const isOwner = !!selfId && activeSession?.ownerId === selfId
+  const removable = roster.filter((m) => m.userId !== selfId)
 
   const refresh = useCallback(async () => {
     setRefreshing(true)
@@ -153,7 +156,28 @@ function ActiveBar({ board, onShare }: { board: CatalogBoardDef; onShare: () => 
           >
             <MoreHorizontal className="size-4" />
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-40 p-1">
+          <PopoverContent align="end" className="w-56 p-1">
+            {/* Owner-removes-member (KTD-11) — the UI consumer of the owner-only DELETE policy. */}
+            {isOwner && removable.length > 0 && (
+              <>
+                <p className="px-2 pt-1 pb-0.5 text-xs text-muted-foreground">Remove a member</p>
+                {removable.map((m) => (
+                  <Button
+                    key={m.userId}
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2"
+                    aria-label={`Remove ${memberLabel(m)}`}
+                    onClick={() => void removeMember(m.userId)}
+                  >
+                    <MemberAvatar initials={memberInitials(m)} />
+                    <span className="min-w-0 flex-1 truncate text-left">{memberLabel(m)}</span>
+                    <X className="size-3.5 shrink-0 text-muted-foreground" />
+                  </Button>
+                ))}
+                <div className="my-1 h-px bg-border" />
+              </>
+            )}
             <Button
               variant="ghost"
               size="sm"
