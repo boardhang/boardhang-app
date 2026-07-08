@@ -56,6 +56,27 @@ begin
     end;
 end $$;
 
+-- A folderless object name (no `{uid}/` prefix) is rejected: storage.foldername returns an
+-- empty array, so foldername[1] is NULL and can match no user (RLS folder-guard fails).
+-- Also exercises the trigger's NULL-uid branch (coalesce(_uid,'') → no crash) — the RLS
+-- check is what denies. (A here has 1 object, so the cap trigger passes and RLS is the gate.)
+do $$
+begin
+    begin
+        insert into storage.objects (bucket_id, name, owner)
+        values ('logbook-imports', 'nofolder.csv', auth.uid());
+        raise exception 'FAIL: folderless object name allowed';
+    exception when insufficient_privilege then
+        raise notice 'PASS: folderless object name denied (NULL folder)';
+    end;
+end $$;
+
+-- Coverage note: this single-threaded harness verifies the trigger's count-and-raise and
+-- its per-user WHERE scoping, but does NOT exercise the pg_advisory_xact_lock under
+-- contention (TOCTOU only manifests across concurrent transactions, which psql can't drive
+-- here). If a refactor drops the advisory lock, these assertions stay green — treat the
+-- lock as load-bearing and re-verify concurrency behavior against real Supabase.
+
 -- ── Seed B''s data (as superuser) to test cross-user READ ─────────────────────
 reset role;
 insert into public.logbook_imports (user_id, storage_path) values (:'B', :'B' || '/bbb.csv');
@@ -83,8 +104,9 @@ begin
     raise notice 'PASS: cross-user delete affects zero rows';
 end $$;
 
--- ── Per-user object cap: the 2-file limit is enforced on storage.objects ──────
--- Act as a fresh user C so A''s single object doesn''t skew the count.
+-- ── Per-user object cap: the 2-file limit is enforced by the BEFORE INSERT trigger ──
+-- Act as a fresh user C so A''s single object doesn''t skew the count. The trigger raises
+-- check_violation (not the RLS insufficient_privilege) when the cap is hit.
 reset role;
 insert into auth.users (id) values ('33333333-3333-3333-3333-333333333333');
 set role authenticated;
@@ -92,7 +114,7 @@ select set_config('test.uid', '33333333-3333-3333-3333-333333333333', false);
 do $$
 declare i int;
 begin
-    -- Fill to the cap (2 objects), then the 3rd must be rejected.
+    -- Fill to the cap (2 objects), then the 3rd must be rejected by the trigger.
     for i in 1..2 loop
         insert into storage.objects (bucket_id, name, owner)
         values ('logbook-imports', '33333333-3333-3333-3333-333333333333/f' || i || '.csv',
@@ -103,9 +125,22 @@ begin
         values ('logbook-imports', '33333333-3333-3333-3333-333333333333/overflow.csv',
                 '33333333-3333-3333-3333-333333333333');
         raise exception 'FAIL: 3rd object allowed past the per-user cap';
-    exception when insufficient_privilege then
-        raise notice 'PASS: per-user object cap (2) enforced';
+    exception when check_violation then
+        raise notice 'PASS: per-user object cap (2) enforced by trigger';
     end;
+end $$;
+
+-- The cap is per-user: a different user (A) is unaffected by C filling their own folder.
+reset role;
+set role authenticated;
+select set_config('test.uid', '11111111-1111-1111-1111-111111111111', false);
+do $$
+begin
+    -- A already has 1 object; a 2nd is still allowed (their own count, not C''s).
+    insert into storage.objects (bucket_id, name, owner)
+    values ('logbook-imports', '11111111-1111-1111-1111-111111111111/second.csv',
+            '11111111-1111-1111-1111-111111111111');
+    raise notice 'PASS: cap is per-user (A unaffected by C)';
 end $$;
 
 -- ── Anonymous role is default-denied (has grants, but no policy) ──────────────
@@ -133,8 +168,8 @@ begin
         'FAIL: B metadata rows orphaned (FK cascade broken)';
     assert (select count(*) from storage.objects where name like '22222222-2222-2222-2222-222222222222/%') = 0,
         'FAIL: B storage objects orphaned (delete_user did not sweep the bucket)';
-    -- A''s data is untouched.
-    assert (select count(*) from storage.objects where name like '11111111-1111-1111-1111-111111111111/%') = 1,
+    -- A''s data is untouched (A has 2 objects: the happy-path file + the per-user-cap file).
+    assert (select count(*) from storage.objects where name like '11111111-1111-1111-1111-111111111111/%') = 2,
         'FAIL: A objects wrongly swept';
     raise notice 'PASS: delete_user swept B storage + cascaded metadata; A untouched';
 end $$;

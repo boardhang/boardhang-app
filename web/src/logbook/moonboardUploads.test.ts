@@ -9,13 +9,14 @@ const m = vi.hoisted(() => {
   const insert = vi.fn(() => ({ select: () => ({ single }) }))
   const select = vi.fn(() => ({ order }))
   const del = vi.fn(() => ({ eq }))
-  const from = vi.fn(() => ({ insert, select, delete: del }))
+  const update = vi.fn(() => ({ eq: () => ({ select: () => ({ single }) }) }))
+  const from = vi.fn(() => ({ insert, select, delete: del, update }))
   const upload = vi.fn()
   const remove = vi.fn()
   const storageFrom = vi.fn(() => ({ upload, remove }))
   const getSession = vi.fn()
   const client = { from, storage: { from: storageFrom }, auth: { getSession } }
-  return { client, single, order, eq, insert, select, del, from, upload, remove, storageFrom, getSession }
+  return { client, single, order, eq, insert, select, del, update, from, upload, remove, storageFrom, getSession }
 })
 
 vi.mock('../supabase/client', () => ({ supabase: m.client, isConfigured: true }))
@@ -65,7 +66,7 @@ describe('validateFile', () => {
 })
 
 describe('uploadImport', () => {
-  it('uploads to the user folder then inserts the envelope row', async () => {
+  it('inserts a pending row, uploads to the user folder, then marks it uploaded', async () => {
     const row = await uploadImport(fakeFile('moon.csv', 123, 'text/csv'))
     expect(m.storageFrom).toHaveBeenCalledWith(BUCKET)
     const [path] = m.upload.mock.calls[0]
@@ -77,9 +78,12 @@ describe('uploadImport', () => {
       original_filename: 'moon.csv',
       content_type: 'text/csv',
       size: 123,
+      status: 'pending',
     })
     expect(insertArg.storage_path).toBe(path)
-    expect(row).toEqual({ id: 'row-1' })
+    // Bytes stored → the row is flipped to 'uploaded'.
+    expect(m.update).toHaveBeenCalledWith({ status: 'uploaded' })
+    expect(row).toMatchObject({ id: 'row-1' })
   })
 
   it('rejects an invalid file before touching storage', async () => {
@@ -93,18 +97,21 @@ describe('uploadImport', () => {
     expect(m.upload).not.toHaveBeenCalled()
   })
 
-  it('surfaces a storage error and does not insert a row', async () => {
+  it('rolls back BOTH the object and the row when the upload fails', async () => {
     m.upload.mockResolvedValue({ error: new Error('storage boom') })
     await expect(uploadImport(fakeFile('moon.csv'))).rejects.toThrow('storage boom')
-    expect(m.insert).not.toHaveBeenCalled()
+    const [path] = m.upload.mock.calls[0]
+    // Remove the object too — it may have landed server-side despite the error response
+    // (else it's an invisible orphan that eats the cap) — and delete the row.
+    expect(m.remove).toHaveBeenCalledWith([path])
+    expect(m.insert).toHaveBeenCalled()
+    expect(m.eq).toHaveBeenCalledWith('id', 'row-1')
   })
 
-  it('cleans up the uploaded object when the envelope insert fails', async () => {
+  it('does not upload when the envelope insert fails (no orphan object possible)', async () => {
     m.single.mockResolvedValue({ data: null, error: new Error('insert boom') })
     await expect(uploadImport(fakeFile('moon.csv'))).rejects.toThrow('insert boom')
-    // The just-uploaded object is removed so no invisible orphan is left behind.
-    const uploadedPath = m.upload.mock.calls[0][0]
-    expect(m.remove).toHaveBeenCalledWith([uploadedPath])
+    expect(m.upload).not.toHaveBeenCalled()
   })
 })
 

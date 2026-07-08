@@ -82,27 +82,11 @@ create policy "Users read own logbook-import objects"
         bucket_id = 'logbook-imports'
         and (storage.foldername(name))[1] = auth.uid()::text
     );
--- Per-user object cap (SOFT abuse guard): a user's folder holds at most 2 files (a GDPR
--- export is realistically one file, maybe a CSV + a JSON; Remove handles mistakes). Lives
--- on storage.objects (not just the metadata table) because a caller could upload objects
--- directly and skip the row insert. The self-referencing count subquery runs under the
--- user's SELECT policy, so it counts only their own folder.
---   Caveat: this is NOT concurrency-safe. Under READ COMMITTED the count subquery takes no
---   lock and doesn't see other in-flight inserts, so a burst of *parallel* uploads can
---   race past the cap (TOCTOU). It reliably stops accidental / sequential abuse; a
---   determined attacker firing concurrent requests can exceed it. The hard backstop is the
---   Supabase project-level storage limit. If a strict per-user quota is ever needed, move
---   this to a BEFORE INSERT trigger that takes a per-user pg_advisory_xact_lock first.
 create policy "Users upload own logbook-import objects"
     on storage.objects for insert to authenticated
     with check (
         bucket_id = 'logbook-imports'
         and (storage.foldername(name))[1] = auth.uid()::text
-        and (
-            select count(*) from storage.objects o
-            where o.bucket_id = 'logbook-imports'
-              and (storage.foldername(o.name))[1] = auth.uid()::text
-        ) < 2
     );
 create policy "Users update own logbook-import objects"
     on storage.objects for update to authenticated
@@ -120,6 +104,50 @@ create policy "Users delete own logbook-import objects"
         bucket_id = 'logbook-imports'
         and (storage.foldername(name))[1] = auth.uid()::text
     );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Per-user object cap (abuse / denial-of-wallet guard): at most 2 files per user (a GDPR
+-- export is realistically one file, maybe a CSV + a JSON; Remove handles mistakes). This
+-- lives on storage.objects — not just the metadata table — because a caller could upload
+-- objects directly and skip the row insert, so the storage layer is the only place that
+-- bounds the actual stored bytes (≤ 2 × 25 MB = 50 MB/user).
+--
+-- Enforced in a BEFORE INSERT trigger (not an RLS count subquery) so it is concurrency-
+-- safe: the per-user advisory lock serializes this user's inserts within the transaction,
+-- so a burst of parallel uploads can't each read count < 2 and all slip past (the TOCTOU
+-- an RLS subquery would suffer under READ COMMITTED). SECURITY DEFINER so the count sees
+-- all of the user's objects regardless of RLS; the lock key is scoped per user, so it
+-- never serializes across different users.
+create or replace function public.enforce_logbook_import_cap()
+    returns trigger
+    language plpgsql
+    security definer
+    set search_path = ''
+as $$
+declare
+    _uid   text := (storage.foldername(new.name))[1];
+    _count int;
+begin
+    if new.bucket_id <> 'logbook-imports' then
+        return new;  -- other buckets are untouched
+    end if;
+    perform pg_advisory_xact_lock(hashtextextended('logbook-imports:' || coalesce(_uid, ''), 0));
+    select count(*) into _count
+    from storage.objects
+    where bucket_id = 'logbook-imports'
+      and (storage.foldername(name))[1] = _uid;
+    if _count >= 2 then
+        raise exception 'logbook-imports upload limit reached (max 2 files per user)'
+            using errcode = 'check_violation';
+    end if;
+    return new;
+end;
+$$;
+
+drop trigger if exists enforce_logbook_import_cap on storage.objects;
+create trigger enforce_logbook_import_cap
+    before insert on storage.objects
+    for each row execute function public.enforce_logbook_import_cap();
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- GDPR erasure: account deletion must sweep the user's uploaded files. The

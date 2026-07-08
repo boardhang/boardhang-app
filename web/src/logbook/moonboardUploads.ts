@@ -65,7 +65,15 @@ function sanitizeName(name: string): string {
   return name.replace(/[\u0000-\u001f]/g, '').trim() || 'file'
 }
 
-/** Validate → upload the raw file to `{userId}/{uuid}-{name}` → record the envelope row. */
+const noop = () => {}
+
+/** Validate → record the envelope row (`pending`) → upload the raw file to
+ *  `{userId}/{uuid}-{name}` → flip the row to `uploaded`.
+ *
+ *  Row-first ordering means a failed upload never leaves an *invisible* orphan (the object
+ *  always has a row). `pending` means "row created, bytes not yet confirmed"; only after
+ *  the upload succeeds do we mark `uploaded`, so the future importer can trust
+ *  `status = 'uploaded'` to mean the file is actually there. */
 export async function uploadImport(file: File): Promise<LogbookImport> {
   const check = validateFile(file)
   if (!check.ok) throw new Error(check.reason)
@@ -73,12 +81,6 @@ export async function uploadImport(file: File): Promise<LogbookImport> {
   const client = requireClient()
   const userId = await currentUserId(client)
   const path = `${userId}/${crypto.randomUUID()}-${sanitizeName(file.name)}`
-
-  const { error: uploadError } = await client.storage.from(BUCKET).upload(path, file, {
-    contentType: file.type || undefined,
-    upsert: false,
-  })
-  if (uploadError) throw uploadError
 
   const { data, error: insertError } = await client
     .from('logbook_imports')
@@ -88,17 +90,36 @@ export async function uploadImport(file: File): Promise<LogbookImport> {
       original_filename: file.name,
       content_type: file.type || '',
       size: file.size,
+      status: 'pending',
     })
     .select()
     .single()
-  if (insertError) {
-    // The object is already in the bucket but has no envelope row, so it would be
-    // invisible to listMyImports / removeImport — an unreachable personal-data orphan.
-    // Best-effort clean it up before surfacing the failure.
-    await client.storage.from(BUCKET).remove([path]).catch(() => {})
-    throw insertError
+  if (insertError) throw insertError
+  const row = data as LogbookImport
+
+  const { error: uploadError } = await client.storage.from(BUCKET).upload(path, file, {
+    contentType: file.type || undefined,
+    upsert: false,
+  })
+  if (uploadError) {
+    // Best-effort clean up BOTH sides. The object may have physically landed even though
+    // the SDK returned an error (the response dropped after the server stored it), so we
+    // remove the object as well as the row — otherwise it would be an invisible orphan that
+    // eats the per-user cap. If a step fails, at worst a visible, removable row remains.
+    await client.storage.from(BUCKET).remove([path]).then(noop, noop)
+    await client.from('logbook_imports').delete().eq('id', row.id).then(noop, noop)
+    throw uploadError
   }
-  return data as LogbookImport
+
+  // Bytes are stored — mark the row uploaded. Best-effort: if this fails the file still
+  // exists under a `pending` row (importer skips it; the user can re-remove it).
+  const { data: updated } = await client
+    .from('logbook_imports')
+    .update({ status: 'uploaded' })
+    .eq('id', row.id)
+    .select()
+    .single()
+  return (updated as LogbookImport | null) ?? { ...row, status: 'uploaded' }
 }
 
 /** The caller's own uploads, newest first (RLS scopes to the owner). */
