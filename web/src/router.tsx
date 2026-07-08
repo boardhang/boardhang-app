@@ -8,6 +8,7 @@
 //   /                        → redirect: no boards → /boards, else last catalog
 //   /boards                  → MyBoards (global, not board-scoped)
 //   /logbook                 → LogbookScreen
+//   /logbook/import          → ImportFromMoonBoardScreen (guided GDPR data request)
 //   /lists                   → ListsScreen  (Saved Lists index; requires sign-in)
 //   /lists/$listId           → ListDetailScreen
 //   /settings                → SettingsScreen (global; appearance/theme)
@@ -30,6 +31,7 @@ import { AppLayout } from './shell/AppLayout'
 import { MyBoards } from './shell/MyBoards'
 import { SettingsScreen } from './shell/SettingsScreen'
 import { LogbookScreen } from './logbook/LogbookScreen'
+import { ImportFromMoonBoardScreen } from './logbook/ImportFromMoonBoardScreen'
 import { ListsScreen } from './lists/ListsScreen'
 import { ListDetailScreen } from './lists/ListDetailScreen'
 import { CatalogScreen } from './catalog/CatalogScreen'
@@ -89,6 +91,12 @@ function buildRouteTree() {
     component: LogbookScreen,
   })
 
+  const logbookImportRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/logbook/import',
+    component: ImportFromMoonBoardScreen,
+  })
+
   const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/settings',
@@ -134,6 +142,7 @@ function buildRouteTree() {
     indexRoute,
     boardsRoute,
     logbookRoute,
+    logbookImportRoute,
     settingsRoute,
     listsRoute,
     listDetailRoute,
