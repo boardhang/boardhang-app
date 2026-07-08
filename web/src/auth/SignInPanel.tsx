@@ -37,7 +37,13 @@ export function SignInPanel() {
       await sendEmailCode(email)
       setCodeSent(true)
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : String(err))
+      // Supabase's send errors (e.g. a mailer failure) surface as objects that
+      // stringify to an unhelpful "{}", so log the real error and show a legible
+      // fallback rather than rendering the raw value.
+      console.error('Failed to send sign-in code', err)
+      setErrorMessage(
+        "We couldn't send your code. Please try again in a moment.",
+      )
     } finally {
       setIsWorking(false)
     }
