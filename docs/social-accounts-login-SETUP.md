@@ -42,12 +42,27 @@ both tables cascade off `auth.users`. **This is a cross-user data path: apply an
 it in the target project _before_ deploying the client build that calls its RPCs**
 (branch `feat/web-collab-sessions`).
 
+**`0008_logbook_imports.sql`** — MoonBoard import sample-collection: creates the project's
+**first Storage bucket** (`logbook-imports`, **private**, 25 MB limit), the
+`logbook_imports` envelope table, owner-scoped RLS on **both** the table and
+`storage.objects` (folder-per-user, `WITH CHECK` on writes — the load-bearing
+folder-spoofing guard), and extends `delete_user()` to sweep the user's uploaded objects
+(GDPR erasure — storage objects don't cascade on their own). **This handles personal data
+behind Storage RLS: apply and verify it in the target project _before_ deploying the
+client build that uploads** (branch `feat/web-logbook-import-request`). The file's
+`insert into storage.buckets` creates the bucket; alternatively create it in **Storage →
+New bucket** (`logbook-imports`, **Private**, 25 MB) and the insert is a no-op. The RLS is
+verified locally by `supabase/migrations/tests/run_rls_test.sh` (throwaway docker Postgres);
+re-verify cross-user denial in the dashboard after applying.
+
 - **Easiest:** open **SQL Editor** in the dashboard, paste the entire contents of
   [`supabase/migrations/0001_profiles.sql`](../supabase/migrations/0001_profiles.sql)
   and **Run**, then do the same with
   [`supabase/migrations/0002_logbook_sync.sql`](../supabase/migrations/0002_logbook_sync.sql)
   and
-  [`supabase/migrations/0007_collaboration_sessions.sql`](../supabase/migrations/0007_collaboration_sessions.sql).
+  [`supabase/migrations/0007_collaboration_sessions.sql`](../supabase/migrations/0007_collaboration_sessions.sql),
+  and
+  [`supabase/migrations/0008_logbook_imports.sql`](../supabase/migrations/0008_logbook_imports.sql).
 - **Or with the CLI:** `supabase link --project-ref <ref>` then `supabase db push`
   (applies every migration in `supabase/migrations/` in order).
 
