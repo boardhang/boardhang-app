@@ -10,6 +10,21 @@ import { cleanup } from '@testing-library/react'
 if (typeof window !== 'undefined') {
   window.scrollTo = (() => {}) as typeof window.scrollTo
 
+  // jsdom has no PointerEvent; base-ui controls (e.g. Checkbox) construct one on click.
+  // Polyfill a minimal subclass of MouseEvent so pointer-driven handlers run in tests.
+  if (typeof window.PointerEvent !== 'function') {
+    class PointerEventPolyfill extends MouseEvent {
+      pointerId: number
+      pointerType: string
+      constructor(type: string, params: PointerEventInit = {}) {
+        super(type, params)
+        this.pointerId = params.pointerId ?? 0
+        this.pointerType = params.pointerType ?? 'mouse'
+      }
+    }
+    window.PointerEvent = PointerEventPolyfill as unknown as typeof window.PointerEvent
+  }
+
   // jsdom has no matchMedia; the sonner toaster (via next-themes) reads it on mount.
   if (typeof window.matchMedia !== 'function') {
     window.matchMedia = ((query: string) => ({
