@@ -19,12 +19,17 @@ export function MemberAvatar({
   title?: string
 }) {
   return (
-    <Avatar
-      size="sm"
-      title={title}
-      className={cn(isSelf && 'ring-1 ring-primary ring-offset-1 ring-offset-background', className)}
-    >
-      <AvatarFallback className="bg-primary/15 font-semibold text-foreground">{initials}</AvatarFallback>
+    <Avatar size="sm" title={title} className={className}>
+      {/* Self marker is an INSET ring on the fallback — an outward ring/offset gets clipped by
+          the surrounding overflow-y-auto scroll containers (which clip both axes). */}
+      <AvatarFallback
+        className={cn(
+          'bg-primary/15 font-semibold text-foreground',
+          isSelf && 'ring-2 ring-inset ring-primary',
+        )}
+      >
+        {initials}
+      </AvatarFallback>
     </Avatar>
   )
 }
