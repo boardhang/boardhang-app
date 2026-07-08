@@ -98,6 +98,14 @@ describe('uploadImport', () => {
     await expect(uploadImport(fakeFile('moon.csv'))).rejects.toThrow('storage boom')
     expect(m.insert).not.toHaveBeenCalled()
   })
+
+  it('cleans up the uploaded object when the envelope insert fails', async () => {
+    m.single.mockResolvedValue({ data: null, error: new Error('insert boom') })
+    await expect(uploadImport(fakeFile('moon.csv'))).rejects.toThrow('insert boom')
+    // The just-uploaded object is removed so no invisible orphan is left behind.
+    const uploadedPath = m.upload.mock.calls[0][0]
+    expect(m.remove).toHaveBeenCalledWith([uploadedPath])
+  })
 })
 
 describe('listMyImports', () => {

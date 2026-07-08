@@ -86,7 +86,13 @@ export async function uploadImport(file: File): Promise<LogbookImport> {
     })
     .select()
     .single()
-  if (insertError) throw insertError
+  if (insertError) {
+    // The object is already in the bucket but has no envelope row, so it would be
+    // invisible to listMyImports / removeImport — an unreachable personal-data orphan.
+    // Best-effort clean it up before surfacing the failure.
+    await client.storage.from(BUCKET).remove([path]).catch(() => {})
+    throw insertError
+  }
   return data as LogbookImport
 }
 
