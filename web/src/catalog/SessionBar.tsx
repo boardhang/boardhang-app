@@ -30,16 +30,38 @@ export function SessionBar({ board }: { board: CatalogBoardDef }) {
   const signedIn = authStatus !== 'signedOut'
   const activeForThisBoard = activeSession && activeSession.boardLayoutId === board.layoutId
 
-  if (activeForThisBoard) return <ActiveBar board={board} />
+  // Share state lives HERE (not in StartBar) so it survives the Start→Active transition:
+  // createSession flips the store to active, which swaps StartBar for ActiveBar — a
+  // shareOpen owned by StartBar would unmount before the dialog could show. By the time the
+  // dialog opens, the session is active, so ShareSession's getInviteToken() has a session.
+  const [shareOpen, setShareOpen] = useState(false)
+
   // A session for another board is surfaced by the global pill, not here.
-  if (activeSession) return null
-  return <StartBar board={board} signedIn={signedIn} />
+  if (activeSession && !activeForThisBoard) return null
+
+  return (
+    <>
+      {activeForThisBoard ? (
+        <ActiveBar board={board} onShare={() => setShareOpen(true)} />
+      ) : (
+        <StartBar board={board} signedIn={signedIn} onStarted={() => setShareOpen(true)} />
+      )}
+      <ShareDialog open={shareOpen} onOpenChange={setShareOpen} />
+    </>
+  )
 }
 
-function StartBar({ board, signedIn }: { board: CatalogBoardDef; signedIn: boolean }) {
+function StartBar({
+  board,
+  signedIn,
+  onStarted,
+}: {
+  board: CatalogBoardDef
+  signedIn: boolean
+  onStarted: () => void
+}) {
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [shareOpen, setShareOpen] = useState(false)
 
   const start = useCallback(async () => {
     if (starting) return // guard double-tap → no duplicate session
@@ -47,13 +69,13 @@ function StartBar({ board, signedIn }: { board: CatalogBoardDef; signedIn: boole
     setError(null)
     try {
       await createSession(board.layoutId, defaultSessionName(boardShortLabel(board.name), new Date()))
-      setShareOpen(true)
+      onStarted()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Couldn’t start a session.')
     } finally {
       setStarting(false)
     }
-  }, [starting, board])
+  }, [starting, board, onStarted])
 
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/60 px-3 py-2 text-sm">
@@ -72,14 +94,12 @@ function StartBar({ board, signedIn }: { board: CatalogBoardDef; signedIn: boole
           {starting ? 'Starting…' : 'Start session'}
         </Button>
       </div>
-      <ShareDialog open={shareOpen} onOpenChange={setShareOpen} />
     </div>
   )
 }
 
-function ActiveBar({ board }: { board: CatalogBoardDef }) {
+function ActiveBar({ board, onShare }: { board: CatalogBoardDef; onShare: () => void }) {
   const { activeSession, roster } = useSessions()
-  const [shareOpen, setShareOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -126,7 +146,7 @@ function ActiveBar({ board }: { board: CatalogBoardDef }) {
         <Button variant="ghost" size="icon" className="size-8" onClick={() => void refresh()} aria-label="Refresh members">
           <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
         </Button>
-        <Button variant="ghost" size="icon" className="size-8" onClick={() => setShareOpen(true)} aria-label="Share session">
+        <Button variant="ghost" size="icon" className="size-8" onClick={onShare} aria-label="Share session">
           <Share2 className="size-4" />
         </Button>
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
@@ -150,8 +170,6 @@ function ActiveBar({ board }: { board: CatalogBoardDef }) {
           </PopoverContent>
         </Popover>
       </div>
-
-      <ShareDialog open={shareOpen} onOpenChange={setShareOpen} />
     </div>
   )
 }

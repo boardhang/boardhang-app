@@ -329,6 +329,7 @@ export async function removeMember(userId: string): Promise<void> {
  *  limit, then bumps expiry via touch_session (KTD-6). Empty input is a no-op (the UI
  *  supplies the auto-default). */
 export async function renameSession(rawName: string): Promise<void> {
+  const gen = generation
   const active = state.activeSession
   if (!active) return
   const name = trimSessionName(rawName)
@@ -338,7 +339,9 @@ export async function renameSession(rawName: string): Promise<void> {
   if (!supabase) return
   const { error } = await supabase.from('sessions').update({ name }).eq('id', active.id)
   if (error) {
-    setActiveSession(prev)
+    // Only roll back if we still point at the same session and identity hasn't switched —
+    // otherwise the rollback would resurrect a cleared/replaced session (R16 / KTD-4).
+    if (gen === generation && state.activeSession?.id === active.id) setActiveSession(prev)
     throw new Error(error.message)
   }
   // Rename is explicit intent → keep the session alive (best-effort; ignore a not-live race).
@@ -372,7 +375,10 @@ export async function refreshActiveSession(opts: { manual?: boolean } = {}): Pro
     .select(SESSION_COLUMNS)
     .eq('id', active.id)
     .limit(1)
-  if (gen !== generation) return { live: false }
+  // Bail if the identity switched OR the user joined/created a different session while this
+  // reconcile was in flight — otherwise a slow refresh for session A would clobber the
+  // just-activated session B (and desync memberStatus from the pointer).
+  if (gen !== generation || state.activeSession?.id !== active.id) return { live: false }
   if (error) return { live: true } // transient network — keep last-good (soft hint)
   const row = (data as SessionRow[] | null)?.[0]
   if (!row || row.deleted || Date.parse(row.expires_at) <= Date.now()) {

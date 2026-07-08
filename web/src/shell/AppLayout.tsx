@@ -67,7 +67,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     if (matchRoute({ to: '/session/join/$token' }) !== false) return
     let pending: string | null = null
     try {
-      pending = localStorage.getItem(PENDING_JOIN_KEY)
+      pending = sessionStorage.getItem(PENDING_JOIN_KEY)
     } catch {
       /* ignore */
     }

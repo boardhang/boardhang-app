@@ -4,8 +4,10 @@
 //
 // Sign-in resume: the app's surfaced sign-in is the on-page email code, so a successful
 // sign-in re-renders this route straight into consent. For an OAuth round-trip that would
-// drop this route (return to `/`), the token is persisted to localStorage and AppLayout
-// resumes back here once a session lands — otherwise the invitee would never complete R15.
+// drop this route (return to `/`), the token is stashed in **sessionStorage** (tab-scoped,
+// survives the same-tab redirect, auto-cleared when the tab closes so an abandoned join
+// never leaves the bearer secret persisted) and AppLayout resumes back here once a session
+// lands — otherwise the invitee would never complete R15.
 
 import { useEffect, useState } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
@@ -19,8 +21,9 @@ import { Button } from '@/components/ui/button'
 
 const routeApi = getRouteApi('/session/join/$token')
 
-/** localStorage key for an in-flight join token — survives an OAuth redirect that drops this
- *  route (AppLayout resumes it). Exported so AppLayout reads the same key. */
+/** sessionStorage key for an in-flight join token — survives an OAuth redirect that drops
+ *  this route (AppLayout resumes it), tab-scoped so it never lingers. Exported so AppLayout
+ *  reads the same key from the same storage. */
 export const PENDING_JOIN_KEY = 'pendingJoinToken'
 
 export function JoinSession() {
@@ -35,8 +38,8 @@ export function JoinSession() {
   // here signed in and no longer need the resume.
   useEffect(() => {
     try {
-      if (signedIn) localStorage.removeItem(PENDING_JOIN_KEY)
-      else localStorage.setItem(PENDING_JOIN_KEY, token)
+      if (signedIn) sessionStorage.removeItem(PENDING_JOIN_KEY)
+      else sessionStorage.setItem(PENDING_JOIN_KEY, token)
     } catch {
       /* private mode — resume just won't fire; the on-page email flow still works */
     }
@@ -56,7 +59,14 @@ export function JoinSession() {
     }
   }
 
-  const leave = () => void navigate({ to: '/boards' })
+  const leave = () => {
+    try {
+      sessionStorage.removeItem(PENDING_JOIN_KEY) // declined/abandoned → drop the token now
+    } catch {
+      /* ignore */
+    }
+    void navigate({ to: '/boards' })
+  }
 
   if (isRestoring) {
     return (

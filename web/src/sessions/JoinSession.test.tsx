@@ -28,6 +28,7 @@ beforeEach(() => {
   h.navigate.mockClear()
   h.joinSession.mockReset().mockResolvedValue({ id: 'S1', boardLayoutId: 7 })
   localStorage.clear()
+  sessionStorage.clear()
 })
 afterEach(() => vi.restoreAllMocks())
 
@@ -36,7 +37,7 @@ describe('JoinSession', () => {
     h.status = 'signedOut'
     render(<JoinSession />)
     expect(screen.getByText('sign-in-panel')).toBeInTheDocument()
-    expect(localStorage.getItem('pendingJoinToken')).toBe('tok-abc')
+    expect(sessionStorage.getItem('pendingJoinToken')).toBe('tok-abc')
   })
 
   it('shows the honest-visibility consent notice and joins into the board catalog', async () => {
@@ -46,7 +47,7 @@ describe('JoinSession', () => {
     await waitFor(() => expect(h.joinSession).toHaveBeenCalledWith('tok-abc'))
     await waitFor(() => expect(h.navigate).toHaveBeenCalled())
     // clears the pending token once signed in
-    expect(localStorage.getItem('pendingJoinToken')).toBeNull()
+    expect(sessionStorage.getItem('pendingJoinToken')).toBeNull()
   })
 
   it('shows a friendly error for an expired/invalid token (no dead end)', async () => {

@@ -207,10 +207,14 @@ begin
     values (v_session_id, auth.uid())
     on conflict do nothing;
 
-    -- Explicit-intent expiry bump (CANONICAL EXPIRY WINDOW — see header).
+    -- Explicit-intent expiry bump (CANONICAL EXPIRY WINDOW — see header). The liveness
+    -- predicate is repeated in the WHERE so a session that went dead between the lookup
+    -- above and this write cannot have its expiry revived (matches touch_session's guard).
     update public.sessions s
     set expires_at = now() + interval '24 hours'
-    where s.id = v_session_id;
+    where s.id = v_session_id
+      and s.deleted = false
+      and s.expires_at > now();
 
     return query
     select s.id, s.owner_id, s.name, s.board_layout_id,
