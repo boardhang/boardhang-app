@@ -6,7 +6,7 @@
 // opened this session (useLastOpened is null on a cold load), and blanks when the board
 // or angle changes (the store is keyed per slab).
 
-import { BadgeCheck, CheckCircle2, Heart, Lightbulb, X } from 'lucide-react'
+import { BadgeCheck, CheckCircle2, Heart, Lightbulb, Repeat, Star, X } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import { CatalogBoard } from '../board/CatalogBoard'
 import type { CatalogProblem } from './catalogSync'
@@ -89,7 +89,21 @@ export function LastOpenedBar({
                 {shown.grade}
               </span>
             </div>
-            <span className="mt-0.5 block truncate text-xs text-muted-foreground">{subtitle}</span>
+            {/* Metadata row — mirrors CatalogRow: stars · repeats · method · setter. */}
+            <div className="mt-0.5 flex min-w-0 items-center gap-2.5 text-xs text-muted-foreground">
+              {shown.stars > 0 && (
+                <span className="inline-flex shrink-0 items-center gap-0.5">
+                  <Star className="size-3" /> {shown.stars}
+                </span>
+              )}
+              {shown.repeats > 0 && (
+                <span className="inline-flex shrink-0 items-center gap-0.5">
+                  <Repeat className="size-3" /> {shown.repeats}
+                </span>
+              )}
+              {shown.method && <span className="shrink-0 text-foreground/70">{shown.method}</span>}
+              <span className="truncate">{subtitle}</span>
+            </div>
           </div>
         </button>
 

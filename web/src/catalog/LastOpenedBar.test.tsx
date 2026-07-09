@@ -85,6 +85,16 @@ describe('LastOpenedBar', () => {
     expect(screen.getByText('by Alice')).toBeInTheDocument()
   })
 
+  it('shows the full metadata row (stars, repeats, method, setter) like the catalog rows', () => {
+    const d = problem('d', 'Delta', { stars: 5, repeats: 463, method: 'No kickboard' })
+    recordOpened(7, ANGLE, 'd')
+    mount([d])
+    expect(screen.getByText('5')).toBeInTheDocument()
+    expect(screen.getByText('463')).toBeInTheDocument()
+    expect(screen.getByText('No kickboard')).toBeInTheDocument()
+    expect(screen.getByText('by Alice')).toBeInTheDocument()
+  })
+
   it('body tap opens the drawer on the shown problem', () => {
     recordOpened(7, ANGLE, 'b')
     mount()
