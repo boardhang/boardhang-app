@@ -82,9 +82,9 @@ describe('FilterControls', () => {
 function sessionSetup(over: Partial<SessionFilterUI> = {}) {
   const onRefresh = vi.fn()
   const rows: SessionFilterUI['rows'] = over.rows ?? [
-    { userId: 'me', label: 'You', initials: 'ME', isSelf: true, selected: [], onToggle: vi.fn() },
-    { userId: 'alice', label: 'Alice', initials: 'AL', isSelf: false, selected: ['sent'], onToggle: vi.fn() },
-    { userId: 'bob', label: 'Bob', initials: 'BO', isSelf: false, selected: [], onToggle: vi.fn() },
+    { userId: 'me', label: 'You', initials: 'ME', avatarUrl: null, isSelf: true, selected: [], onToggle: vi.fn() },
+    { userId: 'alice', label: 'Alice', initials: 'AL', avatarUrl: null, isSelf: false, selected: ['sent'], onToggle: vi.fn() },
+    { userId: 'bob', label: 'Bob', initials: 'BO', avatarUrl: null, isSelf: false, selected: [], onToggle: vi.fn() },
   ]
   h.session = { rows, state: over.state ?? 'ready', onRefresh }
   render(

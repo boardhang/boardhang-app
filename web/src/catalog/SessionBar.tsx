@@ -137,6 +137,7 @@ function ActiveBar({ board, onShare }: { board: CatalogBoardDef; onShare: () => 
               <MemberAvatar
                 key={m.userId}
                 initials={memberInitials(m)}
+                avatarUrl={m.avatarUrl}
                 title={m.displayName ?? m.handle ?? undefined}
               />
             ))}
@@ -170,7 +171,7 @@ function ActiveBar({ board, onShare }: { board: CatalogBoardDef; onShare: () => 
                     aria-label={`Remove ${memberLabel(m)}`}
                     onClick={() => void removeMember(m.userId)}
                   >
-                    <MemberAvatar initials={memberInitials(m)} />
+                    <MemberAvatar initials={memberInitials(m)} avatarUrl={m.avatarUrl} />
                     <span className="min-w-0 flex-1 truncate text-left">{memberLabel(m)}</span>
                     <X className="size-3.5 shrink-0 text-muted-foreground" />
                   </Button>

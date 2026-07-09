@@ -20,6 +20,8 @@ export interface MemberFilterRow {
   label: string
   /** Member initials for the avatar. */
   initials: string
+  /** Public avatar URL, or null → the avatar renders initials. */
+  avatarUrl: string | null
   isSelf: boolean
   selected: StatusKey[]
   onToggle: (k: StatusKey, active: boolean) => void
@@ -63,6 +65,7 @@ export function useSessionFilterRows(board: CatalogBoardDef): SessionFilterUI | 
         userId: uid,
         label,
         initials,
+        avatarUrl: m?.avatarUrl ?? null,
         isSelf,
         selected: memberStatus[uid] ?? [],
         onToggle: (k: StatusKey, active: boolean) => {

@@ -218,6 +218,7 @@ export function FilterControls({
                   key={row.userId}
                   label={row.label}
                   initials={row.initials}
+                  avatarUrl={row.avatarUrl}
                   isSelf={row.isSelf}
                   ariaLabel={row.isSelf ? 'Your ascent status' : `${row.label}’s ascent status`}
                   selected={row.selected}

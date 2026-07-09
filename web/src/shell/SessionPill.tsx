@@ -46,6 +46,7 @@ export function SessionPill({ suppressed }: { suppressed?: boolean }) {
                   <MemberAvatar
                     key={m.userId}
                     initials={memberInitials(m)}
+                    avatarUrl={m.avatarUrl}
                     isSelf={m.userId === selfId}
                     title={m.userId === selfId ? 'You' : memberLabel(m)}
                   />

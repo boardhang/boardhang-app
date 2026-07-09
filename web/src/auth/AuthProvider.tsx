@@ -14,6 +14,7 @@ import { syncListsIdentity } from '../lists/listsStore'
 import { syncSessionsIdentity } from '../sessions/sessionsStore'
 import { normalizeHandle } from './handle'
 import { profileFromRow, type AuthStatus, type Profile, type ProfileRow } from './types'
+import { isAvatarPath } from './avatarStorage'
 
 interface AuthContextValue {
   status: AuthStatus
@@ -28,7 +29,9 @@ interface AuthContextValue {
   signOut: () => Promise<void>
   deleteAccount: () => Promise<void>
   isHandleAvailable: (handle: string) => Promise<boolean>
-  saveProfile: (handle: string, displayName: string) => Promise<void>
+  /** Upsert the caller's profile row. Pass `avatarPath` (an in-bucket object path or null)
+   *  to write `avatar_url`; omit it to leave the column untouched. */
+  saveProfile: (handle: string, displayName: string, avatarPath?: string | null) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -209,17 +212,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const saveProfile = useCallback(
-    async (handle: string, displayName: string) => {
+    async (handle: string, displayName: string, avatarPath?: string | null) => {
       const client = requireClient()
       const { data: sessionData } = await client.auth.getSession()
       const userId = sessionData.session?.user.id
       if (!userId) throw new Error('You need to be signed in to do that.')
       // The ONLY place a profiles row is created — client-side, after a valid handle.
-      const { error } = await client.from('profiles').upsert({
+      const row: Record<string, unknown> = {
         id: userId,
         handle: normalizeHandle(handle),
         display_name: displayName.trim(),
-      })
+      }
+      // avatar_url is written only when explicitly provided (including null = remove).
+      // Defense in depth beside the DB CHECK (0009): must be null, or the caller's OWN
+      // in-bucket object path — never an off-domain URL or another user's object path
+      // (impersonation).
+      if (avatarPath !== undefined) {
+        if (
+          avatarPath !== null &&
+          (!isAvatarPath(avatarPath) || !avatarPath.startsWith(`${userId}/`))
+        ) {
+          throw new Error('Invalid avatar reference.')
+        }
+        row.avatar_url = avatarPath
+      }
+      const { error } = await client.from('profiles').upsert(row)
       if (error) throw error
       await refreshProfile()
     },

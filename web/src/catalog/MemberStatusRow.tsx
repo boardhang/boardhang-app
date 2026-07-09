@@ -20,6 +20,8 @@ interface MemberStatusRowProps {
   label?: string
   /** Member initials for the avatar. When set, the row is led by the member avatar. */
   initials?: string
+  /** Public avatar URL for the member; null/undefined → the avatar renders initials. */
+  avatarUrl?: string | null
   /** Accessible name for the chip group (e.g. "Your ascent status"). */
   ariaLabel: string
   selected: StatusKey[]
@@ -34,6 +36,7 @@ interface MemberStatusRowProps {
 export function MemberStatusRow({
   label,
   initials,
+  avatarUrl,
   ariaLabel,
   selected,
   onToggle,
@@ -50,7 +53,7 @@ export function MemberStatusRow({
             <TooltipTrigger
               render={<span className="inline-flex shrink-0" aria-label={label} />}
             >
-              <MemberAvatar initials={initials} isSelf={isSelf} />
+              <MemberAvatar initials={initials} avatarUrl={avatarUrl} isSelf={isSelf} />
             </TooltipTrigger>
             {label && <TooltipContent>{label}</TooltipContent>}
           </Tooltip>

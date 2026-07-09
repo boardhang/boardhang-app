@@ -41,10 +41,11 @@ begin
 end $$;
 
 create table if not exists storage.buckets (
-    id              text primary key,
-    name            text not null,
-    public          boolean not null default false,
-    file_size_limit bigint
+    id                 text primary key,
+    name               text not null,
+    public             boolean not null default false,
+    file_size_limit    bigint,
+    allowed_mime_types text[]   -- real Supabase column; 0009 sets it for the avatars bucket
 );
 
 -- Minimal storage.objects. `owner` mirrors Supabase (set-null on user delete, NOT
@@ -57,3 +58,24 @@ create table if not exists storage.objects (
     created_at timestamptz not null default now()
 );
 alter table storage.objects enable row level security;
+
+-- Minimal public.profiles so 0009's `alter table ... add constraint avatar_url_...` and
+-- its owner-scoped insert/update RLS can be exercised WITHOUT pulling in 0001 (which needs
+-- the citext extension). Real 0001 has more columns; only `id` + `avatar_url` + the owner
+-- RLS matter for the avatar_url CHECK test. `display_name` is included so a realistic
+-- insert works. Owner policies mirror 0001 (self insert/update; world-readable select).
+create table if not exists public.profiles (
+    id           uuid primary key references auth.users (id) on delete cascade,
+    display_name text not null default '',
+    avatar_url   text,
+    created_at   timestamptz not null default now()
+);
+alter table public.profiles enable row level security;
+
+create policy "Profiles readable by authenticated users"
+    on public.profiles for select to authenticated using (true);
+create policy "Users insert their own profile"
+    on public.profiles for insert to authenticated with check (id = auth.uid());
+create policy "Users update their own profile"
+    on public.profiles for update to authenticated
+    using (id = auth.uid()) with check (id = auth.uid());

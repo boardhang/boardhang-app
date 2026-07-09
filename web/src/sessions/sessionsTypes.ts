@@ -60,6 +60,8 @@ export interface SessionMember {
   joinedAt: string
   handle: string | null
   displayName: string | null
+  /** Public avatar URL (derived in loadRoster), or null → the avatar renders initials. */
+  avatarUrl: string | null
 }
 
 /** Per-member ascent-status chip selections, keyed by user-id (R3/R14). Lives in the
@@ -81,13 +83,14 @@ export function fromSessionRow(r: SessionRow): Session {
 
 export function fromSessionMemberRow(
   r: SessionMemberRow,
-  profile?: { handle: string; displayName: string } | null,
+  profile?: { handle: string; displayName: string; avatarUrl: string | null } | null,
 ): SessionMember {
   return {
     userId: r.user_id,
     joinedAt: r.joined_at,
     handle: profile?.handle ?? null,
     displayName: profile?.displayName ?? null,
+    avatarUrl: profile?.avatarUrl ?? null,
   }
 }
 

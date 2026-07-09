@@ -13,6 +13,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { supabase } from '../supabase/client'
+import { avatarPublicUrl } from '../auth/avatarStorage'
 import type { StatusKey } from '../catalog/filters'
 import {
   SESSION_COLUMNS,
@@ -178,14 +179,27 @@ async function loadRoster(session: Session, gen: number): Promise<void> {
   const rows = memberRows as { user_id: string; joined_at: string }[]
   const ids = rows.map((r) => r.user_id)
 
-  const profilesById: Record<string, { handle: string; displayName: string }> = {}
+  const profilesById: Record<
+    string,
+    { handle: string; displayName: string; avatarUrl: string | null }
+  > = {}
   if (ids.length > 0) {
     const { data: profs } = await supabase
       .from('profiles')
-      .select('id, handle, display_name')
+      .select('id, handle, display_name, avatar_url')
       .in('id', ids)
-    for (const p of (profs ?? []) as { id: string; handle: string; display_name: string }[]) {
-      profilesById[p.id] = { handle: p.handle, displayName: p.display_name }
+    for (const p of (profs ?? []) as {
+      id: string
+      handle: string
+      display_name: string
+      avatar_url: string | null
+    }[]) {
+      // avatar_url stores an in-bucket object path (0009); derive the public URL to render.
+      profilesById[p.id] = {
+        handle: p.handle,
+        displayName: p.display_name,
+        avatarUrl: avatarPublicUrl(p.avatar_url),
+      }
     }
   }
   // Identity switched (or session retired) while the roster was in flight — drop the result.
