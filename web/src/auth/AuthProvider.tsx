@@ -224,10 +224,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         display_name: displayName.trim(),
       }
       // avatar_url is written only when explicitly provided (including null = remove).
-      // Defense in depth beside the DB CHECK: reject anything that isn't an in-bucket path
-      // so a caller can never persist an off-domain tracking-pixel URL (0009).
+      // Defense in depth beside the DB CHECK (0009): must be null, or the caller's OWN
+      // in-bucket object path — never an off-domain URL or another user's object path
+      // (impersonation).
       if (avatarPath !== undefined) {
-        if (!isAvatarPath(avatarPath)) throw new Error('Invalid avatar reference.')
+        if (
+          avatarPath !== null &&
+          (!isAvatarPath(avatarPath) || !avatarPath.startsWith(`${userId}/`))
+        ) {
+          throw new Error('Invalid avatar reference.')
+        }
         row.avatar_url = avatarPath
       }
       const { error } = await client.from('profiles').upsert(row)

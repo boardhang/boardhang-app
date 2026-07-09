@@ -65,6 +65,20 @@ begin
     raise notice 'PASS: null avatar_url allowed';
 end $$;
 
+-- avatar_url CHECK binds the folder to the row owner: A cannot claim B's object path
+-- (display-level impersonation guard).
+do $$
+begin
+    begin
+        update public.profiles
+            set avatar_url = '22222222-2222-2222-2222-222222222222/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.webp'
+            where id = auth.uid();
+        raise exception 'FAIL: A set avatar_url to B''s object path';
+    exception when check_violation then
+        raise notice 'PASS: avatar_url folder bound to owner id (no impersonation)';
+    end;
+end $$;
+
 -- Folder-spoofing: A uploads into B's folder → denied by storage WITH CHECK (key control).
 do $$
 begin
@@ -129,6 +143,31 @@ begin
     assert (select count(*) from storage.objects where bucket_id = 'avatars') = 0,
         'FAIL: anon can enumerate avatars bucket';
     raise notice 'PASS: anon cannot enumerate avatars (default-deny)';
+end $$;
+
+-- ── Per-user avatar object cap (max 2) — the BEFORE INSERT trigger ────────────
+-- Cap is 2 (headroom for old+new during a replace); the 3rd insert is rejected. Use a
+-- fresh user C so A/B object counts don't interfere.
+reset role;
+insert into auth.users (id) values ('33333333-3333-3333-3333-333333333333');
+set role authenticated;
+select set_config('test.uid', '33333333-3333-3333-3333-333333333333', false);
+do $$
+declare i int;
+begin
+    for i in 1..2 loop
+        insert into storage.objects (bucket_id, name, owner)
+        values ('avatars', '33333333-3333-3333-3333-333333333333/f' || i || '.webp',
+                '33333333-3333-3333-3333-333333333333');
+    end loop;
+    begin
+        insert into storage.objects (bucket_id, name, owner)
+        values ('avatars', '33333333-3333-3333-3333-333333333333/overflow.webp',
+                '33333333-3333-3333-3333-333333333333');
+        raise exception 'FAIL: 3rd avatar object allowed past the per-user cap';
+    exception when check_violation then
+        raise notice 'PASS: per-user avatar object cap (2) enforced by trigger';
+    end;
 end $$;
 
 -- ── delete_user() sweeps the caller's avatar objects (GDPR erasure) ──────────

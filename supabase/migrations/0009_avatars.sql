@@ -30,7 +30,10 @@
 -- Public bucket. 2 MiB per-file cap (the client downscales to a ~50–150 KB WebP; this is
 -- just a server-side backstop). `allowed_mime_types` = image/webp only: the client canvas
 -- pipeline always emits WebP, so the allowlist governs the stored object, never the user's
--- source file (they may pick any image; it is re-encoded before upload).
+-- source file (they may pick any image; it is re-encoded before upload). NOTE: the allowlist
+-- validates the request's *declared* content-type, not sniffed bytes — a direct anon-key
+-- caller could still store arbitrary bytes labeled image/webp. Since avatar_url only ever
+-- renders inside <img>, this is a storage-origin-content concern, not script execution.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('avatars', 'avatars', true, 2097152, array['image/webp'])
 on conflict (id) do nothing;
@@ -71,17 +74,57 @@ create policy "Users delete own avatar objects"
     );
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Pin avatar_url to an in-bucket object PATH: `{uid}/{file}.webp`, two UUID-shaped
--- segments and a .webp suffix. `null` (no avatar) is always allowed. This is the control
--- that makes an off-domain / tracking-pixel value impossible — there is no host to spoof.
--- Existing rows are all NULL (avatar upload was deferred), so the constraint validates
--- clean. saveProfile mirrors this check client-side (defense in depth).
+-- Pin avatar_url to the row-owner's OWN in-bucket object path: `{id}/{uuid}.webp`. Binding
+-- the first segment to `id` (not just any UUID) means a user cannot point their avatar_url
+-- at another member's object path (display-level impersonation) — on top of making an
+-- off-domain / tracking-pixel value impossible (no host to spoof). `null` (no avatar) is
+-- always allowed; existing rows are all NULL, so the constraint validates clean. The
+-- concatenated pattern is safe: `id` is a UUID (only [0-9a-f-], no regex metacharacters).
+-- saveProfile mirrors this check client-side (defense in depth).
 alter table public.profiles
-    add constraint avatar_url_is_bucket_path
+    add constraint avatar_url_is_own_object_path
     check (
         avatar_url is null
-        or avatar_url ~* '^[0-9a-f-]{36}/[0-9a-f-]{36}\.webp$'
+        or avatar_url ~* ('^' || id::text || '/[0-9a-f-]{36}\.webp$')
     );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Per-user object cap (abuse / denial-of-wallet guard), mirroring 0008. The INSERT RLS
+-- bounds *where* a user writes but not *how many* objects — a scripted anon-key caller
+-- could otherwise upload unbounded 2 MB WebPs into its own folder. Cap = 2 (not 1) because
+-- the replace flow persists the NEW object before best-effort deleting the OLD one, so a
+-- user legitimately holds old + new (2) for a moment; steady state is 1. Enforced in a
+-- BEFORE INSERT trigger with a per-user advisory lock (concurrency-safe, like 0008's cap).
+create or replace function public.enforce_avatar_cap()
+    returns trigger
+    language plpgsql
+    security definer
+    set search_path = ''
+as $$
+declare
+    _uid   text := (storage.foldername(new.name))[1];
+    _count int;
+begin
+    if new.bucket_id <> 'avatars' then
+        return new;  -- other buckets are untouched
+    end if;
+    perform pg_advisory_xact_lock(hashtextextended('avatars:' || coalesce(_uid, ''), 0));
+    select count(*) into _count
+    from storage.objects
+    where bucket_id = 'avatars'
+      and (storage.foldername(name))[1] = _uid;
+    if _count >= 2 then
+        raise exception 'avatar upload limit reached (max 2 objects per user)'
+            using errcode = 'check_violation';
+    end if;
+    return new;
+end;
+$$;
+
+drop trigger if exists enforce_avatar_cap on storage.objects;
+create trigger enforce_avatar_cap
+    before insert on storage.objects
+    for each row execute function public.enforce_avatar_cap();
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- GDPR erasure (App Store 5.1.1(v)): account deletion must sweep the user's uploaded

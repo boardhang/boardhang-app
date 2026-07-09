@@ -51,6 +51,16 @@ export function AccountMenu() {
   const nameInputRef = useRef<HTMLInputElement>(null)
   const editButtonRef = useRef<HTMLButtonElement>(null)
 
+  // Revoke a still-staged preview object URL if the menu unmounts mid-edit (all the normal
+  // close/cancel/save/re-pick paths already revoke). Ref-based so it only fires on unmount.
+  const stagedRef = useRef<ProcessedAvatar | null>(null)
+  stagedRef.current = staged
+  useEffect(() => {
+    return () => {
+      if (stagedRef.current) URL.revokeObjectURL(stagedRef.current.previewUrl)
+    }
+  }, [])
+
   // Once a session lands, close the sign-in modal and hand off to profile setup for a
   // brand-new account. When a full profile resolves, ensure setup is closed.
   useEffect(() => {
@@ -164,7 +174,7 @@ export function AccountMenu() {
       if (newPath !== undefined && oldPath && oldPath !== newPath) {
         await deleteAvatarObject(oldPath)
       }
-      void refreshActiveSession()
+      void refreshActiveSession().catch(() => {})
       resetEdit()
     } catch {
       setEditError("Couldn't save your profile. Please try again.")
@@ -355,7 +365,7 @@ export function AccountMenu() {
                     disabled={saving}
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    {profile?.avatarUrl || staged ? 'Change photo' : 'Add photo'}
+                    {editPreviewUrl ? 'Change photo' : 'Add photo'}
                   </Button>
                   {canRemove && (
                     <Button variant="ghost" size="sm" disabled={saving} onClick={onRemovePhoto}>
