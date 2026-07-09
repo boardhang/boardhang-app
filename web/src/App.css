@@ -30,6 +30,16 @@
   padding: 1rem 1rem 0.5rem;
 }
 
+/* Where backdrop-filter is unsupported (old Android WebView / Chrome < ~76) the
+   translucent `bg-background/50` alone would let scrolling content bleed through
+   the avatar / banner text — a contrast cliff. Fall back to an opaque background
+   there. Unlayered, so it wins over Tailwind's utilities layer. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-header {
+    background-color: var(--background);
+  }
+}
+
 /* A slot stacks its contents with a small gap, so if more than one thing ever
    lands here (e.g. a future system banner alongside an env banner) they're spaced
    rather than crammed. Today's env banners are mutually exclusive so normally one
