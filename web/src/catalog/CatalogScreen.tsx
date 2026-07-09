@@ -223,6 +223,12 @@ export function CatalogScreen() {
         highlightHolds={highlightHolds}
         onSelect={openProblem}
       />
+      {/* Bottom safe-area for the floating FABs: the FAB rail reserves no scroll space
+          (it's a zero-height sticky rail), so without this the last rows would sit under
+          the FABs at full scroll and their far-right corner wouldn't be tappable. A modest
+          buffer — not the full FAB-stack height, which would re-introduce a large trailing
+          gap — so the last row's content clears the lower FAB. */}
+      <div aria-hidden className="h-24 shrink-0" />
       {/* Shared FAB column: recents on top, filter below (mirrors iOS's VStack).
           A zero-height sticky rail (mt-auto pins it to the bottom of the scroll region,
           sticky keeps it there as a long list scrolls) with the FABs absolutely anchored
