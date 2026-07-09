@@ -11,6 +11,7 @@ import { Settings2 } from 'lucide-react'
 import { BOARDS, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { activeCsv, holdSetContext } from '../board/holdSetMembership'
+import { CatalogBoard } from '../board/CatalogBoard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -164,7 +165,7 @@ interface BoardConfigDrawerProps {
 }
 
 function BoardConfigDrawer({ board, angle, onAngle, onHoldSets, onRemove }: BoardConfigDrawerProps) {
-  const { membership, filterable, active: installed } = holdSetContext(
+  const { membership, filterable, active: installed, visible } = holdSetContext(
     board.membershipResource,
     getActiveHoldSetsRaw(board.layoutId),
   )
@@ -192,6 +193,18 @@ function BoardConfigDrawer({ board, angle, onAngle, onHoldSets, onRemove }: Boar
           <DrawerTitle>{board.name}</DrawerTitle>
         </DrawerHeader>
         <div className="space-y-5 px-4 pb-8">
+          {/* Live board preview: the installed hold sets' overlay art, so toggling
+              a set below makes its holds appear/disappear. No markers (no problem
+              selected) — mirrors iOS's HoldSetEditorView preview. Height-capped so
+              the pills and Remove button stay reachable in the bottom sheet; the
+              max-width is derived from the board aspect so height ≤ the cap and
+              tall boards letterbox narrower rather than overflow. */}
+          <div
+            className="mx-auto w-full"
+            style={{ maxWidth: `calc(45vh * ${board.geometry.width} / ${board.geometry.height})` }}
+          >
+            <CatalogBoard board={board} holds={[]} visibleHoldSetIds={visible} />
+          </div>
           {hasAngleChoice(board) && (
             <div className="space-y-1.5">
               <div className="text-xs font-medium text-muted-foreground">Angle</div>

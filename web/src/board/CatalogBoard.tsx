@@ -88,7 +88,9 @@ export function CatalogBoard({
     <div
       className="catalog-board overflow-hidden rounded-lg bg-card"
       role="img"
-      aria-label={`${board.name} problem, ${holds.length} holds`}
+      aria-label={
+        holds.length > 0 ? `${board.name} problem, ${holds.length} holds` : `${board.name} board`
+      }
       style={{
         position: 'relative',
         width: '100%',
