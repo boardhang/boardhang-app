@@ -5,9 +5,16 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '../components/ui/drawer'
-import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar'
+import { Camera } from 'lucide-react'
+import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '../components/ui/avatar'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu'
 import { useAuth } from './AuthProvider'
 import { ProfileSetup } from './ProfileSetup'
 import { SignInDialog } from './SignInDialog'
@@ -261,17 +268,18 @@ export function AccountMenu() {
         open={showMenu}
         onOpenChange={(open) => (open ? setShowMenu(true) : requestClose())}
         swipeDirection="right"
-        showSwipeHandle
       >
         <DrawerContent>
-          <DrawerHeader>
-            <DrawerTitle>
+          <DrawerHeader className="pb-4">
+            {/* In the menu view the identity is shown by the summary header below, so the
+                title is visually hidden (kept for the drawer's accessible name). */}
+            <DrawerTitle className={mode === 'edit' ? undefined : 'sr-only'}>
               {mode === 'edit' ? 'Edit profile' : profile ? `@${profile.handle}` : 'Account'}
             </DrawerTitle>
           </DrawerHeader>
 
           {mode === 'menu' ? (
-            <div className="flex flex-col gap-2 px-4 pb-6" role="menu">
+            <div className="flex flex-1 flex-col gap-2 px-4 pb-6" role="menu">
               {/* Profile summary header */}
               {profile && (
                 <div className="flex items-center gap-3 pb-2">
@@ -300,79 +308,94 @@ export function AccountMenu() {
                 Edit profile
               </Button>
 
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                role="menuitem"
-                onClick={() => void handleSignOut()}
-              >
-                Sign out
-              </Button>
-
-              {confirmingDelete ? (
-                <div className="flex flex-col gap-2 rounded-lg border border-destructive/30 p-3">
-                  <p className="text-sm text-muted-foreground">
-                    Delete your account? This permanently removes your profile and cannot
-                    be undone.
-                  </p>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setConfirmingDelete(false)}>
-                      Cancel
-                    </Button>
-                    <Button variant="destructive" size="sm" onClick={() => void handleDelete()}>
-                      Delete account
-                    </Button>
-                  </div>
-                </div>
-              ) : (
+              {/* Account actions pinned to the bottom of the drawer. */}
+              <div className="mt-auto flex flex-col gap-2">
                 <Button
-                  variant="destructive"
+                  variant="outline"
                   className="w-full justify-start"
                   role="menuitem"
-                  onClick={() => setConfirmingDelete(true)}
+                  onClick={() => void handleSignOut()}
                 >
-                  Delete account
+                  Sign out
                 </Button>
-              )}
 
-              {menuError && (
-                <p className="text-sm text-destructive" role="alert">
-                  {menuError}
-                </p>
-              )}
+                {confirmingDelete ? (
+                  <div className="flex flex-col gap-2 rounded-lg border border-destructive/30 p-3">
+                    <p className="text-sm text-muted-foreground">
+                      Delete your account? This permanently removes your profile and cannot
+                      be undone.
+                    </p>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => setConfirmingDelete(false)}>
+                        Cancel
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => void handleDelete()}>
+                        Delete account
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="destructive"
+                    className="w-full justify-start"
+                    role="menuitem"
+                    onClick={() => setConfirmingDelete(true)}
+                  >
+                    Delete account
+                  </Button>
+                )}
+
+                {menuError && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {menuError}
+                  </p>
+                )}
+              </div>
             </div>
           ) : (
             // ── Edit view (a form, not a menu) ──────────────────────────────────
             <div className="flex flex-col gap-4 px-4 pb-6">
               <div className="flex items-center gap-3">
-                <Avatar size="lg">
-                  {editPreviewUrl && <AvatarImage src={editPreviewUrl} alt="" />}
-                  <AvatarFallback className="bg-primary/15 font-semibold text-foreground">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => void onPickFile(e)}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={saving}
-                    onClick={() => fileInputRef.current?.click()}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => void onPickFile(e)}
+                />
+                {/* The avatar is the affordance: tap it (camera badge) for the photo actions. */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        disabled={saving}
+                        aria-label="Edit profile photo"
+                        className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                      />
+                    }
                   >
-                    {editPreviewUrl ? 'Change photo' : 'Add photo'}
-                  </Button>
-                  {canRemove && (
-                    <Button variant="ghost" size="sm" disabled={saving} onClick={onRemovePhoto}>
-                      Remove photo
-                    </Button>
-                  )}
-                </div>
+                    <Avatar size="lg" className="size-20">
+                      {editPreviewUrl && <AvatarImage src={editPreviewUrl} alt="" />}
+                      <AvatarFallback className="bg-primary/15 text-lg font-semibold text-foreground">
+                        {initials}
+                      </AvatarFallback>
+                      <AvatarBadge className="size-5! [&>svg]:size-2.5!">
+                        <Camera />
+                      </AvatarBadge>
+                    </Avatar>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-44">
+                    <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                      {editPreviewUrl ? 'Change photo' : 'Add photo'}
+                    </DropdownMenuItem>
+                    {canRemove && (
+                      <DropdownMenuItem variant="destructive" onClick={onRemovePhoto}>
+                        Remove photo
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -388,7 +411,6 @@ export function AccountMenu() {
                   className="text-base md:text-sm"
                   onChange={(e) => setNameDraft(e.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">@{profile?.handle}</p>
               </div>
 
               {editError && (
