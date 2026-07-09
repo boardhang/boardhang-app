@@ -6,7 +6,9 @@
 // opened this session (useLastOpened is null on a cold load), and blanks when the board
 // or angle changes (the store is keyed per slab).
 
+import { useEffect, useMemo } from 'react'
 import { BadgeCheck, CheckCircle2, Heart, Lightbulb, Repeat, Star, X } from 'lucide-react'
+import { toast } from 'sonner'
 import type { CatalogBoardDef } from '../board/boards'
 import { CatalogBoard } from '../board/CatalogBoard'
 import type { CatalogProblem } from './catalogSync'
@@ -45,13 +47,21 @@ export function LastOpenedBar({
   const showThumbnail = useShowPreviews()
 
   // Resolve against the full slab so a last-opened climb the filters now exclude still
-  // renders (it was opened from this slab, so it's present).
-  const shown = shownId
-    ? problems.find((p) => p.source_catalog_id === shownId)
-    : undefined
+  // renders (it was opened from this slab, so it's present). Memoized so the O(n) scan
+  // doesn't rerun on unrelated re-renders (BLE ticks, favorites, previews toggle).
+  const shown = useMemo(
+    () => (shownId ? problems.find((p) => p.source_catalog_id === shownId) : undefined),
+    [shownId, problems],
+  )
 
   // Hooks must run unconditionally; a null shownId yields an inert action (never triggered).
   const light = useLightUp(board, shownId ?? '')
+
+  // The bar is too slim for inline error text (unlike the drawer), so surface a BLE
+  // light-up failure as a toast.
+  useEffect(() => {
+    if (light.error) toast.error(light.error)
+  }, [light.error])
 
   if (!shown) return null
 
