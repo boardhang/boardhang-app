@@ -133,9 +133,9 @@ export function ListsScreen() {
         <div className="mt-6 rounded-lg border border-border p-4">
           <h2 className="text-sm font-semibold">Sign in to save lists</h2>
           <p className="mt-1 mb-3 text-sm text-muted-foreground">
-            Saved Lists sync with the MoonBoard app across your devices.
+            Saved Lists sync with the Boardhang app across your devices.
           </p>
-          <SignInPanel />
+          <SignInPanel hideIntro />
         </div>
       </div>
     )

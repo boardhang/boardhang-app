@@ -18,7 +18,7 @@ function emailLooksValid(email: string): boolean {
  *
  * The parent closes the drawer once a session lands (it watches `auth.status`).
  */
-export function SignInPanel() {
+export function SignInPanel({ hideIntro = false }: { hideIntro?: boolean } = {}) {
   const { isConfigured, sendEmailCode, verifyEmailCode } = useAuth()
 
   const [email, setEmail] = useState('')
@@ -61,10 +61,12 @@ export function SignInPanel() {
 
   return (
     <div className="flex flex-col gap-4 px-4 pb-6">
-      <p className="text-sm text-muted-foreground text-balance">
-        Sign in to sync your profile across devices and unlock social features. You can
-        keep using the app without an account.
-      </p>
+      {!hideIntro && (
+        <p className="text-sm text-muted-foreground text-balance">
+          Sign in to sync your profile across devices and unlock social features. You can
+          keep using the app without an account.
+        </p>
+      )}
 
       {!isConfigured ? (
         <p className="text-sm text-muted-foreground" role="status">
