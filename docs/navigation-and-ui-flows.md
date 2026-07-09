@@ -163,6 +163,14 @@ re-fills defaults on read. `sortSecondary` is deliberately *not* in the URL (fix
 - **`AppLayout`** (`web/src/shell/AppLayout.tsx`) is the router-aware shell that owns the persistent
   search field: a debounced (`replace`) `?q` writer, the URL→input resync (Back/deep-link/board
   switch), and dropping a pending write on board switch. `Navigation` is fully prop-driven.
+- **Sticky header**: the account chrome is a frosted `position: sticky` bar (first child of the
+  `.app-scroll` container, so content scrolls under it and blurs through — `bg-background/50` +
+  `backdrop-blur`, with an opaque `@supports` fallback where blur is unsupported; a hairline border
+  plus a shadow that lifts once scrolled). It's a three-slot stack: a **top slot** for the
+  environment banners (below), the **navbar** (right-aligned `AccountMenu`), and a **bottom slot**
+  for the `SessionPill` (shown when a session is active, except on the catalog where `SessionBar`
+  owns it). Empty slots collapse (`.app-header-slot:empty`). The bottom `Navigation` stays a solid
+  grid-row bar.
 - **Angle** comes from `?angle` (never a fresh `getAngle()` in render); `CatalogScreen` mirrors the
   resolved angle back into `boardStore` so `/boards` stays coherent with a deep link.
 - **Problem drawer**: opening pushes history (Back closes it), paging/swiping `replace`s (URL tracks
