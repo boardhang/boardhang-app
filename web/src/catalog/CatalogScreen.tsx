@@ -16,11 +16,13 @@ import { getActiveHoldSetsRaw, getAngle, setAngle, useBoardStore } from '../boar
 import { holdSetContext, isClimbable } from '../board/holdSetMembership'
 import { CatalogList } from './CatalogList'
 import { FilterSheet } from './FilterSheet'
+import { FilterPillBar } from './FilterPillBar'
 import { SessionBar } from './SessionBar'
 import { RecentsSheet } from './RecentsSheet'
 import { LastOpenedBar } from './LastOpenedBar'
 import { dismissLastOpened } from './lastOpenedStore'
 import { useBottomSlot } from '../shell/bottomSlot'
+import { useHeaderFilterSlot } from '../shell/headerFilterSlot'
 import { ProblemDetail } from './ProblemDetail'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { Button } from '@/components/ui/button'
@@ -205,9 +207,24 @@ export function CatalogScreen() {
   // The last-opened bar renders into the shell's slot above the nav (a real grid row),
   // so it needs no sticky offset and never overlaps the list or the FAB column.
   const bottomSlot = useBottomSlot()
+  // The sticky header's filter-pill row. Portaled up so it lives in the frosted header
+  // (inheriting the blur/scroll-shadow) while reading `filters` and writing through the
+  // one seed-writing `setFilters`. `inSession` mirrors the list predicate's session
+  // branch; `statusReady` gates status pills exactly like activeFilterCount.
+  const headerFilterSlot = useHeaderFilterSlot()
 
   return (
     <div className="flex flex-1 flex-col">
+      {headerFilterSlot &&
+        createPortal(
+          <FilterPillBar
+            filters={filters}
+            onChange={setFilters}
+            inSession={sessionForBoard !== null}
+            statusReady={statusReady}
+          />,
+          headerFilterSlot,
+        )}
       {!added && <UnaddedBoardBanner name={board.name} onAdd={() => addBoard(board.layoutId)} />}
       <SessionBar board={board} />
       <CatalogList

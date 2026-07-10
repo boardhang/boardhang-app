@@ -18,6 +18,7 @@ import { useEffect, useRef, useState, type ReactNode, type UIEvent } from 'react
 import { useMatchRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { AccountMenu } from '../auth/AccountMenu'
 import { BottomSlotContext } from './bottomSlot'
+import { HeaderFilterSlotContext } from './headerFilterSlot'
 import { useBoardStore } from '../board/boardStore'
 import { catalogNavTarget } from '../catalog/catalogNav'
 import { Navigation, type NavView } from './Navigation'
@@ -83,6 +84,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   // The shell-owned mount point above the nav (see bottomSlot). A ref-callback into
   // state so consumers re-render once the element commits and can portal into it.
   const [bottomSlot, setBottomSlot] = useState<HTMLDivElement | null>(null)
+  const [headerFilterSlot, setHeaderFilterSlot] = useState<HTMLDivElement | null>(null)
 
   // The home tab shown on the collapsed catalog nav — the last home screen visited.
   const [origin, setOrigin] = useState<'boards' | 'logbook' | 'settings'>('boards')
@@ -166,6 +168,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <BottomSlotContext.Provider value={bottomSlot}>
+      <HeaderFilterSlotContext.Provider value={headerFilterSlot}>
       <div className="app-shell">
         <main className="app-scroll overflow-x-hidden" onScroll={onScroll}>
           <header
@@ -195,6 +198,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <div className="app-header-slot">
               <SessionPill suppressed={onCatalog} />
             </div>
+            {/* Filter-pill slot — the catalog portals its FilterPillBar here via
+                HeaderFilterSlotContext (mirrors the bottom slot). Empty on every other
+                route ⇒ collapses. */}
+            <div ref={setHeaderFilterSlot} className="app-header-slot" />
           </header>
           {children}
         </main>
@@ -216,6 +223,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         />
         <Toaster position="bottom-center" />
       </div>
+      </HeaderFilterSlotContext.Provider>
     </BottomSlotContext.Provider>
   )
 }

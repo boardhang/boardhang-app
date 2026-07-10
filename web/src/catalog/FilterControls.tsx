@@ -14,6 +14,8 @@ import { HoldFilterPicker } from './HoldFilterPicker'
 import { MemberStatusRow } from './MemberStatusRow'
 import { useSessionFilterRows } from './useSessionFilterRows'
 import {
+  BENCHMARK_LABEL,
+  FAVORITES_LABEL,
   METHOD_LABELS,
   SORT_LABELS,
   sortDimension,
@@ -174,10 +176,10 @@ export function FilterControls({
       <Field label="Filter">
         <div className="flex flex-wrap items-center gap-2">
           <Toggle variant="outline" size="sm" pressed={state.benchmarkOnly} onPressedChange={(v) => set({ benchmarkOnly: v })}>
-            Benchmarks
+            {BENCHMARK_LABEL}
           </Toggle>
           <Toggle variant="outline" size="sm" pressed={state.favoritesOnly} onPressedChange={(v) => set({ favoritesOnly: v })}>
-            Favorites
+            {FAVORITES_LABEL}
           </Toggle>
           <Select items={RATING_LABELS} value={String(state.minStars)} onValueChange={(v) => set({ minStars: Number(v) })}>
             <SelectTrigger className="w-32">

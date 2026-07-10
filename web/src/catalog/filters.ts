@@ -28,6 +28,12 @@ export const STATUS_LABELS: Record<StatusKey, string> = {
   unlogged: 'Not logged',
 }
 
+/** UI labels for the boolean toggles — shared by the filter sheet toggles and the header
+ *  pill so the two surfaces never drift. (Grade/method/status already share their sources;
+ *  min-stars and holds are deliberately worded differently between the two surfaces.) */
+export const BENCHMARK_LABEL = 'Benchmarks'
+export const FAVORITES_LABEL = 'Favorites'
+
 /**
  * The MoonBoard foot-rule "method" labels, as a FIXED list — the foot-rule subset of
  * iOS's CatalogListView.methodChoices (which additionally carries an "Any marked holds"
