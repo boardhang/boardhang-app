@@ -5,9 +5,15 @@
 // /lists/$listId returns zero rows under RLS → a "list not found" state (KTD4).
 
 import { useEffect, useMemo, useState } from 'react'
-import { getRouteApi, Link } from '@tanstack/react-router'
-import { ArrowRight, Search, Trash2 } from 'lucide-react'
+import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import { MoreVertical, Search, Trash2 } from 'lucide-react'
 import { catalogNavTargetForList } from '../catalog/catalogNav'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { useAuth } from '../auth/AuthProvider'
 import { boardByLayoutId } from '../board/boards'
@@ -30,6 +36,7 @@ const routeApi = getRouteApi('/lists/$listId')
 
 export function ListDetailScreen() {
   const { listId } = routeApi.useParams()
+  const navigate = useNavigate()
   const { status, isRestoring } = useAuth()
   const { status: dataStatus, lists } = useSavedLists()
   const signedIn = status !== 'signedOut'
@@ -131,21 +138,28 @@ export function ListDetailScreen() {
   }
 
   const header = list && (
-    <div className="mb-3 px-1">
-      <h1 className="text-lg font-bold tracking-tight">{list.name}</h1>
-      <p className="text-xs text-muted-foreground">{boardShortLabel(board?.name ?? '')}</p>
-      {/* "Show in catalog" bridge (R3.2/R7): a muted text link under the board name (keeps the
-          title full-width). Browses this list in the catalog with its grade/angle/hold-set
-          tooling. Only when the board is known (needed for the target). */}
+    <div className="mb-3 flex items-start justify-between gap-2 px-1">
+      <div className="min-w-0">
+        <h1 className="text-lg font-bold tracking-tight">{list.name}</h1>
+        <p className="text-xs text-muted-foreground">{boardShortLabel(board?.name ?? '')}</p>
+      </div>
+      {/* Overflow menu for list-level actions. Today just the "Show in catalog" bridge
+          (R3.2/R7) — browse this list in the catalog with its grade/angle/hold-set tooling. Kept
+          as a menu so more list actions can join without crowding the header. */}
       {board && (
-        <Link
-          {...catalogNavTargetForList(board, listId)}
-          className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <Search aria-hidden className="size-3.5" />
-          Show in catalog
-          <ArrowRight aria-hidden className="size-3" />
-        </Link>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="ghost" size="icon-sm" aria-label="List actions" className="shrink-0" />}
+          >
+            <MoreVertical className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => void navigate(catalogNavTargetForList(board, listId))}>
+              <Search />
+              Show in catalog
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
     </div>
   )

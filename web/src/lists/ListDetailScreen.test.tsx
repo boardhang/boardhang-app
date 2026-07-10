@@ -130,12 +130,13 @@ describe('ListDetailScreen', () => {
     expect(screen.getByText('Twentyfive')).toBeInTheDocument()
   })
 
-  it('has a "Show in catalog" link to the list-filtered catalog on the list’s board', async () => {
+  it('exposes a "Show in catalog" action in the list actions menu', async () => {
     renderWithRouter('/lists/list-1')
-    const link = await screen.findByRole('link', { name: /Show in catalog/ })
-    // The list is bound to board 5, filtered to this list id.
-    expect(link.getAttribute('href')).toContain('/board/5/catalog')
-    expect(link.getAttribute('href')).toContain('list=list-1')
+    await screen.findByRole('heading', { name: 'Projects' })
+    fireEvent.click(screen.getByRole('button', { name: 'List actions' }))
+    // The menu item's navigation target (board + list filter) is unit-tested against
+    // catalogNavTargetForList; here we just prove the action is present + reachable.
+    expect(await screen.findByRole('menuitem', { name: /Show in catalog/ })).toBeInTheDocument()
   })
 
   it('the angle filter narrows the shown problems; All shows every angle', async () => {
