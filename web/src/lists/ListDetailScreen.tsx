@@ -153,7 +153,9 @@ export function ListDetailScreen() {
           >
             <MoreVertical className="size-4" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          {/* w-auto: the default content width tracks the (tiny icon) trigger, which would wrap
+              the label — size to content instead (min-w-32 stays as a floor). */}
+          <DropdownMenuContent align="end" className="w-auto">
             <DropdownMenuItem onClick={() => void navigate(catalogNavTargetForList(board, listId))}>
               <Search />
               Show in catalog
