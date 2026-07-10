@@ -32,9 +32,11 @@ export function FilterPillBar({ filters, onChange, inSession, statusReady }: Fil
     // flex-nowrap + overflow-x-auto: one line that scrolls (never wraps) → predictable
     // single-row header height. Scrollbar hidden; horizontal pan for touch.
     <div
-      role="toolbar"
-      aria-label="Active filters"
-      aria-orientation="horizontal"
+      // A labelled group, not a toolbar: every toggle/chip is its own native Tab stop, so
+      // the widget has no roving-tabindex / arrow-key contract — `role="toolbar"` would
+      // advertise navigation it doesn't implement.
+      role="group"
+      aria-label="Filters"
       className="-mx-4 flex touch-pan-x flex-nowrap items-center gap-1.5 overflow-x-auto px-4 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       <Toggle
@@ -42,10 +44,9 @@ export function FilterPillBar({ filters, onChange, inSession, statusReady }: Fil
         size="sm"
         pressed={filters.benchmarkOnly}
         onPressedChange={(v) => onChange({ ...filters, benchmarkOnly: v })}
-        aria-label={BENCHMARK_LABEL}
-        // On-state uses the Toggle's default accent fill (same as the removable pills) —
-        // no color override; just the smaller sizing. Label is shared with the sheet
-        // toggle (BENCHMARK_LABEL) so the two surfaces never drift.
+        // Accessible name comes from the visible text (BENCHMARK_LABEL) — no aria-label,
+        // matching FilterControls' toggles. On-state uses the Toggle's default accent fill
+        // (same as the removable pills); just the smaller sizing here.
         className="h-6 shrink-0 px-2 text-xs"
       >
         {BENCHMARK_LABEL}
@@ -56,9 +57,8 @@ export function FilterPillBar({ filters, onChange, inSession, statusReady }: Fil
         size="sm"
         pressed={filters.favoritesOnly}
         onPressedChange={(v) => onChange({ ...filters, favoritesOnly: v })}
-        aria-label={FAVORITES_LABEL}
-        // Pinned always-on toggle like Benchmark (not a removable pill); same neutral
-        // accent on-fill and smaller sizing.
+        // Pinned always-on toggle like Benchmark (not a removable pill); accessible name
+        // from the visible text, same neutral accent on-fill and smaller sizing.
         className="h-6 shrink-0 px-2 text-xs"
       >
         {FAVORITES_LABEL}
