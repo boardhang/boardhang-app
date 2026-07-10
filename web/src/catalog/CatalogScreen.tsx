@@ -155,7 +155,17 @@ export function CatalogScreen() {
       setFilters({ ...filters, listFilter })
     }
   }, [listsLoaded, listFilter, filters, setFilters])
-  const { ids: listMemberIds, ready: listMembersReady } = useListMemberIds(listFilter)
+  const { ids: listMemberIds, ready: memberIdsReady } = useListMemberIds(listFilter)
+  // The list predicate only applies once the lists store is loaded AND the membership read
+  // has resolved. Gating on `listsLoaded` is load-bearing: `memberIdsReady` alone flips true
+  // as soon as an IndexedDB read resolves — even against an empty/cleared cache (signed out,
+  // or before the cold pull) — which would blank the grid for a selected-but-unresolved list.
+  // Until both hold, the facet fails OPEN (shows everything) rather than to zero.
+  const listMembersReady = listsLoaded && memberIdsReady
+  // Filter on the PRUNED ids, not the raw URL value: a fully-pruned set (every id stale/foreign)
+  // is a no-op immediately, so an unresolvable ?list= deep-link never flashes an empty grid in
+  // the render before the self-heal effect rewrites the URL.
+  const effectiveFilters = useMemo<FilterState>(() => ({ ...filters, listFilter }), [filters, listFilter])
 
   // The slab's actual grade span (ordinal) for the slider. (The Method filter uses a
   // fixed label list, not slab-derived — see FilterControls / METHOD_LABELS.)
@@ -206,8 +216,8 @@ export function CatalogScreen() {
   ])
 
   const transform = useMemo(
-    () => (list: CatalogProblem[]) => applyFilters(list, filters, context),
-    [filters, context],
+    () => (list: CatalogProblem[]) => applyFilters(list, effectiveFilters, context),
+    [effectiveFilters, context],
   )
   const displayed = useMemo(() => transform(problems), [transform, problems])
 

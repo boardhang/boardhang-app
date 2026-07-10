@@ -8,6 +8,7 @@ import {
   clearListsCache,
   countListProblems,
   currentCacheGeneration,
+  readListMemberIds,
   readListProblems,
   readLists,
   syncLists,
@@ -152,6 +153,28 @@ describe('syncLists — high-water pull', () => {
     expect(synced).toBe(false)
     expect(localStorage.getItem(LISTS_CURSOR)).toBe(cursorBefore)
     expect((await readLists()).map((l) => l.id)).toEqual(['a'])
+  })
+})
+
+describe('readListMemberIds — union membership for the catalog filter', () => {
+  const D = '2026-07-06T01:00:00Z'
+
+  it('unions source_catalog_ids across the given lists, dedups, and excludes deleted + non-requested lists', async () => {
+    await cacheListProblems([
+      problemRow('p1', 'a', D, { source_catalog_id: 'cat-x' }),
+      problemRow('p2', 'a', D, { source_catalog_id: 'cat-y' }),
+      problemRow('p3', 'b', D, { source_catalog_id: 'cat-y' }), // same problem in another selected list
+      problemRow('p4', 'b', D, { source_catalog_id: 'cat-z' }),
+      problemRow('p5', 'c', D, { source_catalog_id: 'cat-other' }), // list not requested
+      problemRow('p6', 'a', D, { source_catalog_id: 'cat-gone', deleted: true }), // tombstoned
+    ])
+    const ids = await readListMemberIds(['a', 'b'])
+    expect([...ids].sort()).toEqual(['cat-x', 'cat-y', 'cat-z'])
+  })
+
+  it('empty input returns an empty set', async () => {
+    await cacheListProblems([problemRow('p1', 'a', D, { source_catalog_id: 'cat-x' })])
+    expect((await readListMemberIds([])).size).toBe(0)
   })
 })
 

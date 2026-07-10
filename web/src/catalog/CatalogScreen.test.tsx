@@ -378,8 +378,10 @@ describe('CatalogScreen — saved-list filter over routing', () => {
   it('does NOT strip a valid ?list= deep-link while the lists store is still loading (cold-launch guard)', async () => {
     // Cold launch: lists haven't loaded yet. A deep-linked ?list=L1 must survive — pruning
     // against the empty store here would destroy a legitimate shared link (the P1 bug).
+    // NOTE members.ready is true (realistic: the IndexedDB read resolves fast against the empty
+    // cache) — the fail-open must come from listsStatus !== 'loaded', NOT from a not-ready read.
     listsMock.saved = { status: 'loading', lists: [], error: null }
-    listsMock.members = { ids: new Set(), ready: false } // membership not ready → fail open
+    listsMock.members = { ids: new Set(), ready: true }
     addBoard(LAYOUT)
     const { router } = renderWithRouter(`/board/${LAYOUT}/catalog?list=L1`)
     // Fail-open: all problems visible, not a blanked grid.
@@ -397,6 +399,21 @@ describe('CatalogScreen — saved-list filter over routing', () => {
     expect(await screen.findByText('Visible')).toBeInTheDocument()
     expect(screen.queryByText('HiddenB')).toBeNull()
     expect(screen.queryByText('HiddenC')).toBeNull()
+  })
+
+  it('a ?list= link never blanks the grid when the store never loads (signed-out / idle)', async () => {
+    // Regression guard: a resolved-but-empty membership read (empty/cleared cache) must NOT
+    // filter to zero. With the store idle (loadLists never ran, e.g. signed out), the facet
+    // stays a no-op even though the membership read "resolved" with ready:true and an empty set.
+    listsMock.saved = { status: 'idle', lists: [], error: null }
+    listsMock.members = { ids: new Set(), ready: true }
+    addBoard(LAYOUT)
+    renderWithRouter(`/board/${LAYOUT}/catalog?list=X`)
+    expect(await screen.findByText('Visible')).toBeInTheDocument()
+    expect(screen.getByText('HiddenB')).toBeInTheDocument()
+    expect(screen.getByText('HiddenC')).toBeInTheDocument()
+    // No "Lists" control either (no lists for this board).
+    expect(screen.queryByRole('button', { name: 'Filter by list' })).toBeNull()
   })
 
   it('prunes a stale/unknown list id once loaded and self-heals the URL', async () => {

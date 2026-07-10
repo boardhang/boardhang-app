@@ -191,10 +191,15 @@ date: 2026-07-10
   on `subscribeListProblemsChanged` so KTD3 (live) holds. It reuses `readListProblems` (per list)
   or a small batch helper added to `listsSync.ts`; no new store state. It returns **both** the
   union set **and** a `ready` boolean (`false` until the first read for the current `listIds`
-  resolves; trivially `true` for an empty `listIds`). `CatalogScreen` feeds `ready` into
-  `FilterContext.listMembersReady` (TD2), so a non-empty `listFilter` whose members haven't
-  loaded yet shows **all** problems (fail-open), not zero. The transient window is a brief flash
-  for cached lists and needs no dedicated spinner.
+  resolves; trivially `true` for an empty `listIds`; drops back to `false` on a selection change
+  until the new read resolves). **`CatalogScreen` gates `FilterContext.listMembersReady` as
+  `listsLoaded && ready`, not `ready` alone** — a bare resolved read flips `true` even against an
+  empty/cleared cache (signed out, or before the cold pull), which would blank the grid for a
+  selected-but-unresolved list; ANDing with `useSavedLists().status === 'loaded'` keeps the facet
+  fail-**open** until membership is truly known. **`applyFilters` also runs against the pruned
+  `listFilter`** (an `effectiveFilters` built from the pruned set), so a fully-pruned selection
+  is a no-op immediately rather than flashing zero in the render before the self-heal (TD4)
+  rewrites the URL. Together: no blank grid signed-out, on cold launch, or on a stale deep-link.
 - **TD6 — "Lists" opener is a pinned control; selection renders as chips.** Add a pinned "Lists"
   control to `FilterPillBar` (sibling of the Favorites toggle) that opens the multi-select sheet
   (TD7); it is **rendered only when the board has ≥1 loaded list** (R4). Selected lists become

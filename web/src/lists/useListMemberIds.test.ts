@@ -58,6 +58,24 @@ describe('useListMemberIds', () => {
     expect([...result.current.ids]).toEqual(['cat-a'])
   })
 
+  it('flips ready back to false while a changed selection re-reads, then true again', async () => {
+    readListMemberIds.mockResolvedValue(new Set(['cat-a']))
+    const { result, rerender } = renderHook(({ ids }) => useListMemberIds(ids), {
+      initialProps: { ids: ['l1'] },
+    })
+    await waitFor(() => expect(result.current.ready).toBe(true))
+
+    // Change the selection: the new union is still loading, so ready must drop (fail-open)
+    // rather than showing the stale l1 union as if it were the l2 result.
+    let resolve!: (v: Set<string>) => void
+    readListMemberIds.mockReturnValue(new Promise((r) => (resolve = r)))
+    rerender({ ids: ['l2'] })
+    expect(result.current.ready).toBe(false)
+    resolve(new Set(['cat-b']))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    expect([...result.current.ids]).toEqual(['cat-b'])
+  })
+
   it('re-reads on a subscribeListProblemsChanged notify (live)', async () => {
     readListMemberIds.mockResolvedValue(new Set(['cat-a']))
     const { result } = renderHook(() => useListMemberIds(['l1']))
