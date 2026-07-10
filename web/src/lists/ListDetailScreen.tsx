@@ -158,7 +158,7 @@ export function ListDetailScreen() {
           <DropdownMenuContent align="end" className="w-auto">
             <DropdownMenuItem onClick={() => void navigate(catalogNavTargetForList(board, listId))}>
               <Search />
-              Show in catalog
+              Show in search
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

@@ -130,13 +130,13 @@ describe('ListDetailScreen', () => {
     expect(screen.getByText('Twentyfive')).toBeInTheDocument()
   })
 
-  it('exposes a "Show in catalog" action in the list actions menu', async () => {
+  it('exposes a "Show in search" action in the list actions menu', async () => {
     renderWithRouter('/lists/list-1')
     await screen.findByRole('heading', { name: 'Projects' })
     fireEvent.click(screen.getByRole('button', { name: 'List actions' }))
     // The menu item's navigation target (board + list filter) is unit-tested against
     // catalogNavTargetForList; here we just prove the action is present + reachable.
-    expect(await screen.findByRole('menuitem', { name: /Show in catalog/ })).toBeInTheDocument()
+    expect(await screen.findByRole('menuitem', { name: /Show in search/ })).toBeInTheDocument()
   })
 
   it('the angle filter narrows the shown problems; All shows every angle', async () => {
