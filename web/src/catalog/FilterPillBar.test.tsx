@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
 import { FilterPillBar } from './FilterPillBar'
 import type { SavedList } from '../lists/listsTypes'
@@ -26,7 +26,6 @@ function renderBar(over: Partial<Parameters<typeof FilterPillBar>[0]> = {}) {
       inSession={false}
       statusReady={false}
       boardLists={over.boardLists ?? []}
-      listsById={over.listsById ?? new Map()}
     />,
   )
 }
@@ -42,31 +41,11 @@ describe('FilterPillBar — Lists control (R4)', () => {
     expect(screen.getByRole('button', { name: 'Filter by list' })).toBeInTheDocument()
   })
 
-  it('renders a removable chip per selected list, labelled from listsById', () => {
+  it('emits no removable list chips (the selection is edited via the sheet)', () => {
     renderBar({
       filters: state({ listFilter: ['a', 'b'] }),
       boardLists: [savedList('a', 'Projects'), savedList('b', 'Warm-ups')],
-      listsById: new Map([
-        ['a', { name: 'Projects' }],
-        ['b', { name: 'Warm-ups' }],
-      ]),
     })
-    expect(screen.getByRole('button', { name: 'Remove Projects filter' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Remove Warm-ups filter' })).toBeInTheDocument()
-  })
-
-  it('removing a list chip patches out just that id', () => {
-    const onChange = vi.fn()
-    renderBar({
-      filters: state({ listFilter: ['a', 'b'] }),
-      onChange,
-      boardLists: [savedList('a', 'Projects'), savedList('b', 'Warm-ups')],
-      listsById: new Map([
-        ['a', { name: 'Projects' }],
-        ['b', { name: 'Warm-ups' }],
-      ]),
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Projects filter' }))
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ listFilter: ['b'] }))
+    expect(screen.queryByRole('button', { name: 'Remove Projects filter' })).toBeNull()
   })
 })

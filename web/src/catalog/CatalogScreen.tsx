@@ -139,14 +139,14 @@ export function CatalogScreen() {
     () => savedLists.filter((l) => l.boardLayoutId === board.layoutId),
     [savedLists, board.layoutId],
   )
-  const listsById = useMemo(() => new Map(boardLists.map((l) => [l.id, l] as const)), [boardLists])
+  const boardListIds = useMemo(() => new Set(boardLists.map((l) => l.id)), [boardLists])
   // Prune the URL's list ids to the board's live lists — but ONLY once lists have loaded, so a
   // valid ?list= deep-link isn't stripped against a still-empty store on a cold launch (R5/TD4).
   // While idle/loading the raw filter is kept verbatim and the facet is a no-op via
   // listMembersReady (below), so nothing is dropped and the grid isn't blanked mid-load.
   const listFilter = useMemo(
-    () => (listsLoaded ? filters.listFilter.filter((id) => listsById.has(id)) : filters.listFilter),
-    [listsLoaded, filters.listFilter, listsById],
+    () => (listsLoaded ? filters.listFilter.filter((id) => boardListIds.has(id)) : filters.listFilter),
+    [listsLoaded, filters.listFilter, boardListIds],
   )
   // Self-heal the URL when a loaded prune actually dropped an id (deleted / foreign-board /
   // signed-out). Pruning only ever removes ids, so a length delta is a sound "changed" signal.
@@ -275,7 +275,6 @@ export function CatalogScreen() {
             inSession={sessionForBoard !== null}
             statusReady={statusReady}
             boardLists={boardLists}
-            listsById={listsById}
           />,
           headerFilterSlot,
         )}

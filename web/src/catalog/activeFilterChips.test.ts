@@ -2,14 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { describeActiveFilters, type ChipContext } from './activeFilterChips'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
 
-const READY: ChipContext = { inSession: false, statusReady: true, listsById: new Map() }
+const READY: ChipContext = { inSession: false, statusReady: true }
 
 function state(over: Partial<FilterState>): FilterState {
   return { ...DEFAULT_FILTERS, ...over }
 }
-
-const listsById = (entries: [string, string][]): ReadonlyMap<string, { name: string }> =>
-  new Map(entries.map(([id, name]) => [id, { name }]))
 
 describe('describeActiveFilters', () => {
   it('returns no chips for the default state', () => {
@@ -56,43 +53,19 @@ describe('describeActiveFilters', () => {
 
   it('suppresses status chips in a session, keeping the rest', () => {
     const s = state({ minStars: 2, statusFilters: ['sent'] })
-    const chips = describeActiveFilters(s, { inSession: true, statusReady: true, listsById: new Map() })
+    const chips = describeActiveFilters(s, { inSession: true, statusReady: true })
     expect(chips.map((c) => c.id)).toEqual(['stars'])
   })
 
   it('suppresses status chips when not statusReady (e.g. signed-out deep link)', () => {
     const s = state({ minStars: 2, statusFilters: ['sent'] })
-    const chips = describeActiveFilters(s, { inSession: false, statusReady: false, listsById: new Map() })
+    const chips = describeActiveFilters(s, { inSession: false, statusReady: false })
     expect(chips.map((c) => c.id)).toEqual(['stars'])
   })
 
-  it('emits one chip per selected list, labelled with the list name, right after grade', () => {
-    const s = state({ gradeRange: [3, 8], listFilter: ['a', 'b'], minStars: 2 })
-    const ctx: ChipContext = { ...READY, listsById: listsById([['a', 'Projects'], ['b', 'Warm-ups']]) }
-    const chips = describeActiveFilters(s, ctx)
-    expect(chips.map((c) => c.id)).toEqual(['grade', 'list:a', 'list:b', 'stars'])
-    const byId = Object.fromEntries(chips.map((c) => [c.id, c.label]))
-    expect(byId['list:a']).toBe('Projects')
-    expect(byId['list:b']).toBe('Warm-ups')
-    // Each patch removes only its own id.
-    const patches = Object.fromEntries(chips.map((c) => [c.id, c.patch]))
-    expect(patches['list:a']).toEqual({ listFilter: ['b'] })
-    expect(patches['list:b']).toEqual({ listFilter: ['a'] })
-  })
-
-  it('drops a selected list id with no matching live list (stale/foreign, not yet pruned)', () => {
-    const s = state({ listFilter: ['a', 'gone'] })
-    const ctx: ChipContext = { ...READY, listsById: listsById([['a', 'Projects']]) }
-    const chips = describeActiveFilters(s, ctx)
-    expect(chips.map((c) => c.id)).toEqual(['list:a'])
-  })
-
-  it('disambiguates two selected lists that share a name', () => {
-    const s = state({ listFilter: ['a', 'b'] })
-    const ctx: ChipContext = { ...READY, listsById: listsById([['a', 'Projects'], ['b', 'Projects']]) }
-    const labels = describeActiveFilters(s, ctx).map((c) => c.label)
-    expect(labels).toEqual(['Projects (1)', 'Projects (2)'])
-    expect(new Set(labels).size).toBe(2) // distinguishable
+  it('never emits a saved-list chip (the selection is edited via the "Lists" control)', () => {
+    const chips = describeActiveFilters(state({ listFilter: ['a', 'b'] }), READY)
+    expect(chips).toEqual([])
   })
 
   it("each chip's patch clears exactly its own filter", () => {

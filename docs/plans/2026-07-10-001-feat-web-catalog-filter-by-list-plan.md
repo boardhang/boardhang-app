@@ -88,11 +88,11 @@ date: 2026-07-10
   the result is `(in any selected list) AND (matches grade) AND (favorited) AND …`.
 - **R3 — Two entry points, one shared state.** Both write the **same** URL param, so the state
   is identical however it was set:
-  1. **Catalog filter surfaces:** a **"Lists" control** in the header pill bar opens a
-     **multi-select picker** of the user's lists **for the current board** (each picked list
-     becomes a removable chip), **and** the filter bottom sheet carries a **"Saved lists"**
-     section with one multi-select pill per list — both drive the same `listFilter`, hidden when
-     the board has no lists.
+  1. **Catalog filter surfaces:** a **"Lists" control** in the header pill bar (pressed when a
+     list filter is active) opens a **multi-select picker** of the user's lists **for the current
+     board**, **and** the filter bottom sheet carries a **"Saved lists"** section with one
+     multi-select pill per list — both drive the same `listFilter`, hidden when the board has no
+     lists.
   2. **Lists screen bridge:** list cards and `ListDetailScreen` gain a **"Show in catalog"**
      action that deep-links into the catalog with that list applied.
 - **R4 — Hidden when there's nothing to pick.** The "Lists" control appears **only** when the
@@ -104,11 +104,13 @@ date: 2026-07-10
   (deep-linkable) **and** the per-`(board, angle)` **cold-launch seed**, so reopening the board
   resumes the view. On load the set is **validated**: any list id that no longer resolves to a
   live list for the current board (deleted, or a seed carried from another board) is dropped. The
-  visible removable chip(s) keep the state from ever being hidden.
-- **R6 — One removable chip per selected list.** Each selected list renders as its **own**
-  removable chip labeled with the **list name** ("Projects ✕"), individually clearable — mirrors
-  the existing removable-chip model. (A combined "Lists: N" chip and a `+K` overflow variant were
-  considered; overflow is a deferred refinement, not built speculatively — see Non-goals.)
+  pressed "Lists" control keeps the state visible.
+- **R6 — Selection is edited via the "Lists" control, not removable chips.** The header pill-bar
+  "Lists" control renders **pressed** when a list filter is active; tapping it reopens the picker
+  to change or clear the selection (the picker has a **"Clear all"**). The selected lists are
+  **not** rendered as individual removable chips in the pill bar — the control is the single
+  affordance. (An earlier revision showed one removable chip per list; dropped as redundant with
+  the always-present, discoverable control.)
 - **R7 — "Show in catalog" **replaces** the list set.** Triggering the bridge (R3.2) from the
   Lists screen sets the catalog's list filter to **just that list**, because from the Lists
   screen the user cannot see the catalog's current list filter, so OR-ing into an invisible set
@@ -140,8 +142,8 @@ date: 2026-07-10
 - **KTD7 — Picker UI.** The pill-bar "Lists" control opens a **multi-select sheet** listing the
   current board's lists (checkbox per list). It sits alongside the existing pinned pill-bar
   controls but opens a sheet rather than toggling.
-- **KTD8 — Chips.** Selected lists render as removable chips (R6) in the pill bar's
-  removable-chip zone (`describeActiveFilters`); each `patch` removes just that list id.
+- **KTD8 — No chips.** The selection is edited through the "Lists" control (pressed when active),
+  not mirrored as removable chips — `describeActiveFilters` emits nothing for `listFilter`.
 - **KTD9 — URL param.** A `list` catalog search param (CSV of list ids for the OR set) mapped
   bidirectionally through `filtersToSearch`/`searchToFilters`; a `listFilter` field on
   `FilterState`; a `FilterContext` field carrying the union member-id
@@ -202,20 +204,14 @@ date: 2026-07-10
   `listFilter`** (an `effectiveFilters` built from the pruned set), so a fully-pruned selection
   is a no-op immediately rather than flashing zero in the render before the self-heal (TD4)
   rewrites the URL. Together: no blank grid signed-out, on cold launch, or on a stale deep-link.
-- **TD6 — "Lists" opener is a pinned control; selection renders as chips.** Add a pinned "Lists"
-  control to `FilterPillBar` (sibling of the Favorites toggle) that opens the multi-select sheet
-  (TD7); it is **rendered only when the board has ≥1 loaded list** (R4). Selected lists become
-  removable chips via a new branch in `describeActiveFilters` — one `FilterChip` per id,
-  `label` = the list's name, `patch` = `listFilter` minus that id. **Chip labels need a name
-  lookup that `describeActiveFilters` does not have today** (its context is `{inSession,
-  statusReady}`, and `applyFilters`' `FilterContext` — favoriteIds/etc. — never flows to it). So
-  `CatalogScreen` computes a board-scoped `listsById` from `useSavedLists()` and threads it as a
-  **new prop** into `FilterPillBar`, which passes it into `describeActiveFilters`' context; an id
-  with no matching live list yields no chip (defense in depth with TD4). **Long names** (up to
-  `MAX_LIST_NAME` = 60) get a `max-width` + `truncate` with the full name in a `title` tooltip, so
-  one chip can't dominate the single-line, non-wrapping pill bar. **Same-named lists** (names are
-  not unique — presets include "Projects") get a short disambiguator suffix (e.g. a trailing
-  index) so two selected lists never render as two identical chips.
+- **TD6 — "Lists" opener is a pinned control; no removable chips.** Add a pinned "Lists" control
+  to `FilterPillBar` (sibling of the Favorites toggle) that opens the multi-select sheet (TD7),
+  rendered **pressed** when `listFilter` is non-empty; it is **rendered only when the board has
+  ≥1 loaded list** (R4). The selection is **not** mirrored as removable chips in
+  `describeActiveFilters` — the control is the one affordance, opened to edit or clear (the sheet
+  carries a "Clear all"). This keeps the single-line pill bar uncluttered and sidesteps
+  list-name truncation/same-name-chip concerns entirely. `CatalogScreen` still derives a
+  `boardListIds` set for the TD4 prune, but no list metadata is threaded into the chip layer.
 - **TD7 — Picker sheet mirrors `AddToListSheet`, live per-row toggle (no batched Apply).** A new
   `ListFilterSheet` reuses the board-scoped list enumeration and row/checkbox affordances of
   `AddToListSheet.tsx`, but its checkboxes toggle membership **in `listFilter`** (the filter
@@ -325,8 +321,8 @@ date: 2026-07-10
   - `web/src/catalog/CatalogScreen.tsx` — call `loadLists()` on mount (cached-first); resolve
     `filters.listFilter` against board-scoped `useSavedLists()`; **prune + URL self-heal only when
     `status === 'loaded'`**; feed pruned ids to `useListMemberIds`; set
-    `FilterContext.listMemberIds` + `listMembersReady`; compute a board-scoped `listsById` and
-    thread it (new prop) to `FilterPillBar`.
+    `FilterContext.listMemberIds` + `listMembersReady`; pass `boardLists` (for the "Lists" opener
+    + the filter-sheet section) to `FilterPillBar` / `FilterSheet`.
   - `web/src/catalog/CatalogScreen.test.tsx` — extend.
   - `web/src/catalog/filterSeed.ts` — no code change expected (whole-state serialization already
     carries `listFilter`); add a comment noting validation happens at resolve time in
@@ -340,7 +336,7 @@ date: 2026-07-10
   `idle`/`loading`, do not prune and do not rewrite the URL** — keep the raw `listFilter`; the facet
   stays a no-op because `listMembersReady` is `false` (U2). This is the fix for the cold-launch /
   shared-deep-link race: a legitimate `?list=` id survives until the lists actually load. Pass
-  `listsById` down so U4 can label chips.
+  `boardLists` down so U4's "Lists" control + filter-sheet section can render.
 - **Patterns to follow:** `loadLists()` on open in `AddToListSheet.tsx`; existing `FilterContext`
   assembly in `CatalogScreen.tsx` (favorites, ascents, hold-set); `setFilters` → `saveSeed` +
   `navigate(..., {replace:true})`; `ListsStatus` (`idle`/`loading`/`loaded`/`error`/`offline`) on
@@ -363,53 +359,45 @@ date: 2026-07-10
   launch; a stale id self-heals only after lists load; switching boards never carries another
   board's list filter.
 
-### U4. Pill-bar "Lists" control, picker sheet, and per-list chips
+### U4. Pill-bar "Lists" control + picker sheet (+ filter-sheet section)
 
-- **Goal:** The in-catalog entry point (R3.1): open a multi-select of the board's lists; show each
-  selection as a removable chip.
+- **Goal:** The in-catalog entry point (R3.1): a "Lists" control opening a multi-select of the
+  board's lists, plus a "Saved lists" section in the filter bottom sheet driving the same
+  `listFilter`.
 - **Requirements:** R3.1, R4, R6, KTD7, KTD8, TD6, TD7.
-- **Dependencies:** U1 (for `listFilter` + `setFilters`); U3 (for `loadLists`, board `listsById` +
+- **Dependencies:** U1 (for `listFilter` + `setFilters`); U3 (for `loadLists`, `boardLists` +
   pruned set + the new `FilterPillBar` prop).
 - **Files:**
   - `web/src/catalog/ListFilterSheet.tsx` (new) — multi-select sheet of board lists; each row
-    toggle writes `listFilter` **live** via `setFilters` (no batched Apply).
-  - `web/src/catalog/FilterPillBar.tsx` — pinned "Lists" opener, rendered only when the board has
-    ≥1 loaded list (R4); accept the new `listsById` prop and pass it into `describeActiveFilters`'
-    context.
-  - `web/src/catalog/activeFilterChips.ts` — extend `describeActiveFilters`' context arg (today
-    `{inSession, statusReady}`) with a `listsById` name lookup; new branch emitting one
-    `FilterChip` per selected list id (label = list name, **truncated** with a `title` tooltip;
-    same-named lists get a short disambiguator suffix; `patch` removes that id). Slot in the chip
-    order (e.g. after grade, before holds — decide at build time for scan order).
-  - `web/src/catalog/ListFilterSheet.test.tsx` (new), `web/src/catalog/activeFilterChips.test.ts`
-    (extend).
+    toggle writes `listFilter` **live** via `onChange`/`setFilters` (no batched Apply). Same
+    centered `max-w-[480px]` container as the filter sheet, left-aligned title, and a "Clear all".
+  - `web/src/catalog/FilterPillBar.tsx` — pinned "Lists" opener (pressed when `listFilter`
+    non-empty), rendered only when the board has ≥1 loaded list (R4); takes a `boardLists` prop.
+    **No** list chips are emitted.
+  - `web/src/catalog/FilterControls.tsx` / `FilterSheet.tsx` — a "Saved lists" pill section below
+    Method (one multi-select pill per board list), threaded a `boardLists` prop.
+  - `web/src/catalog/ListFilterSheet.test.tsx` (new), `web/src/catalog/FilterPillBar.test.tsx`
+    (new), `web/src/catalog/FilterControls.test.tsx` (extend).
 - **Approach:** `ListFilterSheet` reuses the board-scoped enumeration + row/checkbox affordances
   of `AddToListSheet.tsx`, but checkboxes reflect/toggle `listFilter` membership (not list
-  membership of a problem) and write **immediately** via `setFilters` — the catalog updates live
-  behind the open sheet (TD7), matching `AddToListSheet` and the pill bar's instant controls; there
-  is no confirm step. The opener follows the Favorites pinned-control pattern in `FilterPillBar` but
-  opens the sheet instead of toggling a boolean. Chip labels come from the `listsById` lookup
-  threaded from `CatalogScreen` (U3) — **not** `applyFilters`' `FilterContext`, which never reaches
-  `describeActiveFilters`.
+  membership of a problem) and write **immediately** — the catalog updates live behind the open
+  sheet (TD7); no confirm step. The opener follows the Favorites pinned-control pattern in
+  `FilterPillBar` but opens the sheet instead of toggling a boolean. `describeActiveFilters` is
+  **not** changed — the selection is not a chip (TD6/KTD8).
 - **Patterns to follow:** `web/src/lists/AddToListSheet.tsx` (board-scoped list rows, live checkbox
-  toggles); Favorites pinned control + removable-chip rendering in `FilterPillBar.tsx`;
-  `describeActiveFilters` chip shape + context arg in `activeFilterChips.ts`.
+  toggles); Favorites pinned control in `FilterPillBar.tsx`; the filter sheet's Method pill section
+  in `FilterControls.tsx`.
 - **Test scenarios:**
-  - `activeFilterChips.test.ts`: `listFilter: ['a','b']` with `listsById` {a:"Projects",
-    b:"Warm-ups"} → two chips labeled "Projects" and "Warm-ups"; each `patch` removes only its own
-    id.
-  - `activeFilterChips.test.ts`: a `listFilter` id absent from `listsById` → no chip (TD6).
-  - `activeFilterChips.test.ts`: two selected lists sharing a name → chips are **distinguishable**
-    (disambiguator applied), not two identical labels (TD6/D).
-  - `activeFilterChips.test.ts`: a list name at `MAX_LIST_NAME` (60 chars) → chip label truncates
-    (asserts the truncation class / `title`), so it can't dominate the bar.
+  - `FilterPillBar.test.tsx`: the "Lists" opener is absent when the board has 0 lists (R4) and
+    present when ≥1; `describeActiveFilters` emits no chip for a non-empty `listFilter`.
   - `ListFilterSheet.test.tsx`: only the current board's lists are listed (KTD2); toggling a row
-    updates `listFilter` immediately (live, no Apply button); already-selected lists render checked.
-  - `FilterPillBar`: the "Lists" opener is absent when the board has 0 lists (R4) and present when
-    ≥1 (assert per existing pill-bar test style).
-- **Verification:** Selecting two lists narrows the catalog to their union live behind the sheet
-  with two distinguishable chips; removing one chip narrows to the other; a long list name doesn't
-  push other chips off-screen; no "Lists" control on a board with no lists.
+    updates `listFilter` immediately (live, no Apply button); already-selected lists render checked;
+    "Clear all" appears only with a selection and clears every id.
+  - `FilterControls.test.tsx`: the "Saved lists" section is omitted with 0 lists; with lists,
+    tapping a pill toggles it into/out of `listFilter`.
+- **Verification:** Selecting two lists narrows the catalog to their union live behind the sheet;
+  reopening the "Lists" control (or the sheet section) edits/clears the set; no "Lists" control on a
+  board with no lists.
 
 ### U5. "Show in catalog" bridge from the Lists screen
 
@@ -453,9 +441,10 @@ Gates for the whole change (run before PR):
 - **Unit:** `npx vitest run` green, including the extended/added tests above.
 - **Browser smoke (manual, the end-to-end proof the units don't individually cover):**
   1. Signed in with ≥1 list for the board → "Lists" control shows; open the picker, tick two
-     lists → catalog updates **live behind the open sheet** to their **union**; two chips appear;
-     layer a grade filter → composes (AND).
-  2. Remove one chip → narrows to the other list; clear both → catalog returns to unfiltered.
+     lists → catalog updates **live behind the open sheet** to their **union**; the "Lists"
+     control reads pressed; layer a grade filter → composes (AND).
+  2. Reopen the picker, deselect one → narrows to the other list; "Clear all" → catalog returns to
+     unfiltered.
   3. Add/remove a problem from a filtered list (via AddToListSheet) → grid updates **live**.
   4. Copy the URL, **hard-reload / open in a fresh tab (cold launch)** → same filtered view, the
      `list=` param is **not** stripped while lists load (the P1 guard); then delete one of the
@@ -480,15 +469,9 @@ Gates for the whole change (run before PR):
 
 ## Open Questions (deferred to implementation)
 
-- **Chip order slot.** Where the per-list chips sit in `describeActiveFilters`' order
-  (grade → stars → methods → status → holds today). Low-stakes; decide for best scan order at
-  build (leaning: right after grade).
 - **Bridge placement/styling.** Both surfaces are required (card + detail, R3.2/U5) — only the
   exact placement and styling of each "Show in catalog" affordance is open; confirm against the
   existing list action affordances at build. (Not a surface-count decision.)
-- **Same-name chip disambiguator.** The exact form of the disambiguator for two selected lists
-  sharing a name (TD6/D) — a trailing index, a subtle marker, or another affordance — is a
-  build-time styling choice; the requirement (they must be distinguishable) is fixed.
 - **Batch membership read shape.** Whether `useListMemberIds` loops `readListProblems` or a new
   `listsSync` batch helper reads cleaner (TD5) — an execution-time call once the real IndexedDB
   read is in front of the implementer.
@@ -515,7 +498,7 @@ Gates for the whole change (run before PR):
 
 - With ≥1 list for the current board, a "Lists" control appears in the catalog filter pill bar;
   the user multi-selects two lists and the catalog shows the **union** of their problems, layered
-  under grade/angle/hold-set. Each selected list shows as its own removable chip.
+  under grade/angle/hold-set. The "Lists" control reads pressed while a filter is active.
 - Signed out (or with no lists for this board), the "Lists" control is **absent**; a shared
   `list=` deep-link that can't resolve opens the catalog unfiltered rather than erroring.
 - From the Lists screen, "Show in catalog" opens the catalog filtered to **just** that list,

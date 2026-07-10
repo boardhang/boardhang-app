@@ -26,19 +26,10 @@ interface FilterPillBarProps {
   statusReady: boolean
   /** This board's live lists — drives the "Lists" opener (hidden when empty, R4). */
   boardLists: SavedList[]
-  /** Board lists by id — supplies chip labels for `listFilter`. */
-  listsById: ReadonlyMap<string, { name: string }>
 }
 
-export function FilterPillBar({
-  filters,
-  onChange,
-  inSession,
-  statusReady,
-  boardLists,
-  listsById,
-}: FilterPillBarProps) {
-  const chips = describeActiveFilters(filters, { inSession, statusReady, listsById })
+export function FilterPillBar({ filters, onChange, inSession, statusReady, boardLists }: FilterPillBarProps) {
+  const chips = describeActiveFilters(filters, { inSession, statusReady })
   const [listSheetOpen, setListSheetOpen] = useState(false)
 
   return (
@@ -107,19 +98,14 @@ export function FilterPillBar({
           type="button"
           onClick={() => onChange({ ...filters, ...chip.patch })}
           aria-label={`Remove ${chip.label} filter`}
-          // Full label in the native tooltip so a truncated (long) list-name chip is still
-          // legible on hover/long-press.
-          title={chip.label}
           // Outlined gray tag: the border defines the shape (a muted FILL would vanish
           // into the near-white frosted header in light mode, where --muted ≈
           // --background). Reads as secondary to the accent-FILLED pinned toggles, and
           // the trailing ✕ carries the "removable" signal. Works in both themes.
           className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[min(var(--radius-md),12px)] border border-border bg-transparent px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          {/* Cap the label width so a long list name (up to MAX_LIST_NAME = 60) can't
-              dominate the single-line pill bar and push other chips off-screen. */}
-          <span className="max-w-[10rem] truncate">{chip.label}</span>
-          <X aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+          <span>{chip.label}</span>
+          <X aria-hidden className="size-3 text-muted-foreground" />
         </button>
       ))}
 

@@ -28,16 +28,13 @@ export interface ChipContext {
   /** Signed in AND ascents loaded — gates the status dimension exactly like
    *  activeFilterCount. */
   statusReady: boolean
-  /** The board's live lists by id — supplies chip labels for `listFilter`. An id absent
-   *  here (a stale/foreign id not yet pruned) yields no chip. Threaded from CatalogScreen
-   *  because `describeActiveFilters` has no access to the lists store. */
-  listsById: ReadonlyMap<string, { name: string }>
 }
 
 /**
  * Removable-pill descriptors for the given filter state, in fixed category order:
- * Grade → Lists → Min-stars → Methods → Status → Holds. (Benchmark and Favorites are the
- * pinned always-on toggles, produced by the component, not here.)
+ * Grade → Min-stars → Methods → Status → Holds. (Benchmark and Favorites are the pinned
+ * always-on toggles, produced by the component, not here; the saved-list selection is edited
+ * via the "Lists" control, also not a removable chip.)
  */
 export function describeActiveFilters(state: FilterState, ctx: ChipContext): FilterChip[] {
   const chips: FilterChip[] = []
@@ -51,34 +48,9 @@ export function describeActiveFilters(state: FilterState, ctx: ChipContext): Fil
     })
   }
 
-  // Saved-list filters: one removable chip per selected list, labelled with the list name.
-  // Names are not unique (the add-to-list presets include "Projects"), so same-named selected
-  // lists get a 1-based suffix to stay distinguishable. An id with no matching live list (a
-  // stale/foreign id not yet pruned) yields no chip.
-  if (state.listFilter.length > 0) {
-    const selected = state.listFilter
-      .map((id) => ({ id, name: ctx.listsById.get(id)?.name }))
-      .filter((x): x is { id: string; name: string } => x.name !== undefined)
-    const nameTotals = new Map<string, number>()
-    for (const s of selected) nameTotals.set(s.name, (nameTotals.get(s.name) ?? 0) + 1)
-    const nameSeen = new Map<string, number>()
-    for (const { id, name } of selected) {
-      let label = name
-      if ((nameTotals.get(name) ?? 1) > 1) {
-        const n = (nameSeen.get(name) ?? 0) + 1
-        nameSeen.set(name, n)
-        label = `${name} (${n})`
-      }
-      chips.push({
-        id: `list:${id}`,
-        label,
-        patch: { listFilter: state.listFilter.filter((x) => x !== id) },
-      })
-    }
-  }
-
   // Favorites is a pinned always-on toggle in the bar (like Benchmark), not a removable
-  // chip — so it is intentionally NOT emitted here.
+  // chip — so it is intentionally NOT emitted here. Saved-list selections likewise are NOT
+  // chips: the "Lists" pill-bar control (pressed when active) is opened to edit them.
 
   if (state.minStars > 0) {
     chips.push({ id: 'stars', label: `≥${state.minStars}★`, patch: { minStars: 0 } })
