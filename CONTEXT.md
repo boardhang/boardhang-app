@@ -1,4 +1,4 @@
-# MoonBoard LED — Handoff / Orientation
+# Boardhang — Handoff / Orientation
 
 **Read this first.** It orients you; the deep dives in [`docs/`](docs/README.md) own the
 detail. This doc *summarizes and links* — it does not re-explain subsystems. If a section
