@@ -1,16 +1,18 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CatalogProblem, SyncResult } from './catalogSync'
-import { readSlab, syncSlab } from './catalogSync'
+import { readSlab, resyncSlab, syncSlab } from './catalogSync'
 import { useSlab } from './useSlab'
 
 vi.mock('./catalogSync', () => ({
   readSlab: vi.fn(),
   syncSlab: vi.fn(),
+  resyncSlab: vi.fn(),
 }))
 
 const readSlabMock = vi.mocked(readSlab)
 const syncSlabMock = vi.mocked(syncSlab)
+const resyncSlabMock = vi.mocked(resyncSlab)
 
 function problem(id: string): CatalogProblem {
   return {
@@ -109,6 +111,38 @@ describe('useSlab', () => {
 
     await waitFor(() => expect(syncSlabMock).toHaveBeenCalledWith(5, 25))
     await waitFor(() => expect(result.current.problems).toEqual([problem('d2')]))
+  })
+
+  it('resync() re-pulls the slab and swaps in the fresh problems', async () => {
+    readSlabMock.mockResolvedValue([problem('old')])
+    syncSlabMock.mockResolvedValue(synced([problem('old')]))
+    resyncSlabMock.mockResolvedValue(synced([problem('old'), problem('fresh')]))
+
+    const { result } = renderHook(() => useSlab(7, 40))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => {
+      const ok = await result.current.resync()
+      expect(ok).toBe(true)
+    })
+    expect(resyncSlabMock).toHaveBeenCalledWith(7, 40)
+    expect(result.current.problems).toEqual([problem('old'), problem('fresh')])
+    expect(result.current.degraded).toBe(false)
+  })
+
+  it('resync() reports the offline outcome and flags degraded', async () => {
+    readSlabMock.mockResolvedValue([problem('cached')])
+    syncSlabMock.mockResolvedValue(synced([problem('cached')]))
+    resyncSlabMock.mockResolvedValue({ problems: [problem('cached')], synced: false })
+
+    const { result } = renderHook(() => useSlab(7, 40))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => {
+      const ok = await result.current.resync()
+      expect(ok).toBe(false)
+    })
+    expect(result.current.degraded).toBe(true)
   })
 
   it('discards a stale slab response that resolves after a newer one', async () => {

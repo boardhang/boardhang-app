@@ -50,6 +50,7 @@ describe('catalogSearch round-trip', () => {
       favoritesOnly: true,
       holdsFilter: ['3-4', '5-6'],
       statusFilters: ['sent', 'unlogged'],
+      listFilter: ['list-1', 'list-2'],
     }
     expect(roundTrip(f)).toEqual(f)
   })
@@ -144,6 +145,29 @@ describe('status param', () => {
   it('defaults status to an empty string', () => {
     expect(CATALOG_SEARCH_DEFAULTS.status).toBe('')
     expect(validateCatalogSearch({}).status).toBe('')
+  })
+})
+
+describe('list param', () => {
+  it('encodes selected list ids as a comma-joined param, omitted when empty', () => {
+    expect(filtersToSearch({ ...DEFAULT_FILTERS, listFilter: ['a', 'b'] }).list).toBe('a,b')
+    const off = stripDefaults(filtersToSearch(DEFAULT_FILTERS))
+    expect(off.list).toBeUndefined()
+  })
+
+  it('decodes a comma-joined list param, dropping empty tokens', () => {
+    expect(searchToFilters(validateCatalogSearch({ list: 'a,b' })).listFilter).toEqual(['a', 'b'])
+    expect(searchToFilters(validateCatalogSearch({ list: 'a,,b,' })).listFilter).toEqual(['a', 'b'])
+  })
+
+  it('decodes a missing or empty list param to no filter', () => {
+    expect(searchToFilters(validateCatalogSearch({})).listFilter).toEqual([])
+    expect(searchToFilters(validateCatalogSearch({ list: '' })).listFilter).toEqual([])
+  })
+
+  it('defaults list to an empty string', () => {
+    expect(CATALOG_SEARCH_DEFAULTS.list).toBe('')
+    expect(validateCatalogSearch({}).list).toBe('')
   })
 })
 

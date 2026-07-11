@@ -30,6 +30,8 @@ function p(over: Partial<CatalogProblem> & { source_catalog_id: string }): Catal
 
 const mkCtx = (over: Partial<FilterContext> = {}): FilterContext => ({
   favoriteIds: new Set(),
+  listMemberIds: new Set(),
+  listMembersReady: true,
   isClimbable: () => true,
   sentIds: new Set(),
   loggedIds: new Set(),
@@ -120,6 +122,36 @@ describe('applyFilters — filters', () => {
     const list = [p({ source_catalog_id: 'a' }), p({ source_catalog_id: 'b' })]
     const favCtx = mkCtx({ favoriteIds: new Set(['b']) })
     expect(ids(applyFilters(list, state({ favoritesOnly: true }), favCtx))).toEqual(['b'])
+  })
+
+  it('list filter keeps only problems in the union membership set (when ready)', () => {
+    const list = [p({ source_catalog_id: 'a' }), p({ source_catalog_id: 'b' }), p({ source_catalog_id: 'c' })]
+    const listCtx = mkCtx({ listMemberIds: new Set(['a', 'c']), listMembersReady: true })
+    expect(ids(applyFilters(list, state({ listFilter: ['x'] }), listCtx))).toEqual(['a', 'c'])
+  })
+
+  it('empty listFilter is a no-op regardless of listMemberIds', () => {
+    const list = [p({ source_catalog_id: 'a' }), p({ source_catalog_id: 'b' })]
+    const listCtx = mkCtx({ listMemberIds: new Set(['a']) })
+    expect(ids(applyFilters(list, state({ listFilter: [] }), listCtx))).toHaveLength(2)
+  })
+
+  it('list filter fails OPEN while membership is not ready (never blanks the grid)', () => {
+    const list = [p({ source_catalog_id: 'a' }), p({ source_catalog_id: 'b' })]
+    // Selected a list, but its members have not loaded yet: empty set + not ready.
+    const loadingCtx = mkCtx({ listMemberIds: new Set(), listMembersReady: false })
+    expect(ids(applyFilters(list, state({ listFilter: ['x'] }), loadingCtx))).toHaveLength(2)
+  })
+
+  it('list filter ANDs with favorites (composition)', () => {
+    const list = [p({ source_catalog_id: 'a' }), p({ source_catalog_id: 'b' })]
+    // 'a' is in the list but not favorited; 'b' is favorited but not in the list → none pass.
+    const bothCtx = mkCtx({
+      listMemberIds: new Set(['a']),
+      listMembersReady: true,
+      favoriteIds: new Set(['b']),
+    })
+    expect(ids(applyFilters(list, state({ listFilter: ['x'], favoritesOnly: true }), bothCtx))).toEqual([])
   })
 
   it('holds filter requires the problem to be a superset of the drawn holds', () => {

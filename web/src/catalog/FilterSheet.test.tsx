@@ -19,6 +19,7 @@ async function open(
       gradeSpan={[3, 15]}
       statusReady={auth.statusReady ?? true}
       signedOut={auth.signedOut ?? false}
+      boardLists={[]}
     />,
   )
   fireEvent.click(screen.getByRole('button', { name: 'Filters' }))

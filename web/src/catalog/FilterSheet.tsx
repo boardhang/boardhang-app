@@ -6,6 +6,7 @@
 
 import { SlidersHorizontal } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
+import type { SavedList } from '../lists/listsTypes'
 import { FilterControls } from './FilterControls'
 import { useSessionFilterRows } from './useSessionFilterRows'
 import { FabTrigger } from './FabTrigger'
@@ -22,6 +23,8 @@ interface FilterSheetProps {
   statusReady: boolean
   /** Definitively signed out — disables the status chips with a sign-in hint. */
   signedOut: boolean
+  /** This board's live lists — the "Saved lists" pills inside the sheet. */
+  boardLists: SavedList[]
 }
 
 export function FilterSheet({
@@ -31,6 +34,7 @@ export function FilterSheet({
   gradeSpan,
   statusReady,
   signedOut,
+  boardLists,
 }: FilterSheetProps) {
   // In a session the single-user statusFilters dimension is inert (self is a member row),
   // so count it only when solo; add 1 when any member row has a selection.
@@ -69,6 +73,7 @@ export function FilterSheet({
               gradeSpan={gradeSpan}
               statusReady={statusReady}
               signedOut={signedOut}
+              boardLists={boardLists}
             />
           </div>
         </div>

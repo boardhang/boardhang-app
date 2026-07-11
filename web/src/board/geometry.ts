@@ -14,12 +14,26 @@ export function totalLEDs(rows: number): number {
 
 /**
  * LED index (0-based) for a hold at the given column/row.
+ *
+ * Throws a `RangeError` for coordinates off the board (column outside A–K, row
+ * outside 1…rows, or non-integer). This is the send path — an out-of-range hold
+ * used to compute a wrong or out-of-range index that the firmware silently
+ * dropped, so the board lit the wrong holds (or none) with no signal. Failing
+ * loudly lets the caller surface it (e.g. a row-18 finish hold sent to a 12-row
+ * Mini board, or a problem paired with the wrong board geometry).
+ *
  * @param col 0…10 (A…K, left → right)
  * @param row 1…rows (1 = bottom)
  * @param rows the board's row count (Mini 12, full 18)
  * @param flipped strip wired/mounted from the opposite end → reverse the whole strip
  */
 export function ledIndex(col: number, row: number, rows: number, flipped = false): number {
+  if (!Number.isInteger(col) || col < 0 || col >= COLUMNS) {
+    throw new RangeError(`Column ${col} is off the board (expected A–${columnLabel(COLUMNS - 1)}).`)
+  }
+  if (!Number.isInteger(row) || row < 1 || row > rows) {
+    throw new RangeError(`Row ${row} is off the board (expected 1–${rows}).`)
+  }
   const base = col * rows
   const led = col % 2 === 0 ? base + (row - 1) : base + (rows - row)
   return flipped ? totalLEDs(rows) - 1 - led : led

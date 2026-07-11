@@ -8,6 +8,9 @@ import { getRecentIds } from './recentsStore'
 import { ProblemDetail } from './ProblemDetail'
 import { AuthProvider } from '../auth/AuthProvider'
 import * as ble from '../ble/useBle'
+import { toast } from 'sonner'
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 
 vi.mock('../ble/useBle', () => ({
   useBle: vi.fn(() => ({ state: 'disconnected', deviceName: null, error: null })),
@@ -137,7 +140,7 @@ describe('ProblemDetail', () => {
     )
   })
 
-  it('surfaces a send error', async () => {
+  it('surfaces a send error as a toast', async () => {
     vi.mocked(ble.useBle).mockReturnValue({ state: 'connected', deviceName: 'MB', error: null })
     vi.mocked(ble.isConnected).mockReturnValue(true)
     vi.mocked(ble.bleClient.send).mockRejectedValueOnce(new Error('write failed'))
@@ -145,6 +148,6 @@ describe('ProblemDetail', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /light up/i }))
     })
-    expect(screen.getByText('write failed')).toBeInTheDocument()
+    expect(toast.error).toHaveBeenCalledWith('write failed')
   })
 })

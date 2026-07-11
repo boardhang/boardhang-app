@@ -150,9 +150,13 @@ a registry-valid but **un-added** board renders a read-only preview with an "Add
 
 **Catalog search params** (`web/src/catalog/catalogSearch.ts`) — the whole catalog view state:
 `q` (search), `grade` (ordinal `min-max` into `FONT_GRADES`), `bench`/`fav` (`1`), `stars`,
-`method`/`holds` (comma-joined), `sort`, `angle`, `problem` (open problem id). Every param is
-**omitted at its default** via a `stripSearchParams` middleware so URLs stay clean; `validateSearch`
-re-fills defaults on read. `sortSecondary` is deliberately *not* in the URL (fixed tie-breaker).
+`method`/`holds`/`status`/`list` (comma-joined), `sort`, `angle`, `problem` (open problem id).
+`list` is a CSV of saved-list ids the catalog is filtered by (OR'd — a problem passes if it's in
+any); its membership is resolved from the offline lists store and the ids are pruned against the
+board's live lists once loaded (a stale/foreign id self-heals out of the URL, but only after the
+lists load so a valid deep-link survives a cold launch). Every param is **omitted at its default**
+via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fills defaults on read.
+`sortSecondary` is deliberately *not* in the URL (fixed tie-breaker).
 
 **Load-bearing rules:**
 

@@ -174,4 +174,5 @@ through the plan's verification checklist:
   Supabase, and implement `AuthManager.signInWithApple()`. ⚠️ **App Store Guideline
   4.8** requires offering Sign in with Apple once you ship Google/email login — add it
   before any TestFlight/App Store release.
-- **Environments:** this uses a single Supabase project. Split dev/prod before real users.
+- **Environments:** dev/prod are split across two Supabase projects; local hits dev, prod
+  hits the live project. See CONTEXT.md → "Two Supabase projects — dev vs prod".

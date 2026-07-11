@@ -27,7 +27,7 @@ function problem(id: string, name: string): CatalogProblem {
 const SLAB = [problem('a', 'Alpha'), problem('b', 'Bravo'), problem('c', 'Charlie')]
 
 vi.mock('./catalog/useSlab', () => ({
-  useSlab: () => ({ problems: SLAB, loading: false, degraded: false }),
+  useSlab: () => ({ problems: SLAB, loading: false, degraded: false, resync: async () => true }),
 }))
 
 beforeEach(() => {

@@ -33,7 +33,8 @@ export interface ChipContext {
 /**
  * Removable-pill descriptors for the given filter state, in fixed category order:
  * Grade → Min-stars → Methods → Status → Holds. (Benchmark and Favorites are the pinned
- * always-on toggles, produced by the component, not here.)
+ * always-on toggles, produced by the component, not here; the saved-list selection is edited
+ * via the "Lists" control, also not a removable chip.)
  */
 export function describeActiveFilters(state: FilterState, ctx: ChipContext): FilterChip[] {
   const chips: FilterChip[] = []
@@ -48,7 +49,8 @@ export function describeActiveFilters(state: FilterState, ctx: ChipContext): Fil
   }
 
   // Favorites is a pinned always-on toggle in the bar (like Benchmark), not a removable
-  // chip — so it is intentionally NOT emitted here.
+  // chip — so it is intentionally NOT emitted here. Saved-list selections likewise are NOT
+  // chips: the "Lists" pill-bar control (pressed when active) is opened to edit them.
 
   if (state.minStars > 0) {
     chips.push({ id: 'stars', label: `≥${state.minStars}★`, patch: { minStars: 0 } })

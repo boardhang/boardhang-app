@@ -155,6 +155,18 @@ export async function syncSlab(layoutId: number, angle: number): Promise<SyncRes
 }
 
 /**
+ * Force a full re-pull of one slab: reset the high-water-mark cursor to EPOCH so the next
+ * sync re-fetches the ENTIRE slab from scratch, repairing a cache that's missing rows — e.g.
+ * one cached before a catalog re-import, or left short by the old single-page truncation bug.
+ * Additive (re-`put`s every current row via the normal paged sync); rows deleted server-side
+ * are still pruned by the usual `deleted`-tombstone delta. Backs the catalog pull-to-refresh.
+ */
+export async function resyncSlab(layoutId: number, angle: number): Promise<SyncResult> {
+  localStorage.removeItem(cursorKey(layoutId, angle))
+  return syncSlab(layoutId, angle)
+}
+
+/**
  * Look up cached catalog problems by their stable ids (primary key), returning a map
  * keyed by `source_catalog_id`. Used to enrich logbook rows with setter/benchmark/holds
  * — an offline, board-agnostic lookup. Missing ids (user problems, uncached entries)

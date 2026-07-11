@@ -171,6 +171,23 @@ export async function listIdsContaining(sourceCatalogId: string): Promise<Set<st
   return ids
 }
 
+/** The union of `source_catalog_id`s across the given lists (live rows only) — the
+ *  membership set backing the catalog's saved-list filter (OR across lists). Empty input
+ *  → empty set, no DB read. */
+export async function readListMemberIds(listIds: string[]): Promise<Set<string>> {
+  const ids = new Set<string>()
+  const wanted = new Set(listIds)
+  if (wanted.size === 0) return ids
+  const db = await openDB()
+  const tx = db.transaction(PROBLEMS_STORE, 'readonly')
+  const rows = await requestResult<ListProblemRow[]>(tx.objectStore(PROBLEMS_STORE).getAll())
+  db.close()
+  for (const r of rows) {
+    if (!r.deleted && wanted.has(r.list_id)) ids.add(r.source_catalog_id)
+  }
+  return ids
+}
+
 /** Live problem counts per list id (for the index rows). */
 export async function countListProblems(): Promise<Map<string, number>> {
   const db = await openDB()

@@ -4,6 +4,19 @@ import { boardByLayoutId } from '../board/boards'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
 import { FilterControls } from './FilterControls'
 import type { SessionFilterUI } from './useSessionFilterRows'
+import type { SavedList } from '../lists/listsTypes'
+
+function savedList(id: string, name: string): SavedList {
+  return {
+    id,
+    ownerId: 'user-A',
+    name,
+    boardLayoutId: 7,
+    createdAt: '2026-07-06T00:00:00Z',
+    updatedAt: '2026-07-06T00:00:00Z',
+    deleted: false,
+  }
+}
 
 // FilterControls now reads session rows from the store hook (no prop drilling); control it here.
 const h = vi.hoisted(() => ({ session: undefined as SessionFilterUI | undefined }))
@@ -16,7 +29,11 @@ beforeEach(() => {
 const gradeSpan: [number, number] = [3, 15]
 const board = boardByLayoutId(7)!
 
-function setup(over: Partial<FilterState> = {}, auth: { statusReady?: boolean; signedOut?: boolean } = {}) {
+function setup(
+  over: Partial<FilterState> = {},
+  auth: { statusReady?: boolean; signedOut?: boolean } = {},
+  boardLists: SavedList[] = [],
+) {
   const state = { ...DEFAULT_FILTERS, ...over }
   const onChange = vi.fn()
   render(
@@ -27,6 +44,7 @@ function setup(over: Partial<FilterState> = {}, auth: { statusReady?: boolean; s
       gradeSpan={gradeSpan}
       statusReady={auth.statusReady ?? true}
       signedOut={auth.signedOut ?? false}
+      boardLists={boardLists}
     />,
   )
   return { onChange }
@@ -50,6 +68,27 @@ describe('FilterControls', () => {
     const { onChange } = setup()
     fireEvent.click(screen.getByText('Footless'))
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ methods: ['Footless'] }))
+  })
+
+  it('omits the "Saved lists" section when the board has no lists', () => {
+    setup()
+    expect(screen.queryByText('Saved lists')).toBeNull()
+  })
+
+  it('shows a pill per saved list and toggles it into listFilter', () => {
+    const { onChange } = setup({}, {}, [savedList('a', 'Projects'), savedList('b', 'Warm-ups')])
+    expect(screen.getByText('Saved lists')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Projects' }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ listFilter: ['a'] }))
+  })
+
+  it('un-toggles a selected list pill, removing just that id', () => {
+    const { onChange } = setup({ listFilter: ['a', 'b'] }, {}, [
+      savedList('a', 'Projects'),
+      savedList('b', 'Warm-ups'),
+    ])
+    fireEvent.click(screen.getByRole('button', { name: 'Projects' }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ listFilter: ['b'] }))
   })
 
   it('toggles status chips (multi-select) when signed in', () => {
@@ -95,6 +134,7 @@ function sessionSetup(over: Partial<SessionFilterUI> = {}) {
       gradeSpan={gradeSpan}
       statusReady
       signedOut={false}
+      boardLists={[]}
     />,
   )
   return { rows, onRefresh }

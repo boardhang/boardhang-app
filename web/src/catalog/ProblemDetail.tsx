@@ -279,19 +279,16 @@ export function ProblemDetail({
         <CatalogBoard board={board} holds={current.holds} visibleHoldSetIds={visible} showBeta highlightHolds={highlightHolds} />
       </div>
 
-      <div className="space-y-1">
-        <Button
-          size="lg"
-          variant="secondary"
-          className="w-full"
-          onClick={() => void light.lightUp(current.holds)}
-          disabled={light.busy !== null}
-        >
-          <Lightbulb className={light.lit ? 'size-5 fill-current' : 'size-5'} />
-          {lightLabel}
-        </Button>
-        {light.error && <p className="text-center text-sm text-destructive">{light.error}</p>}
-      </div>
+      <Button
+        size="lg"
+        variant="secondary"
+        className="w-full"
+        onClick={() => void light.lightUp(current.holds)}
+        disabled={light.busy !== null}
+      >
+        <Lightbulb className={light.lit ? 'size-5 fill-current' : 'size-5'} />
+        {lightLabel}
+      </Button>
 
       <div className="flex items-center gap-3">
         <TryStepper count={currentTries} onRemove={removeTry} onAdd={addTry} />

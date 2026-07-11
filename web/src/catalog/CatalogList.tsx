@@ -22,6 +22,8 @@ const PAGE = 30
 // before any filter is set — the two "default sorts" can't drift.
 const DEFAULT_CONTEXT: FilterContext = {
   favoriteIds: new Set(),
+  listMemberIds: new Set(),
+  listMembersReady: false,
   isClimbable: () => true,
   sentIds: new Set(),
   loggedIds: new Set(),

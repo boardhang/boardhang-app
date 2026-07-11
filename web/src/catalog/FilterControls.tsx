@@ -9,6 +9,7 @@
 import { useId, useState } from 'react'
 import { ChevronRight, RefreshCw } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
+import type { SavedList } from '../lists/listsTypes'
 import { FONT_GRADES } from '../board/grades'
 import { HoldFilterPicker } from './HoldFilterPicker'
 import { MemberStatusRow } from './MemberStatusRow'
@@ -57,6 +58,8 @@ interface FilterControlsProps {
   statusReady: boolean
   /** Definitively signed out — disables the status chips and shows the hint. */
   signedOut: boolean
+  /** This board's live lists — the "Saved lists" pills (section hidden when empty). */
+  boardLists: SavedList[]
 }
 
 function Field({
@@ -83,6 +86,7 @@ export function FilterControls({
   gradeSpan,
   statusReady,
   signedOut,
+  boardLists,
 }: FilterControlsProps) {
   // Session rows come from the store hook directly (no prop drilling), matching how
   // SessionBar/SessionPill read session state.
@@ -267,6 +271,34 @@ export function FilterControls({
           ))}
         </div>
       </Field>
+
+      {/* Saved lists — one multi-select pill per list on this board (OR / union), the same
+          `listFilter` the header pill bar drives. Hidden when the board has no lists (R4). */}
+      {boardLists.length > 0 && (
+        <Field label="Saved lists">
+          <div className="flex flex-wrap gap-1.5">
+            {boardLists.map((list) => (
+              <Toggle
+                key={list.id}
+                variant="outline"
+                size="sm"
+                pressed={state.listFilter.includes(list.id)}
+                onPressedChange={(active) =>
+                  set({
+                    listFilter: active
+                      ? [...state.listFilter, list.id]
+                      : state.listFilter.filter((x) => x !== list.id),
+                  })
+                }
+                title={list.name}
+                className="max-w-[12rem] truncate"
+              >
+                {list.name}
+              </Toggle>
+            ))}
+          </div>
+        </Field>
+      )}
 
       <HoldFilterPicker
         board={board}

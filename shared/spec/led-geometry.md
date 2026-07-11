@@ -35,6 +35,13 @@ if flipped:      led = totalLEDs(rows) - 1 - led
   from the opposite end. Toggle it in the LED test screen. For Mini 2025, `flipped`
   defaults to **false**.
 
+Coordinates **off the board** (column outside 0…10, row outside 1…rows) are a bug —
+a problem paired with the wrong board geometry, or a full-board finish hold sent to a
+Mini board. The forward mapping must **reject** them (the web port throws a
+`RangeError`) rather than compute a wrong or out-of-range index: the firmware silently
+drops an out-of-range LED, so an unchecked mapping lights the wrong holds — or none —
+with no signal to the user.
+
 ## Reverse mapping: LED index → (col, row)
 
 Used by the LED test / calibration screen to show which hold a given LED lights.

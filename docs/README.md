@@ -1,4 +1,4 @@
-# MoonBoard LED — Developer Docs
+# Boardhang — Developer Docs
 
 Deep-dive reference docs for agents and developers working on this codebase. These
 **pair with, and do not replace,** the two top-level files:

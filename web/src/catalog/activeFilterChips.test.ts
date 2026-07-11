@@ -63,6 +63,11 @@ describe('describeActiveFilters', () => {
     expect(chips.map((c) => c.id)).toEqual(['stars'])
   })
 
+  it('never emits a saved-list chip (the selection is edited via the "Lists" control)', () => {
+    const chips = describeActiveFilters(state({ listFilter: ['a', 'b'] }), READY)
+    expect(chips).toEqual([])
+  })
+
   it("each chip's patch clears exactly its own filter", () => {
     const s = state({
       gradeRange: [3, 8],

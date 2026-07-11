@@ -51,6 +51,8 @@ export interface CatalogSearch {
   holds: string
   /** Comma-joined ascent-status keys (`sent`/`attempted`/`unlogged`); `''` = any. */
   status: string
+  /** Comma-joined saved-list ids to filter by (OR'd); `''` = no list filter. */
+  list: string
   /** Open problem's `source_catalog_id`; `''` = drawer closed. */
   problem: string
 }
@@ -68,6 +70,7 @@ export const CATALOG_SEARCH_DEFAULTS: CatalogSearch = {
   angle: 0,
   holds: '',
   status: '',
+  list: '',
   problem: '',
 }
 
@@ -99,6 +102,7 @@ export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSear
     angle: Math.max(0, Math.round(num(raw.angle))),
     holds: str(raw.holds),
     status: str(raw.status),
+    list: str(raw.list),
     problem: str(raw.problem),
   }
 }
@@ -161,6 +165,7 @@ export function filtersToSearch(f: FilterState): Omit<CatalogSearch, 'angle' | '
     sortThenBy: f.sortSecondary ?? 'none',
     holds: f.holdsFilter.join(','),
     status: encodeStatus(f.statusFilters),
+    list: f.listFilter.join(','),
   }
 }
 
@@ -184,5 +189,6 @@ export function searchToFilters(s: CatalogSearch): FilterState {
     favoritesOnly: s.fav === 1,
     holdsFilter: s.holds ? s.holds.split(',').filter(Boolean) : [],
     statusFilters: decodeStatus(s.status),
+    listFilter: s.list ? s.list.split(',').filter(Boolean) : [],
   }
 }

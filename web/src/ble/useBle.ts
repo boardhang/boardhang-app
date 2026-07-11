@@ -3,7 +3,7 @@
 // detail's "Light up" drive the same connection.
 
 import { useSyncExternalStore } from 'react'
-import { MoonBoardClient, type ConnectionState } from './moonboard'
+import { MoonBoardClient, describeBleError, type ConnectionState } from './moonboard'
 
 export interface BleState {
   state: ConnectionState
@@ -48,7 +48,9 @@ export async function connectBoard(): Promise<void> {
   try {
     await client.connect()
   } catch (err) {
-    setBleError(err instanceof Error ? err.message : String(err))
+    // Same normalization as the send path: the iOS Bluefy shim rejects connect
+    // failures with bare codes too, so String(err) would surface an unreadable "2".
+    setBleError(describeBleError(err))
   }
 }
 

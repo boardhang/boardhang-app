@@ -79,7 +79,9 @@ stack never silently drops packets:
   false before the ready-callback starts firing.
 - **Web Bluetooth:** there is no explicit ready-callback. The equivalent back-pressure
   is to `await characteristic.writeValueWithoutResponse(chunk)` for each chunk
-  **sequentially** — awaiting each write provides the flow control.
+  **sequentially** — awaiting each write provides the flow control. A write can still
+  transiently reject on a healthy link (GATT momentarily busy, radio hiccup); the web
+  client retries each chunk once after a short beat before surfacing the failure.
 
 ## Connection lifecycle (iOS reference behavior)
 

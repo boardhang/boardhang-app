@@ -65,6 +65,8 @@ export interface FilterState {
   holdsFilter: string[]
   /** Selected ascent-status states (OR'd); empty = any status. */
   statusFilters: StatusKey[]
+  /** Selected saved-list ids (OR'd — a problem passes if it's in ANY); empty = no list filter. */
+  listFilter: string[]
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -80,6 +82,7 @@ export const DEFAULT_FILTERS: FilterState = {
   favoritesOnly: false,
   holdsFilter: [],
   statusFilters: [],
+  listFilter: [],
 }
 
 /** Whether any filter (not sort/search) is narrowing the list — drives "Reset". */
@@ -100,7 +103,8 @@ export function activeFilterCount(s: FilterState, statusReady = true): number {
     (s.methods.length > 0 ? 1 : 0) +
     (s.favoritesOnly ? 1 : 0) +
     (s.holdsFilter.length > 0 ? 1 : 0) +
-    (statusReady && s.statusFilters.length > 0 ? 1 : 0)
+    (statusReady && s.statusFilters.length > 0 ? 1 : 0) +
+    (s.listFilter.length > 0 ? 1 : 0)
   )
 }
 
@@ -141,6 +145,13 @@ export interface SessionStatusContext {
 
 export interface FilterContext {
   favoriteIds: Set<string>
+  /** Union of `source_catalog_id`s across the selected saved lists (the `listFilter` set). */
+  listMemberIds: Set<string>
+  /** List membership has resolved for the current `listFilter`. False during the IndexedDB
+   *  read window (or before the lists store loads), which SKIPS the list predicate so a
+   *  selected-but-not-yet-loaded list filter fails OPEN (shows everything) rather than
+   *  blanking the grid to zero. */
+  listMembersReady: boolean
   /** Installed-hold-set filter (U5). Returns true when the problem is climbable. */
   isClimbable: (holds: CatalogProblem['holds']) => boolean
   /** `source_catalog_id`s with ≥1 send on this board (attempts excluded). */
@@ -218,6 +229,11 @@ export function applyFilters(
     if (p.stars < s.minStars) return false
     if (s.methods.length > 0 && !(p.method && s.methods.includes(p.method))) return false
     if (s.favoritesOnly && !ctx.favoriteIds.has(p.source_catalog_id)) return false
+    // Saved-list filter (OR across selected lists = union membership). Gated on
+    // `listMembersReady` so a selected list whose members are still loading fails OPEN
+    // (shows everything) instead of blanking the grid to zero mid-load.
+    if (s.listFilter.length > 0 && ctx.listMembersReady && !ctx.listMemberIds.has(p.source_catalog_id))
+      return false
     // Status. With an active session the per-member clause replaces the single-user one
     // (self is member row #1 — R5); it is gated on the session's atomic readiness so the
     // list is never blanked mid-load. Without a session, the single-user path runs, itself

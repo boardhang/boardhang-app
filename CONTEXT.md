@@ -1,4 +1,4 @@
-# MoonBoard LED — Handoff / Orientation
+# Boardhang — Handoff / Orientation
 
 **Read this first.** It orients you; the deep dives in [`docs/`](docs/README.md) own the
 detail. This doc *summarizes and links* — it does not re-explain subsystems. If a section
@@ -76,6 +76,18 @@ needs a secure context — desktop Chrome/Edge, Android Chrome, or iPhone via Bl
   (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`) and `ios/MoonBoardLED/Supabase.xcconfig` —
   both gitignored. Never commit them; copy from the `.env.example` / `.xcconfig.example`
   templates and fill in your own.
+- **Two Supabase projects — dev vs prod.** Local development and production never share a
+  database. **Prod** (`wfgabizrlttwgmbavxuh`, the "boardhang app" project, eu-central-1) backs
+  the live PWA; its creds live *only* in the Vercel project's env vars. (The app is branded
+  **Boardhang**, but the Vercel project slug and its deploy command are still `boardly` — see
+  [web/CLAUDE.md](web/CLAUDE.md); don't rename that slug or deploys break.) **Dev**
+  (`okrkgbzmdrmsfgctsari`, the "boardhang-dev" project, eu-west-1) is what local `web/.env`
+  points at, so `npm run dev` never touches live data. Vercel injects its own
+  env at build time and ignores `web/.env`, so deploys always hit prod regardless of the local
+  file. To recreate/reseed a dev project: apply every `supabase/migrations/*.sql` in order, then
+  seed with `scripts/import_catalog.py --all` (see
+  [docs/catalog-data-pipeline.md](docs/catalog-data-pipeline.md)). The **service_role** key it
+  needs is a full-access secret — pass it inline, never commit it, rotate it if leaked.
 - **Branch reality:** iOS auth is on `main`; **web auth is only on `feat/pwa-login`**, unmerged.
   Don't hunt for Supabase code in `web/` on `main` — there isn't any.
 
@@ -99,7 +111,7 @@ needs a secure context — desktop Chrome/Edge, Android Chrome, or iPhone via Bl
   requires it before any TestFlight/App Store release).
 - **Social features** — friends, shared lists, cloud logbook sync are planned, not built
   (logbook is local SwiftData only). Avatar upload deferred (`avatar_url` reserved).
-- Dev/prod Supabase env split; PWA catalog **UI** (the sync module exists; wiring it into a
+- PWA catalog **UI** (the sync module exists; wiring it into a
   browse view is pending) + logbook + HTTPS hosting; app icon (placeholder).
 - Hold→LED mapping not yet hardware-confirmed — LED Test is the tool to confirm/flip it.
 

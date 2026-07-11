@@ -1,4 +1,4 @@
-# MoonBoard LED
+# Boardhang
 
 A native iOS app (with a companion Web Bluetooth PWA) to create boulder problems and light
 them on a MoonBoard LED system running the
