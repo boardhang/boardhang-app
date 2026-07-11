@@ -8,7 +8,7 @@
 // recents snapshot when opened from the recents sheet) — a deep-linked problem the
 // active filters exclude is not in it, so prev/next disable and it shows standalone.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, ListPlus, Repeat, Star } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInDialog } from '../auth/SignInDialog'
@@ -16,6 +16,9 @@ import { addAttemptTries } from '../logbook/ascents'
 import { TryStepper } from '../logbook/TryStepper'
 import { useLightUp } from '../ble/useLightUp'
 import { CatalogBoard } from '../board/CatalogBoard'
+// Px of the Beta section left peeking under the fold, so the "Beta videos" heading hints
+// there's more below (and names it) without a separate affordance.
+const BETA_PEEK = 34
 import type { CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw } from '../board/boardStore'
 import { holdSetContext } from '../board/holdSetMembership'
@@ -68,6 +71,23 @@ export function ProblemDetail({
   const [pendingTries, setPendingTries] = useState(0)
 
   const currentId = current.source_catalog_id
+
+  // "Sheet hugs the problem": the drawer sizes to the details block so the Beta strip below
+  // starts off-screen (scroll/drag up to reveal). We measure the details' natural height and
+  // clamp the scroll container to it — capped at 85dvh, past which the details itself scrolls.
+  // A ResizeObserver re-measures on layout changes (board art, viewport, paging).
+  const detailsRef = useRef<HTMLDivElement>(null)
+  const [detailsHeight, setDetailsHeight] = useState<number | undefined>(undefined)
+  useLayoutEffect(() => {
+    const el = detailsRef.current
+    if (!el) return
+    const measure = () => setDetailsHeight(el.offsetHeight)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [currentId])
 
   // Auth-gated save-to-list (owns its sheet + sign-in-resume — KTD3), shared with the bar.
   const addToList = useAddToList({ sourceCatalogId: currentId, board })
@@ -210,7 +230,13 @@ export function ProblemDetail({
   }
 
   return (
-    <div className="space-y-4 pb-2">
+    // Scroll container clamped to the measured details height (≤85dvh) so the sheet hugs the
+    // problem and Beta is below the fold; snap-proximity settles a scroll onto either page.
+    <div
+      className="snap-y snap-proximity overflow-y-auto overscroll-contain px-4"
+      style={{ maxHeight: '85dvh', height: detailsHeight && detailsHeight + BETA_PEEK }}
+    >
+      <div ref={detailsRef} className="flex snap-start flex-col gap-4 py-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 space-y-1.5">
           <div className="flex items-center gap-1.5">
@@ -297,8 +323,12 @@ export function ProblemDetail({
           Log ascent
         </Button>
       </div>
+      </div>
 
-      <BetaVideos sourceCatalogId={currentId} />
+      {/* Below the fold — its own snap target, revealed by scrolling/dragging up. */}
+      <div className="snap-start pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-2">
+        <BetaVideos sourceCatalogId={currentId} />
+      </div>
 
       <LogAscentSheet
         open={logOpen}

@@ -368,28 +368,29 @@ export function CatalogScreen() {
       <Drawer open={drawerOpen} onOpenChange={(open) => !open && closeDrawer()} showSwipeHandle>
         <DrawerContent>
           <DrawerTitle className="sr-only">Problem details</DrawerTitle>
-          <div className="max-h-[85vh] overflow-y-auto px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
-            {current ? (
-              <ProblemDetail
-                problem={current}
-                displayed={pagerList}
-                board={board}
-                angle={angle}
-                favoriteIds={favoriteIds}
-                sentIds={sentIds}
-                highlightHolds={highlightHolds}
-                onNavigate={showProblem}
-              />
-            ) : problemPending ? (
-              <div
-                className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-muted-foreground"
-                data-testid="problem-pending"
-              >
-                <Loader2 className="size-6 animate-spin" />
-                <p className="text-sm">Loading problem…</p>
-              </div>
-            ) : null}
-          </div>
+          {/* ProblemDetail owns its own scroll container (it measures the details to size the
+              sheet so Beta sits below the fold — see there). The pending placeholder keeps a
+              simple padded box. */}
+          {current ? (
+            <ProblemDetail
+              problem={current}
+              displayed={pagerList}
+              board={board}
+              angle={angle}
+              favoriteIds={favoriteIds}
+              sentIds={sentIds}
+              highlightHolds={highlightHolds}
+              onNavigate={showProblem}
+            />
+          ) : problemPending ? (
+            <div
+              className="flex min-h-[40vh] flex-col items-center justify-center gap-3 px-4 py-10 text-muted-foreground"
+              data-testid="problem-pending"
+            >
+              <Loader2 className="size-6 animate-spin" />
+              <p className="text-sm">Loading problem…</p>
+            </div>
+          ) : null}
         </DrawerContent>
       </Drawer>
     </div>
