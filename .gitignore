@@ -25,6 +25,10 @@ ios/MoonBoardLED/Supabase.xcconfig
 # Claude Code machine-local permissions (never commit)
 .claude/settings.local.json
 
+# Node dependencies + tool caches (root and per-package, e.g. web/node_modules)
+node_modules/
+.vite/
+
 # Python bytecode
 __pycache__/
 *.pyc
