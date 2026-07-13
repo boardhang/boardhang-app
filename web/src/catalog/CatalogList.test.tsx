@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { boardByLayoutId } from '../board/boards'
 import { CatalogList } from './CatalogList'
 import type { CatalogProblem } from './catalogSync'
+import type { SenderChip } from './useMemberSenders'
 
 const board = boardByLayoutId(7)!
 
@@ -28,6 +29,9 @@ interface Opts {
   degraded?: boolean
   transform?: (p: CatalogProblem[]) => CatalogProblem[]
   searchActive?: boolean
+  sentIds?: Set<string>
+  senders?: Map<string, SenderChip[]>
+  sendersDimmed?: boolean
 }
 
 function renderList(problems: CatalogProblem[], opts: Opts = {}) {
@@ -40,6 +44,9 @@ function renderList(problems: CatalogProblem[], opts: Opts = {}) {
       degraded={opts.degraded ?? false}
       transform={opts.transform}
       searchActive={opts.searchActive}
+      sentIds={opts.sentIds}
+      senders={opts.senders}
+      sendersDimmed={opts.sendersDimmed}
     />,
   )
 }
@@ -120,5 +127,46 @@ describe('CatalogList', () => {
       <CatalogList board={board} angle={40} problems={problems} loading={false} degraded={false} transform={() => []} />,
     )
     expect(screen.getByTestId('catalog-empty')).toHaveTextContent(/no problems match/i)
+  })
+
+  it('forwards each problem its own sender chips (and none to unmatched rows)', () => {
+    const senders = new Map<string, SenderChip[]>([
+      ['a', [{ userId: 'x', isSelf: false, label: 'Alice', initials: 'AL', avatarUrl: null }]],
+    ])
+    const { container } = renderList([problem('a', '6A', 'Alpha'), problem('b', '6A', 'Beta')], { senders })
+    // Only the matched row gets a sends pill.
+    const groups = container.querySelectorAll('[data-slot="avatar-group"]')
+    expect(groups).toHaveLength(1)
+    expect(groups[0].parentElement!.getAttribute('aria-label')).toBe('Sent by Alice')
+  })
+
+  it('propagates sendersDimmed to the rows', () => {
+    const senders = new Map<string, SenderChip[]>([
+      ['a', [{ userId: 'x', isSelf: false, label: 'Alice', initials: 'AL', avatarUrl: null }]],
+    ])
+    const { container } = renderList([problem('a', '6A', 'Alpha')], { senders, sendersDimmed: true })
+    // The pill (the avatar group's parent) carries the dim treatment.
+    expect(container.querySelector('[data-slot="avatar-group"]')!.parentElement!.className).toContain('opacity-50')
+  })
+
+  it('keeps the name-line self-check as a fallback when the pill has no entry for a self-sent row', () => {
+    // Session active (senders map present) but empty for this problem (loading/stale) → the row
+    // must still show the local self-check rather than hide a known send.
+    const { container } = renderList([problem('a', '6A', 'Alpha')], {
+      sentIds: new Set(['a']),
+      senders: new Map(),
+    })
+    expect(container.querySelector('[aria-label="Sent"]')).not.toBeNull()
+  })
+
+  it('suppresses the name-line self-check once self is in the row pill', () => {
+    const senders = new Map<string, SenderChip[]>([
+      ['a', [{ userId: 'me', isSelf: true, label: 'You', initials: 'YO', avatarUrl: null }]],
+    ])
+    const { container } = renderList([problem('a', '6A', 'Alpha')], { sentIds: new Set(['a']), senders })
+    expect(container.querySelector('[aria-label="Sent"]')).toBeNull() // moved into the pill
+    expect(container.querySelector('[data-slot="avatar-group"]')!.parentElement!.getAttribute('aria-label')).toBe(
+      'Sent by You',
+    )
   })
 })
