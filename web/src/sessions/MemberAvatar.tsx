@@ -13,6 +13,7 @@ export function MemberAvatar({
   isSelf,
   className,
   title,
+  size = 'sm',
 }: {
   initials: string
   /** Public avatar URL, or null/undefined to show initials. */
@@ -21,12 +22,16 @@ export function MemberAvatar({
   className?: string
   /** Native hover tooltip (e.g. the member's name) for surfaces without their own tooltip. */
   title?: string
+  /** Avatar preset — defaults to `sm` (the roster/filter size); the sends pill uses `xxs`. */
+  size?: 'default' | 'sm' | 'lg' | 'xs' | 'xxs'
 }) {
   return (
-    <Avatar size="sm" title={title} className={className}>
+    <Avatar size={size} title={title} className={cn('bg-background', className)}>
       {avatarUrl && <AvatarImage src={avatarUrl} alt="" />}
       {/* Self marker is an INSET ring on the fallback — an outward ring/offset gets clipped by
-          the surrounding overflow-y-auto scroll containers (which clip both axes). */}
+          the surrounding overflow-y-auto scroll containers (which clip both axes). The fallback
+          tint is translucent (bg-primary/15), so the Avatar root carries an opaque bg-background
+          base — otherwise, in an overlapping group, a neighbour avatar shows through the tint. */}
       <AvatarFallback
         className={cn(
           'bg-primary/15 font-semibold text-foreground',

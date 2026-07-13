@@ -78,7 +78,13 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   single-user status clause (self is member row #1), gated on the projection's single atomic
   readiness flag so the list is never blanked mid-load.
 - **UI** — `catalog/MemberStatusRow.tsx` + `FilterControls` (per-member rows in the Filters
-  sheet), `catalog/SessionBar.tsx` (in-context bar: rename, members, refresh, Share, Leave;
+  sheet), `catalog/useMemberSenders.ts` (the **sends pill**: in a session, a row with ≥1 sender
+  gains a third row — a neutral pill with a green "sent" check + an `AvatarGroup` of the crew
+  who sent it, **self included** and first, capped at 3 + `+K`. The name-line self-check is
+  suppressed in a session since the pill is the sole home for send status; solo browsing is
+  unchanged. Dimmed when the projection is paused/stale so it never shows crisp "who" the filter
+  itself no longer trusts), `catalog/SessionBar.tsx`
+  (in-context bar: rename, members, refresh, Share, Leave;
   Start session when solo), `sessions/ShareSession.tsx` (QR + copy/share of the join link),
   `shell/SessionPill.tsx` (global pill on every non-catalog route, with roster + owner
   remove-member + Leave), `sessions/JoinSession.tsx` (`/session/join/$token` — sign-in →

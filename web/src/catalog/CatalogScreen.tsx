@@ -41,6 +41,7 @@ import { useEnsureAscentsLoaded } from '../logbook/ascents'
 import { useAuth } from '../auth/AuthProvider'
 import { useSessions } from '../sessions/sessionsStore'
 import { useMemberAscents } from '../sessions/memberAscentsStore'
+import { useMemberSenders } from './useMemberSenders'
 import type { CatalogProblem } from './catalogSync'
 
 const routeApi = getRouteApi('/board/$layoutId/catalog')
@@ -114,6 +115,10 @@ export function CatalogScreen() {
   const sessionForBoard =
     activeSession && activeSession.boardLayoutId === board.layoutId ? activeSession : null
   const memberAsc = useMemberAscents(sessionForBoard?.id ?? null)
+  // Per-row "who sent it" sends pill (crew, self included). Reads the same session + projection
+  // stores directly (no prop drilling), mirroring the useSessionFilterRows pattern; undefined
+  // when no session targets this board.
+  const memberSenders = useMemberSenders(board)
 
   const filters = useMemo(() => searchToFilters(search), [search])
 
@@ -326,6 +331,8 @@ export function CatalogScreen() {
         degraded={degraded}
         favoriteIds={favoriteIds}
         sentIds={sentIds}
+        senders={memberSenders?.senders}
+        sendersDimmed={memberSenders?.state === 'paused'}
         transform={transform}
         searchActive={filters.search.trim().length > 0}
         highlightHolds={highlightHolds}

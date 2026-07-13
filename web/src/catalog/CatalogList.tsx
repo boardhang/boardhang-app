@@ -11,6 +11,7 @@ import { CatalogRow } from './CatalogRow'
 import { toggleShowPreviews, useShowPreviews } from './previewsStore'
 import { DEFAULT_FILTERS, applyFilters, type FilterContext } from './filters'
 import type { CatalogProblem } from './catalogSync'
+import type { SenderChip } from './useMemberSenders'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -39,6 +40,11 @@ interface CatalogListProps {
   favoriteIds?: Set<string>
   /** Catalog ids the user has a logged send for — drives the green sent check. */
   sentIds?: Set<string>
+  /** Per-problem "who sent it" chips for an active session (crew, self included) — the sends pill.
+   *  Undefined = no session on this board; an empty/absent entry = nobody sent that problem. */
+  senders?: Map<string, SenderChip[]>
+  /** The session projection is paused/stale/offline — dim the last-known sender avatars. */
+  sendersDimmed?: boolean
   /** Filter/sort the slab's problems (U9). Defaults to grade-ordinal sort. */
   transform?: (problems: CatalogProblem[]) => CatalogProblem[]
   /** A search query is narrowing the list — points the empty state at the search
@@ -57,6 +63,8 @@ export function CatalogList({
   degraded,
   favoriteIds = new Set(),
   sentIds = new Set(),
+  senders,
+  sendersDimmed = false,
   transform,
   searchActive = false,
   highlightHolds,
@@ -65,6 +73,9 @@ export function CatalogList({
   const showThumbnails = useShowPreviews()
   const [visibleCount, setVisibleCount] = useState(PAGE)
   const sentinelRef = useRef<HTMLDivElement>(null)
+  // A senders map is supplied only when a session targets this board (else undefined) — the rows
+  // use this to move send status into the sends pill and suppress the name-line self-check.
+  const sessionActive = senders !== undefined
 
   const displayed = useMemo(
     () => (transform ? transform(problems) : applyFilters(problems, DEFAULT_FILTERS, DEFAULT_CONTEXT)),
@@ -155,6 +166,9 @@ export function CatalogList({
           board={board}
           isFavorite={favoriteIds.has(p.source_catalog_id)}
           isSent={sentIds.has(p.source_catalog_id)}
+          sessionActive={sessionActive}
+          senders={senders?.get(p.source_catalog_id)}
+          sendersDimmed={sendersDimmed}
           showThumbnail={showThumbnails}
           highlightHolds={highlightHolds}
           onSelect={onSelectProblem}

@@ -3,8 +3,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { boardByLayoutId } from '../board/boards'
 import { CatalogRow } from './CatalogRow'
 import type { CatalogProblem } from './catalogSync'
+import type { SenderChip } from './useMemberSenders'
 
 const board = boardByLayoutId(7)!
+
+function sender(userId: string, label: string, isSelf = false): SenderChip {
+  return { userId, isSelf, label, initials: label.slice(0, 2).toUpperCase(), avatarUrl: null }
+}
 
 function problem(over: Partial<CatalogProblem> = {}): CatalogProblem {
   return {
@@ -59,11 +64,26 @@ describe('CatalogRow', () => {
     expect(screen.getByLabelText('Favorite')).toBeInTheDocument()
   })
 
-  it('shows the sent check only when isSent', () => {
+  it('shows the name-line sent check only when isSent (solo, no session)', () => {
     const { rerender } = render(<CatalogRow problem={problem()} board={board} />)
     expect(screen.queryByLabelText('Sent')).toBeNull()
     rerender(<CatalogRow problem={problem()} board={board} isSent />)
     expect(screen.getByLabelText('Sent')).toBeInTheDocument()
+  })
+
+  it('suppresses the name-line check in a session — send status moves to the pill', () => {
+    // In a session with no pill for this row (you have not sent it), no "Sent" mark shows at all.
+    const { rerender, container } = render(
+      <CatalogRow problem={problem()} board={board} isSent sessionActive />,
+    )
+    expect(screen.queryByLabelText('Sent')).toBeNull()
+    expect(container.querySelector('[data-slot="avatar-group"]')).toBeNull()
+    // With a pill (you are a sender), the check lives inside the pill instead.
+    rerender(
+      <CatalogRow problem={problem()} board={board} isSent sessionActive senders={[sender('me', 'You', true)]} />,
+    )
+    const group = container.querySelector('[data-slot="avatar-group"]')!
+    expect(group.parentElement!.querySelector('[aria-label="Sent"]')).not.toBeNull()
   })
 
   it('renders the board thumbnail only when enabled', () => {
@@ -78,6 +98,59 @@ describe('CatalogRow', () => {
     const p = problem()
     render(<CatalogRow problem={p} board={board} onSelect={onSelect} />)
     fireEvent.click(screen.getByRole('button'))
+    expect(onSelect).toHaveBeenCalledWith(p)
+  })
+
+  it('renders a one-avatar sends pill with no overflow and an accessible summary', () => {
+    const { container } = render(
+      <CatalogRow problem={problem()} board={board} sessionActive senders={[sender('a', 'Alice')]} />,
+    )
+    const pill = container.querySelector('[data-slot="avatar-group"]')!.parentElement!
+    expect(pill.getAttribute('aria-label')).toBe('Sent by Alice')
+    expect(pill.querySelector('[aria-label="Sent"]')).not.toBeNull() // green check label
+    expect(container.querySelectorAll('[data-slot="avatar"]')).toHaveLength(1)
+    expect(container.querySelector('[data-slot="avatar-group-count"]')).toBeNull()
+  })
+
+  it('caps at three avatars and shows a +K overflow count', () => {
+    const senders = ['a', 'b', 'c', 'd', 'e'].map((id) => sender(id, id.toUpperCase()))
+    const { container } = render(<CatalogRow problem={problem()} board={board} sessionActive senders={senders} />)
+    expect(container.querySelectorAll('[data-slot="avatar"]')).toHaveLength(3)
+    const count = container.querySelector('[data-slot="avatar-group-count"]')!
+    expect(count.textContent).toBe('+2')
+    expect(container.querySelector('[data-slot="avatar-group"]')!.parentElement!.getAttribute('aria-label')).toBe(
+      'Sent by A, B, C, +2',
+    )
+  })
+
+  it('renders no sends pill when senders is absent or empty', () => {
+    const { container, rerender } = render(<CatalogRow problem={problem()} board={board} sessionActive />)
+    expect(container.querySelector('[data-slot="avatar-group"]')).toBeNull()
+    rerender(<CatalogRow problem={problem()} board={board} sessionActive senders={[]} />)
+    expect(container.querySelector('[data-slot="avatar-group"]')).toBeNull()
+  })
+
+  it('dims the sends pill when sendersDimmed', () => {
+    const { container, rerender } = render(
+      <CatalogRow problem={problem()} board={board} sessionActive senders={[sender('a', 'Alice')]} />,
+    )
+    const pillClass = () => container.querySelector('[data-slot="avatar-group"]')!.parentElement!.className
+    expect(pillClass()).not.toContain('opacity-50')
+    rerender(
+      <CatalogRow problem={problem()} board={board} sessionActive senders={[sender('a', 'Alice')]} sendersDimmed />,
+    )
+    expect(pillClass()).toContain('opacity-50')
+  })
+
+  it('gives each sender avatar a native title and keeps the row a single clickable button', () => {
+    const onSelect = vi.fn()
+    const p = problem()
+    render(<CatalogRow problem={p} board={board} senders={[sender('a', 'Alice')]} onSelect={onSelect} />)
+    expect(screen.getByTitle('Alice')).toBeInTheDocument()
+    // No nested button inside the row button.
+    const buttons = screen.getAllByRole('button')
+    expect(buttons).toHaveLength(1)
+    fireEvent.click(buttons[0])
     expect(onSelect).toHaveBeenCalledWith(p)
   })
 })
