@@ -13,15 +13,15 @@ vi.mock('sonner', () => ({
   },
 }))
 
-import { BetaSubmitDrawer } from './BetaSubmitDrawer'
+import { BetaSubmitDialog } from './BetaSubmitDialog'
 
 const ID = 'dQw4w9WgXcQ'
 
-function renderDrawer(overrides: Partial<Parameters<typeof BetaSubmitDrawer>[0]> = {}) {
+function renderDialog(overrides: Partial<Parameters<typeof BetaSubmitDialog>[0]> = {}) {
   const onOpenChange = vi.fn()
   const onSubmitted = vi.fn()
   render(
-    <BetaSubmitDrawer
+    <BetaSubmitDialog
       open
       onOpenChange={onOpenChange}
       sourceCatalogId="prob-A"
@@ -43,9 +43,9 @@ beforeEach(() => {
   submitBeta.mockResolvedValue(undefined)
 })
 
-describe('BetaSubmitDrawer', () => {
+describe('BetaSubmitDialog', () => {
   it('rejects an invalid URL inline and never calls the store', async () => {
-    renderDrawer()
+    renderDialog()
     await typeUrl('not a youtube link')
     fireEvent.click(screen.getByRole('button', { name: /submit/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/youtube video link/i)
@@ -53,7 +53,7 @@ describe('BetaSubmitDrawer', () => {
   })
 
   it('submits a valid URL: store called, drawer closed, note recorded, success toast', async () => {
-    const { onOpenChange, onSubmitted } = renderDrawer()
+    const { onOpenChange, onSubmitted } = renderDialog()
     await typeUrl(`https://youtu.be/${ID}`)
     fireEvent.click(screen.getByRole('button', { name: /submit/i }))
     await waitFor(() => expect(submitBeta).toHaveBeenCalledWith('prob-A', ID))
@@ -64,7 +64,7 @@ describe('BetaSubmitDrawer', () => {
 
   it('surfaces a store failure as an error toast and keeps the drawer open', async () => {
     submitBeta.mockRejectedValue(new Error('already added'))
-    const { onOpenChange, onSubmitted } = renderDrawer()
+    const { onOpenChange, onSubmitted } = renderDialog()
     await typeUrl(`https://youtu.be/${ID}`)
     fireEvent.click(screen.getByRole('button', { name: /submit/i }))
     await waitFor(() => expect(toastError).toHaveBeenCalled())
@@ -73,7 +73,7 @@ describe('BetaSubmitDrawer', () => {
   })
 
   it('guards against a same-tick double submit', async () => {
-    renderDrawer()
+    renderDialog()
     await typeUrl(`https://youtu.be/${ID}`)
     const btn = screen.getByRole('button', { name: /submit/i })
     fireEvent.click(btn)
