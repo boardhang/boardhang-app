@@ -1,8 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { LogbookScreen } from './LogbookScreen'
 import type { CatalogProblem } from '../catalog/catalogSync'
+import { setShowPreviews } from '../catalog/previewsStore'
+import { boardByLayoutId } from '../board/boards'
 
 // LogbookScreen leans on several stores/hooks. We mock them so each test can pin a
 // precise state (signed in?, boards added?, ascents present?) and assert what renders.
@@ -118,6 +120,8 @@ afterEach(() => {
   navigate.mockClear() // clear calls but keep the search-applying implementation
   back.mockReset()
   localStorage.clear() // reset the import-banner dismissal between tests
+  // Reset the previews snapshot (survives localStorage.clear()).
+  window.dispatchEvent(new StorageEvent('storage'))
 })
 
 describe('LogbookScreen — no board added', () => {
@@ -282,6 +286,24 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
     const arg = navigate.mock.calls[0][0] as { search: (p: { problem: string }) => unknown; replace?: boolean }
     expect(arg.replace).toBeUndefined()
     expect(arg.search({ problem: '' })).toEqual({ problem: 'p-1' })
+  })
+
+  it('hides row thumbnails when the logbook previews toggle is off', async () => {
+    boardState.addedBoards = [addedBoard]
+    // A real board object so CatalogBoard's geometry can render the thumbnail.
+    boardState.activeBoard = boardByLayoutId(7)!
+    ascentsState.ascents = [{ ...baseAscent, sourceCatalogId: 'p-1' }]
+    // Holds present → AscentRow draws the board thumbnail while the toggle is on.
+    catalogMap = new Map([
+      ['p-1', { source_catalog_id: 'p-1', angle: 40, holds: [{ c: 0, r: 1, t: 'start' }] } as CatalogProblem],
+    ])
+
+    const { container } = render(<LogbookScreen />)
+
+    await screen.findByRole('button', { name: 'Open CRIMP CITY' })
+    expect(container.querySelector('.catalog-board')).not.toBeNull()
+    act(() => setShowPreviews('logbook', false))
+    expect(container.querySelector('.catalog-board')).toBeNull()
   })
 
   it('does not make a user-created (unresolved) row tappable', () => {

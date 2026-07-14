@@ -5,12 +5,13 @@ import type { CatalogProblem } from './catalogSync'
 import { LastOpenedBar } from './LastOpenedBar'
 import { dismissLastOpened, recordOpened } from './lastOpenedStore'
 import { isFavorite } from './favoritesStore'
+import { setShowPreviews } from './previewsStore'
 
-// Isolate the bar from board-art rendering, the previews toggle, and BLE.
+// Isolate the bar from board-art rendering and BLE. The previews store is real so
+// tests can exercise the lastOpened thumbnail toggle.
 vi.mock('../board/CatalogBoard', () => ({
   CatalogBoard: () => <div data-testid="thumb" />,
 }))
-vi.mock('./previewsStore', () => ({ useShowPreviews: () => true }))
 
 const lightUp = vi.fn()
 vi.mock('../ble/useLightUp', () => ({
@@ -68,6 +69,8 @@ function mount(problems = list, sentIds = new Set<string>()) {
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
+  // Reset the previews snapshot (survives localStorage.clear()).
+  window.dispatchEvent(new StorageEvent('storage'))
   dismissLastOpened(7, ANGLE)
 })
 
@@ -148,6 +151,17 @@ describe('LastOpenedBar', () => {
     mount()
     fireEvent.click(screen.getByRole('button', { name: 'Light up' }))
     expect(lightUp).toHaveBeenCalledWith(b.holds)
+  })
+
+  it('hides only the thumbnail when the lastOpened previews toggle is off', () => {
+    recordOpened(7, ANGLE, 'b')
+    mount()
+    expect(screen.getByTestId('thumb')).toBeInTheDocument()
+    act(() => setShowPreviews('lastOpened', false))
+    expect(screen.queryByTestId('thumb')).toBeNull()
+    // The bar itself (identity + actions) stays.
+    expect(screen.getByText('Bravo')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
   })
 
   it('× calls onDismiss', () => {

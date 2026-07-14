@@ -1,7 +1,8 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithRouter } from '../test/renderWithRouter'
 import type { CatalogProblem } from '../catalog/catalogSync'
+import { setShowPreviews } from '../catalog/previewsStore'
 import type { ListsState } from './listsStore'
 import type { ListProblemsState } from './useListProblems'
 import type { SavedList, SavedListProblem } from './listsTypes'
@@ -105,6 +106,9 @@ function listWithBoard(id: string, name: string): SavedList {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
+  // Reset the previews snapshot (survives localStorage.clear()).
+  window.dispatchEvent(new StorageEvent('storage'))
   authState.status = 'signedInWithProfile'
   storeState = { status: 'loaded', lists: [listWithBoard('list-1', 'Projects')], error: null }
   problemsState = {
@@ -153,6 +157,14 @@ describe('ListDetailScreen', () => {
     expect(await screen.findByRole('heading', { name: 'Twentyfive' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next problem' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Previous problem' })).toBeDisabled()
+  })
+
+  it('hides row thumbnails when the lists previews toggle is off', async () => {
+    const { container } = renderWithRouter('/lists/list-1')
+    await screen.findByText('Forty')
+    expect(container.querySelector('.catalog-board')).not.toBeNull()
+    act(() => setShowPreviews('lists', false))
+    expect(container.querySelector('.catalog-board')).toBeNull()
   })
 
   it('shows the sent check on rows with a logged send for this board', async () => {
