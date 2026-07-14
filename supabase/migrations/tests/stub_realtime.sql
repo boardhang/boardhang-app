@@ -1,9 +1,9 @@
--- Minimal Supabase `realtime`-schema stub so 0011's broadcast fan-out + private-channel
+-- Minimal Supabase `realtime`-schema stub so 0012's broadcast fan-out + private-channel
 -- authorization can be exercised on a throwaway vanilla Postgres (no local Supabase stack —
 -- see memory supabase-migration-local-testing). Reproduces just enough of Supabase's Realtime
 -- Authorization surface for the migration to apply and for its policy predicate to run:
 --   • realtime.messages — the table Realtime Authorization RLS is attached to. Real Supabase
---     ships this with RLS already enabled; we mirror that so 0011's SELECT policy is genuinely
+--     ships this with RLS already enabled; we mirror that so 0012's SELECT policy is genuinely
 --     exercised (a member sees rows, a non-member is filtered out).
 --   • realtime.topic() — reads a session GUC the test sets per subscribed channel, exactly the
 --     way stub_supabase.sql's auth.uid() reads test.uid. In real Supabase it returns the topic
@@ -13,12 +13,12 @@
 --     can assert which topic/event/payload/private the fan-out emitted.
 -- RLS semantics are standard Postgres, so a stub with the SAME policy predicate genuinely
 -- exercises it. Final fidelity (that Supabase evaluates this policy on receive, and that
--- realtime.send relays) still requires applying to real Supabase — see 0011's manual step.
+-- realtime.send relays) still requires applying to real Supabase — see 0012's manual step.
 
 create schema if not exists realtime;
 grant usage on schema realtime to anon, authenticated;
 
--- The Realtime Authorization table. Columns pared to what 0011 touches: `extension` marks the
+-- The Realtime Authorization table. Columns pared to what 0012 touches: `extension` marks the
 -- message kind ('broadcast'), and the policy reads realtime.topic() (not these columns) for the
 -- membership check. RLS enabled to match real Supabase, where it ships enabled.
 create table if not exists realtime.messages (

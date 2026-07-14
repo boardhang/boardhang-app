@@ -36,6 +36,13 @@ export type MemberAscentsMap = Record<string, MemberSets>
  * projection (which is stale for your own just-logged send). Presence stays projection-driven:
  * self is overridden ONLY when already present in `bySets` (i.e. in the projection's member set);
  * a not-yet-loaded self is not synthesised. Pure — returns a new map, never mutates the input.
+ *
+ * CAVEAT: the "self surfaces can't drift" guarantee is contingent on self being in the projection
+ * member set. While the projection is empty (first load, or a max-age drop → `members: []`), the
+ * pill and the session Sent-filter predicate — both of which iterate `members` — drop self, while
+ * the row green-check (fed directly from local `sentIds`) still shows it. This is masked in
+ * practice (the pill renders nothing during `loading`; the list is widened while `paused`), but
+ * the surfaces are only provably aligned once the projection has loaded self.
  */
 export function withSelfSends(
   bySets: MemberAscentsMap,

@@ -1,5 +1,5 @@
--- Assertions for 0011_session_realtime.sql. Run after stub_supabase.sql + stub_realtime.sql +
--- the 0002 → 0007 → 0011 chain + the "Supabase default grants" step (see run_rls_test.sh).
+-- Assertions for 0012_session_realtime.sql. Run after stub_supabase.sql + stub_realtime.sql +
+-- the 0002 → 0007 → 0012 chain + the "Supabase default grants" step (see run_rls_test.sh).
 -- Two behaviors under test:
 --   (A) The ascents trigger fans a content-free 'ascents-changed' broadcast to exactly the
 --       author's LIVE sessions on the ascent's board — not expired/deleted/other-board/
@@ -163,4 +163,4 @@ begin
 end $$;
 
 reset role;
-\echo 'ALL 0011 REALTIME ASSERTIONS PASSED'
+\echo 'ALL 0012 REALTIME ASSERTIONS PASSED'

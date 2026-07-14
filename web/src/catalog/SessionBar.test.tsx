@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   authStatus: 'signedInWithProfile' as string,
   createSession: vi.fn().mockResolvedValue({}),
   leaveSession: vi.fn().mockResolvedValue(undefined),
+  endSession: vi.fn().mockResolvedValue(undefined),
   removeMember: vi.fn().mockResolvedValue(undefined),
   renameSession: vi.fn().mockResolvedValue(undefined),
   refreshActiveSession: vi.fn().mockResolvedValue({ live: true }),
@@ -17,6 +18,7 @@ vi.mock('../sessions/sessionsStore', () => ({
   useSessions: () => h.sessions,
   createSession: (...a: unknown[]) => h.createSession(...a),
   leaveSession: () => h.leaveSession(),
+  endSession: () => h.endSession(),
   removeMember: (...a: unknown[]) => h.removeMember(...a),
   renameSession: (...a: unknown[]) => h.renameSession(...a),
   refreshActiveSession: (...a: unknown[]) => h.refreshActiveSession(...a),
@@ -34,6 +36,7 @@ beforeEach(() => {
   h.authStatus = 'signedInWithProfile'
   h.createSession.mockClear().mockResolvedValue({})
   h.leaveSession.mockClear()
+  h.endSession.mockClear()
   h.removeMember.mockClear()
 })
 
@@ -85,6 +88,29 @@ describe('SessionBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Session options' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove Bob' }))
     expect(h.removeMember).toHaveBeenCalledWith('bob')
+  })
+
+  it('lets the owner end the session for everyone from the ⋯ menu; non-owner does not see it', () => {
+    h.sessions = {
+      activeSession: { id: 'S1', name: 'Crew', ownerId: 'me', boardLayoutId: 7 },
+      roster: [{ userId: 'me', joinedAt: '', handle: 'me', displayName: 'Me' }],
+      selfId: 'me',
+    }
+    render(<SessionBar board={board} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Session options' }))
+    fireEvent.click(screen.getByRole('button', { name: 'End session for everyone' }))
+    expect(h.endSession).toHaveBeenCalled()
+  })
+
+  it('a non-owner sees no end-session control in the ⋯ menu', () => {
+    h.sessions = {
+      activeSession: { id: 'S1', name: 'Crew', ownerId: 'someone-else', boardLayoutId: 7 },
+      roster: [{ userId: 'me', joinedAt: '', handle: 'me', displayName: 'Me' }],
+      selfId: 'me',
+    }
+    render(<SessionBar board={board} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Session options' }))
+    expect(screen.queryByRole('button', { name: 'End session for everyone' })).toBeNull()
   })
 
   it('a non-owner sees no remove control in the ⋯ menu', () => {

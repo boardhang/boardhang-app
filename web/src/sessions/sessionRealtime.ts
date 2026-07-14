@@ -31,7 +31,7 @@ import { memberLabel } from './sessionsTypes'
 /** Coalesce a burst of nudges into a single refetch. */
 export const NUDGE_DEBOUNCE_MS = 600
 
-/** Broadcast event names — must match the triggers' realtime.send(... event ...) in 0011/0012. */
+/** Broadcast event names — must match the triggers' realtime.send(... event ...) in 0012/0013. */
 const NUDGE_EVENT = 'ascents-changed'
 const MEMBER_JOINED_EVENT = 'member-joined'
 const MEMBER_LEFT_EVENT = 'member-left'
@@ -75,9 +75,12 @@ function onNudge(author: string | undefined): void {
  * Toasting off the actual roster delta (not the event name) means a burst that adds and removes
  * in one reload still narrates both. Best-effort — a failed reload keeps the last-good roster.
  */
-async function onMembershipChange(leftUserId?: string): Promise<void> {
+async function onMembershipChange(leftUserId: string | undefined, token: number): Promise<void> {
   const snap = getSessionsSnapshot()
-  const self = snap.selfId
+  // Fall back to the module's own resolved id: the store's selfId can still be null in a narrow
+  // window, and misclassifying a kick as an ordinary leave would strand me in a session I can no
+  // longer read (RLS).
+  const self = snap.selfId ?? selfId
   // A member-left about MYSELF while my session is still active means the owner kicked me (a
   // voluntary leave already retired the session locally before this echo arrives). End the
   // session for me — otherwise the bar lingers with a roster I can no longer read (RLS).
@@ -101,9 +104,12 @@ async function onMembershipChange(leftUserId?: string): Promise<void> {
   // doesn't have yet, a leaver's should drop. Debounced + no-op off-catalog. Joiners surface as
   // new roster entries; a leave with no payload (shouldn't happen) falls back to the `left` diff.
   const { joined, left } = await reloadActiveRoster()
+  if (token !== activationToken) return // a session switch/teardown superseded us mid-reload
   scheduleRefetch()
   for (const m of joined) {
-    if (m.userId !== self) toast(`${memberLabel(m)} joined the session`)
+    // Skip self, and the just-departed member — a lagging reload must not re-toast a leaver as a
+    // joiner (their optimistic removal makes them absent from the pre-reload roster diff).
+    if (m.userId !== self && m.userId !== leftUserId) toast(`${memberLabel(m)} joined the session`)
   }
   if (!leftUserId) {
     for (const m of left) {
@@ -113,7 +119,7 @@ async function onMembershipChange(leftUserId?: string): Promise<void> {
 }
 
 /**
- * The owner ended the session for everyone (0013). Retire it locally. The owner who ended it has
+ * The owner ended the session for everyone (0014). Retire it locally. The owner who ended it has
  * already retired (endSession clears it before this echo arrives), so the activeSession guard
  * makes this a no-op for them — only other still-active members retire and see the toast.
  */
@@ -163,11 +169,11 @@ export function activateSessionRealtime(sessionId: string | null): void {
       })
       ch.on('broadcast', { event: MEMBER_JOINED_EVENT }, () => {
         if (myToken !== activationToken) return
-        void onMembershipChange()
+        void onMembershipChange(undefined, myToken)
       })
       ch.on('broadcast', { event: MEMBER_LEFT_EVENT }, (msg: { payload?: MembershipPayload }) => {
         if (myToken !== activationToken) return
-        void onMembershipChange(msg.payload?.user_id)
+        void onMembershipChange(msg.payload?.user_id, myToken)
       })
       ch.on('broadcast', { event: SESSION_ENDED_EVENT }, () => {
         if (myToken !== activationToken) return

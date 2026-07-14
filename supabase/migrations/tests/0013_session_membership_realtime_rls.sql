@@ -1,8 +1,8 @@
--- Assertions for 0012_session_membership_realtime.sql. Run after stub_supabase.sql +
--- stub_realtime.sql + the 0002 → 0007 → 0012 chain + the "Supabase default grants" step.
+-- Assertions for 0013_session_membership_realtime.sql. Run after stub_supabase.sql +
+-- stub_realtime.sql + the 0002 → 0007 → 0013 chain + the "Supabase default grants" step.
 -- Verifies the session_members trigger broadcasts member-joined on INSERT and member-left on
--- DELETE to the session:<id> channel, liveness-gated. (Receive authorization is 0011's policy,
--- already covered by the 0011 case.)
+-- DELETE to the session:<id> channel, liveness-gated. (Receive authorization is 0012's policy,
+-- already covered by the 0012 case.)
 \set ON_ERROR_STOP on
 
 -- A owns the live session; B joins/leaves it; X owns an expired session.
@@ -64,4 +64,4 @@ begin
     raise notice 'PASS: membership changes on a non-live session emit nothing (liveness gate)';
 end $$;
 
-\echo 'ALL 0012 MEMBERSHIP-REALTIME ASSERTIONS PASSED'
+\echo 'ALL 0013 MEMBERSHIP-REALTIME ASSERTIONS PASSED'

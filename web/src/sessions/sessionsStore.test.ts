@@ -137,12 +137,16 @@ vi.mock('../supabase/client', () => {
 import {
   clearSessionsCache,
   createSession,
+  endActiveSessionLocally,
+  endSession,
   getInviteToken,
   getSessionsSnapshot,
   initSessions,
   joinSession,
   leaveSession,
   refreshActiveSession,
+  reloadActiveRoster,
+  removeMemberFromRoster,
   renameSession,
   setMemberStatus,
   syncSessionsIdentity,
@@ -289,5 +293,43 @@ describe('sessionsStore', () => {
     await expect(createSession(7)).rejects.toThrow()
     await expect(leaveSession()).resolves.toBeUndefined()
     expect(() => initSessions()).not.toThrow()
+  })
+
+  it('endSession soft-deletes the session server-side and retires it locally', async () => {
+    const s = await createSession(7, 'Crew')
+    await endSession()
+    expect(getSessionsSnapshot().activeSession).toBeNull() // retired locally
+    expect(localStorage.getItem(ACTIVE_KEY)).toBeNull()
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true) // soft-deleted server-side
+  })
+
+  it('endActiveSessionLocally retires without mutating the server row', async () => {
+    const s = await createSession(7, 'Crew')
+    endActiveSessionLocally()
+    expect(getSessionsSnapshot().activeSession).toBeNull()
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // no server call
+  })
+
+  it('reloadActiveRoster returns the joined/left delta vs the previous roster', async () => {
+    const s = await createSession(7, 'Crew') // owner user-A seated
+    await reloadActiveRoster() // establish roster = [user-A]
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    const afterJoin = await reloadActiveRoster()
+    expect(afterJoin.joined.map((m) => m.userId)).toEqual(['user-B'])
+    expect(afterJoin.left).toEqual([])
+    h.members = h.members.filter((m) => m.user_id !== 'user-B')
+    const afterLeave = await reloadActiveRoster()
+    expect(afterLeave.left.map((m) => m.userId)).toEqual(['user-B'])
+    expect(afterLeave.joined).toEqual([])
+  })
+
+  it('removeMemberFromRoster drops a member and returns them; no-op for an unknown id', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster() // roster = [user-A, user-B]
+    const gone = removeMemberFromRoster('user-B')
+    expect(gone?.userId).toBe('user-B')
+    expect(getSessionsSnapshot().roster.map((m) => m.userId)).not.toContain('user-B')
+    expect(removeMemberFromRoster('nope')).toBeNull()
   })
 })

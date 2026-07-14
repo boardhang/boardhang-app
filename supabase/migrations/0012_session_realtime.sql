@@ -1,4 +1,4 @@
--- 0011_session_realtime.sql
+-- 0012_session_realtime.sql
 -- Real-time collab-session "sent problem" nudges. Today a member's send lands in `ascents`
 -- (0002) and co-members only see it when their client re-runs session_member_ascents() (0007)
 -- on activation / foreground / manual refresh. This migration adds a PUSH path: an ascents
@@ -126,6 +126,6 @@ create policy "Members receive session broadcasts"
 -- paste + Run, or `supabase db push`) AND enable Realtime Authorization for the project's
 -- Broadcast channels. Because this is a cross-user data path, verify it — a member receives a
 -- co-member's nudge, a non-member does not — BEFORE deploying the client bundle that subscribes
--- (0011's client counterpart). See docs/social-accounts-login-SETUP.md and
+-- (0012's client counterpart). See docs/social-accounts-login-SETUP.md and
 -- docs/plans/2026-07-13-002-feat-web-session-realtime-plan.md.
 -- ─────────────────────────────────────────────────────────────────────────────

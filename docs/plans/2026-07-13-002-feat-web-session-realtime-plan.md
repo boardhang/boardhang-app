@@ -202,8 +202,8 @@ it, and a `realtime.messages` receive policy that authorizes members-only delive
 `is_session_member`).
 
 **Files.**
-- `supabase/migrations/0011_session_realtime.sql` (new) — next free slot after `0010`.
-- `supabase/migrations/tests/0011_session_realtime.test.sql` (new, or the repo's existing
+- `supabase/migrations/0012_session_realtime.sql` (new) — next free slot after `0011`.
+- `supabase/migrations/tests/0012_session_realtime.test.sql` (new, or the repo's existing
   migration-test harness convention under `supabase/migrations/tests/`).
 - `supabase/migrations/0007_collaboration_sessions.sql` (reference only — mirror its helper
   style, `search_path` pinning, and header-comment discipline).
@@ -434,7 +434,7 @@ no open channel; pull-model fallback intact.
 This is a **cross-user data path**, and the backend must lead the client — so ordering is
 load-bearing. Do the steps in this order:
 
-1. **Apply migration `0011`** to the Supabase project (SQL Editor → paste + Run, or
+1. **Apply migration `0012`** to the Supabase project (SQL Editor → paste + Run, or
    `supabase db push`). Creates the emit helper, the `ascents` trigger, and the
    `realtime.messages` receive policy.
 2. **Enable Realtime Authorization for Broadcast** on the project (Realtime settings). Without

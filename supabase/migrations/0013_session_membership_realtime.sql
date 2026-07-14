@@ -1,14 +1,14 @@
--- 0012_session_membership_realtime.sql
--- Live session ROSTER changes, layered on the realtime substrate from 0011. When someone joins
+-- 0013_session_membership_realtime.sql
+-- Live session ROSTER changes, layered on the realtime substrate from 0012. When someone joins
 -- or leaves a session, broadcast a nudge on the same private session:<id> channel so co-members'
 -- clients reload the roster (live member avatars) and surface a "joined" toast — no refresh.
 --
 -- Scope: a reusable membership-emit helper + an AFTER INSERT OR DELETE trigger on
 -- session_members. NO new authorization: these events ride the session:<id> channel and are
--- gated by 0011's existing realtime.messages receive policy (members only), so the emit is the
+-- gated by 0012's existing realtime.messages receive policy (members only), so the emit is the
 -- only piece needed.
 --
--- Design (mirrors 0011's KTD-2/3/4):
+-- Design (mirrors 0012's KTD-2/3/4):
 --   • Server-side emission from a trigger on session_members — fires for every join path
 --     (join_session_by_token, the owner-seat trigger) and every leave path (self-leave, owner
 --     removal, account-deletion cascade), independent of which client caused it.
@@ -25,7 +25,7 @@
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- emit_session_membership_change: broadcast a membership event to a LIVE session's channel.
--- SECURITY DEFINER + pinned search_path (same posture as 0011's emit helper). Only the trigger
+-- SECURITY DEFINER + pinned search_path (same posture as 0012's emit helper). Only the trigger
 -- calls it (never granted to authenticated).
 create or replace function public.emit_session_membership_change(
     p_session_id uuid,
@@ -80,7 +80,7 @@ create trigger session_members_emit_membership
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Manual step: apply to the Supabase project. No new Realtime Authorization needed — these
--- events reuse 0011's session:<id> receive policy. Verify: a co-member sees the roster update
+-- events reuse 0012's session:<id> receive policy. Verify: a co-member sees the roster update
 -- (and a "joined" toast) when someone joins, and the avatars shrink when someone leaves — all
 -- without a manual refresh. See docs/plans/2026-07-13-002-feat-web-session-realtime-plan.md.
 -- ─────────────────────────────────────────────────────────────────────────────

@@ -214,7 +214,7 @@ async function loadRoster(session: Session, gen: number): Promise<void> {
 }
 
 /**
- * Reload the active session's roster in response to a realtime membership nudge (0012) — drives
+ * Reload the active session's roster in response to a realtime membership nudge (0013) — drives
  * the live member avatars in SessionBar. Returns the delta vs the previous roster: `joined` are
  * new entries (for a "joined" toast), `left` are entries that disappeared (for a "left" toast —
  * captured from the OLD roster, since they're gone from the reloaded one). Both empty when there
@@ -365,7 +365,7 @@ export async function leaveSession(): Promise<void> {
 
 /**
  * End the active session for EVERYONE (owner-only) — soft-deletes the session row. Every member's
- * client then retires it at once via the 0013 session-ended broadcast (with the expiry/reconcile
+ * client then retires it at once via the 0014 session-ended broadcast (with the expiry/reconcile
  * backstop for anyone offline). RLS grants sessions UPDATE to the owner only, so a non-owner's
  * update matches zero rows server-side; the UI only offers this to the owner. Drops it locally too.
  */

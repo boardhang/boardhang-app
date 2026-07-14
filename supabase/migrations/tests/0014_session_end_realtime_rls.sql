@@ -1,6 +1,6 @@
--- Assertions for 0013_session_end_realtime.sql. Run after stub_supabase.sql + stub_realtime.sql +
--- the 0002 → 0007 → 0013 chain + the "Supabase default grants" step. Verifies the sessions trigger
--- broadcasts session-ended on the deleted false→true edge only. (Receive auth is 0011's policy.)
+-- Assertions for 0014_session_end_realtime.sql. Run after stub_supabase.sql + stub_realtime.sql +
+-- the 0002 → 0007 → 0014 chain + the "Supabase default grants" step. Verifies the sessions trigger
+-- broadcasts session-ended on the deleted false→true edge only. (Receive auth is 0012's policy.)
 \set ON_ERROR_STOP on
 
 \set A 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -51,4 +51,4 @@ begin
     raise notice 'PASS: a non-delete update does not broadcast';
 end $$;
 
-\echo 'ALL 0013 SESSION-END REALTIME ASSERTIONS PASSED'
+\echo 'ALL 0014 SESSION-END REALTIME ASSERTIONS PASSED'
