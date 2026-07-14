@@ -10,9 +10,16 @@ date: 2026-07-10
 
 > **Implementation-ready.** Product intent (WHAT) was resolved in a `grill-me` session on
 > 2026-07-10, *validated against live YouTube data* (two throwaway pilots — see
-> [Pilot evidence](#pilot-evidence--why-scraping-is-the-right-call)). The `ce-plan` HOW is the
-> [Implementation Plan](#implementation-plan-how) section. Split into **Phase 1** (benchmark
-> seed + read-only display) and **Phase 2** (user submissions + moderation).
+> [Pilot evidence](#pilot-evidence--why-scraping-is-the-right-call)). Split into **Phase 1**
+> (benchmark seed + read-only display) and **Phase 2** (user submissions + moderation).
+>
+> **Status (2026-07-13):** ✅ **Phase 1 shipped** in PR #76 (migration `0010`,
+> `scripts/seed_beta_videos.py`, `web/src/beta/*`) — see [Phase 1 HOW](#implementation-plan-phase-1-how).
+> 🔜 **Phase 2 is now planned** — the HOW lives in
+> [Phase 2 Implementation Plan](#implementation-plan-phase-2-how) (U1–U6). Two forks were
+> resolved on 2026-07-13: moderation is **Supabase-dashboard-based + a submission
+> notification** (no in-app queue UI, OQ4), and R6's metadata fetch moves **server-side**
+> because the API key never ships to the client (see [R6 note](#phase-2--user-submissions--moderation)).
 
 ## Goal Capsule
 
@@ -113,25 +120,57 @@ user submissions fill the long tail (Phase 2). Scrape-vs-upload was a false bina
   the Phase-2 contribution hook), with:
   1. **Loading** — header + 2–3 shimmer skeleton portrait cards (reuse `ui/skeleton.tsx`).
   2. **Has videos** — the carousel (R2).
-  3. **Empty** — a single centered slot. Phase 1: "No beta videos yet." Phase 2: same slot
-     becomes the **"＋ Add the first beta"** submit entry (R7).
+  3. **Empty** — Phase 1: a single centered "No beta videos yet." slot. Phase 2 (per **U5**,
+     authoritative): a persistent **`＋ Add a beta`** button beside the section header, shown in
+     *both* the empty and populated states (not the empty slot transforming into a one-off "add
+     the first beta" entry). The empty copy stays alongside the CTA.
   4. **Error** — a **distinct** slot from Empty: "Couldn't load beta videos" + a **"Try again"**
      action that re-runs the `betaStore` fetch, so a transient network failure is recoverable in
      place (not indistinguishable from a genuinely video-less problem).
 
-### Phase 2 — User submissions + moderation (deferred)
+### Phase 2 — User submissions + moderation
 
-- **R6 — Submit a beta.** A signed-in user pastes a YouTube (later Instagram) URL on a problem;
-  the app extracts the video ID, fetches title/channel/duration via the API, and inserts a row
-  with `source='user', status='pending'`.
+> Planned 2026-07-13 (HOW in [Phase 2 Implementation Plan](#implementation-plan-phase-2-how)).
+> **R8's dedupe mechanism already shipped in `0010`** (Phase 1) — only R6 (submission) and R7
+> (moderation) need new work.
+
+- **R6 — Submit a beta.** A signed-in user pastes a YouTube URL on a problem; the app extracts
+  the video ID and inserts a row with `source='user', status='pending'`.
+  - ⚠️ **Resolved 2026-07-13 — metadata fetch is server-side, not client-side.** The original
+    wording ("the app fetches title/channel/duration via the API") conflicts with the hard
+    constraint that **the YouTube Data API key never ships to the client** (KTD4, Non-goals).
+    Resolution: the client inserts **only the `video_id`** (the schema defaults `title`/`channel`
+    to `''`, `duration_s` nullable); a **server-side enrich pass** (extended
+    `scripts/seed_beta_videos.py`, where the key already lives) fills `title`, `channel`, `views`,
+    `duration_s`, `is_short` before/at approval. Instagram submission stays deferred (Non-goals);
+    Phase 2 is YouTube-only. See **U3–U6**.
 - **R7 — Review queue (moderation).** Submissions are **hidden until approved** — the display
-  query only returns `status='approved'`. The owner (you) approves/rejects from a moderation
-  surface (to be designed). This is the safe path chosen over trust-on-submit precisely because
-  the confidence gate that protects the seed does **not** protect arbitrary user URLs.
+  query only returns `status='approved'`. The owner (you) approves/rejects a pending row. This is
+  the safe path chosen over trust-on-submit precisely because the confidence gate that protects
+  the seed does **not** protect arbitrary user URLs.
+  - ✅ **Resolved 2026-07-13 (OQ4) — dashboard moderation + a submission notification.** No
+    in-app moderation queue UI is built (there is no admin/owner concept in the app today, and a
+    solo builder at low volume does not warrant one). The owner **approves** by flipping
+    `status='approved'` in the **Supabase Table Editor** *after* running the server-side enrich
+    pass, and **rejects** by setting `status='rejected', deleted=true` (both — a status-only
+    reject strands the dedupe tuple; see U2 runbook / R8, #2). A **submission notification** — a
+    source-filtered `AFTER INSERT` trigger, not a bare dashboard webhook (which can't row-filter,
+    #3) — pings the owner; the U6 enrich pass, which lists every pending row, is the authoritative
+    backstop if a notification is dropped. See **U1** (write path), **U2** (notification +
+    runbook), **U5** (submit UI), **U6** (enrich + reconciliation).
+  - ⚠️ **Moderation-scaling tripwire (#9).** The dashboard+script loop is deliberately sized for
+    low volume — the case where the feature is *not yet* succeeding. It does not scale with the
+    long-tail contribution it aims to unlock. **Tripwire:** if pending submissions exceed ~20 at
+    once **or** ~10/week sustained, revisit **path C** (auto-enrich via a `pg_net` trigger /
+    Edge Function — removes the manual script step) and/or an in-app moderation queue. Owner
+    watches the U6 pending-queue count; "if volume grows" now has a number, not a vibe.
 - **R8 — Attribution & dedupe.** Every card credits the channel and links out; a **partial**
   unique index on `(source_catalog_id, provider, video_id) where not deleted` stops the same clip
   being attached twice (seed + user, or two users) while still allowing a removed/rejected clip to
-  be re-added later.
+  be re-added later. ✅ **Shipped in `0010`** (Phase 1) — no new schema for R8.
+  - ⚠️ **The "re-added later" promise holds only if reject soft-deletes (#2).** Because the index
+    is `where not deleted`, a rejected row that keeps `deleted=false` stays in the index and the
+    clip becomes permanently un-addable. Rejection must set `deleted=true` (see U2 runbook / R7).
 
 ### Key technical decisions (KTD)
 
@@ -151,8 +190,19 @@ user submissions fill the long tail (Phase 2). Scrape-vs-upload was a false bina
   one-off that upserts into a public-read table — **not** a live runtime job. No API key ships in
   the client; the client only ever reads `problem_beta_videos` (anon) and hits YouTube's public
   thumbnail/iframe endpoints.
+- **KTD5 — Seed and user paths never cross-approve (2026-07-13).** The seed inserts plainly
+  and **skips** live duplicates on a 409 (verified in `scripts/seed_beta_videos.py` `insert_rows`)
+  — it never upserts over, relabels, or approves an existing row. So if a user's `pending`
+  submission and a later seed match collide on the dedupe tuple, the seed skips and the user row
+  stays `pending` for normal moderation; a user submission can **never** be auto-approved by the
+  seed touching it. This keeps the status gate (KTD2) the *only* way a row goes live, even across
+  the seed/user boundary. The minor cost — a benchmark-matching video sits in the queue instead of
+  auto-approving because the user got there first — is accepted (one click to approve).
 
-## Implementation Plan (HOW)
+## Implementation Plan (Phase 1 — HOW)
+
+> ✅ **Shipped in PR #76.** Retained for provenance; the Phase 2 HOW is
+> [below](#implementation-plan-phase-2-how).
 
 ### 1. Migration `0010_problem_beta_videos.sql` (Supabase — safety-critical, `effort: max`, test-first)
 
@@ -248,6 +298,339 @@ create index on public.problem_beta_videos (source_catalog_id) where not deleted
   Mini 2025) → strip shows thumbnails → tap → player sheet plays; open a non-seeded problem →
   empty state; throttle network → skeleton.
 
+---
+
+## Implementation Plan (Phase 2 — HOW)
+
+> 🔜 **Planned 2026-07-13.** User submissions (R6) + dashboard moderation with a notification
+> (R7) + attribution/dedupe (R8, already in `0010`). YouTube-only. Six units, dependency-ordered.
+> **Product Contract preservation:** R6/R7 unchanged in intent; both carry a 2026-07-13
+> resolution note (R6 metadata → server-side; R7 → dashboard + notification). No product scope
+> changed.
+
+**Requirements trace:** R6 → U1, U3, U4, U5, U6 · R7 → U1, U2, U5, U6 (+ dashboard action) ·
+R8 → U1 (dedupe index already shipped in `0010`).
+
+**Dependency order:** U1, U3 have no deps · U2 → U1 · U4 → U1, U3 · U5 → U4 · U6 → U1.
+
+### High-Level Technical Design — submission → approval flow
+
+```mermaid
+sequenceDiagram
+    actor U as Signed-in user
+    participant C as Client (web/src/beta)
+    participant DB as Supabase (problem_beta_videos)
+    participant W as Database Webhook
+    actor O as Owner (you)
+    participant S as seed_beta_videos.py --enrich-pending
+
+    U->>C: Tap ＋ Add a beta, paste YouTube URL
+    C->>C: extract video_id (youtubeUrl.ts, U3)
+    C->>DB: INSERT source='user' status='pending' added_by=uid (U4)
+    Note over DB: RLS WITH CHECK clamps all fields (U1)<br/>row invisible to public (approved-only gate)
+    DB-->>C: ok → toast "Submitted, pending review" (U5)
+    DB->>W: INSERT where source='user' (U2)
+    W->>O: notification (email / Slack / Discord)
+    O->>S: run enrich pass (server-side, has API key)
+    S->>DB: UPDATE title, channel, views, duration_s, is_short (U6)
+    O->>DB: flip status → approved (Table Editor)
+    Note over DB: now matches approved-only read gate
+    C->>DB: refetch → clip appears in strip (Phase 1 display)
+```
+
+### U1. Migration `0011_beta_user_submissions.sql` — user-submission INSERT policy
+
+- **Goal:** Open the single write seam Phase 1 deliberately left closed — let a signed-in user
+  insert a **pending user** beta row, and nothing else. This is the R7 trust boundary in RLS.
+- **Requirements:** R6 (write path), R7 (pending-only, clamp), R8 (dedupe already enforced by
+  `0010`'s partial unique index — no schema change needed).
+- **Dependencies:** none (extends `0010`).
+- **Files:** `supabase/migrations/0011_beta_user_submissions.sql`,
+  `supabase/migrations/tests/0011_beta_user_submissions_rls.sql`,
+  `supabase/migrations/tests/run_rls_test.sh` (chain `0010 → 0011`),
+  `supabase/migrations/tests/stub_supabase.sql` (add a no-op `net.http_post` stub so the U2
+  notification trigger *creates* on vanilla Postgres — Q6; mirrors the existing `auth.uid()` stub).
+- **Approach:** Add one insert policy, mirroring `0003`'s `list_problems` insert policy
+  (`for insert to authenticated with check (…)`). The clamp must pin **every** column the client
+  is supposed to leave to the server — not just the trust fields — so "the client inserts only
+  `video_id`" is a DB-enforced invariant, not a UI convention:
+  ```
+  create policy "Signed-in users submit a pending beta"
+    on public.problem_beta_videos for insert to authenticated
+    with check (
+      source     = 'user'
+      and status = 'pending'
+      and provider = 'youtube'
+      and added_by = auth.uid()
+      and not deleted
+      -- metadata MUST originate from the trusted enrich pass (U6), never the client (#1):
+      and title = '' and channel = '' and views = 0
+      and is_short = false and duration_s is null
+    );
+  ```
+  No UPDATE/DELETE policy for users — approval/rejection and soft-delete stay service-role /
+  dashboard only, so the moderation boundary is unbreakable from the client. The clamp is the
+  whole security surface: a user cannot self-approve (`status='pending'` forced), cannot
+  impersonate (`added_by=auth.uid()`), cannot smuggle a seed row, cannot resurrect a
+  soft-deleted tombstone, **and cannot forge attribution/views** (metadata columns pinned empty,
+  so U6's enrich — which only backfills empty fields — always owns them; #1).
+- **Rate limit (#4):** cap concurrent pending submissions per user so a scripted account can't
+  flood the table and the U2 notification channel. Enforce in a `BEFORE INSERT` trigger (RLS
+  `with check` can't easily self-count): `raise` / reject when
+  `(select count(*) from problem_beta_videos where added_by = auth.uid() and status = 'pending'
+  and not deleted) >= 10` (**N = 10**, Q5). Counts *pending* only, so it self-heals as you
+  moderate; no per-problem or lifetime cap. Trigger, not policy, so the limit is one place and
+  testable. If users routinely hit it, that's the #9 tripwire firing.
+- **`video_id` format (FYI):** add a defense-in-depth CHECK so a direct-API insert can't store a
+  malformed id even though the client extractor (U3) already validates it:
+  `alter table public.problem_beta_videos add constraint problem_beta_videos_video_id_fmt
+  check (video_id ~ '^[A-Za-z0-9_-]{11}$');` (the approval gate remains the primary control).
+- **Patterns to follow:** `supabase/migrations/0003_collaborative_lists.sql` insert policy;
+  `0010`'s header + manual-apply footer convention; the auth-stub harness in
+  `supabase/migrations/tests/stub_supabase.sql`.
+- **Execution note:** **Safety-critical (`supabase/migrations/**`) → `effort: max`, test-first.**
+  Write the RLS assertions before the policy; run via `supabase/migrations/tests/run_rls_test.sh`
+  (throwaway Postgres + auth stub — no local Supabase).
+- **Test scenarios** (extend the `0010` RLS-test style):
+  - Authenticated user inserts `source='user', status='pending', provider='youtube',
+    added_by=self` → **succeeds**; the row is then **invisible** to both anon and authenticated
+    reads (approved-only gate from `0010` still holds).
+  - Insert with `status='approved'` → **denied** (cannot self-approve).
+  - Insert with `status='pending'` but `added_by=<other uuid>` → **denied** (no impersonation).
+  - Insert with `source='seed'` → **denied** (cannot forge a seed row).
+  - Insert with `provider='instagram'` → **denied** (YouTube-only in Phase 2).
+  - Insert with `deleted=true` → **denied**.
+  - Insert with a non-empty `channel`/`title`, non-zero `views`, `is_short=true`, or a non-null
+    `duration_s` → **denied** (#1 — metadata forgery blocked; only the enrich pass may set these).
+  - Insert with a malformed `video_id` (not `^[A-Za-z0-9_-]{11}$`) → **denied** by the CHECK.
+  - An `(N+1)`th pending insert by the same user while N are still pending → **denied** by the
+    rate-limit trigger (#4); after one is approved/rejected, a new insert **succeeds**.
+  - Authenticated `UPDATE`/`DELETE` on any row still affects **zero rows** (no policy) — the
+    `0010` assertion must continue to pass unchanged.
+  - Anon insert still **denied**.
+  - Partial-unique dedupe (`0010`) still blocks a duplicate **live** clip on the user path
+    (submitting a `video_id` already live for that problem raises `23505`).
+
+### U2. Submission notification + moderation runbook
+
+- **Goal:** Ping the owner when a user submits, so a `pending` row is surfaced — **but treat the
+  notification as a convenience nudge, not the system of record** (#3): the authoritative
+  discovery path is the enrich pass in U6, which selects every pending row regardless of whether
+  any notification was delivered.
+- **Requirements:** R7 (the "+ notification" half of the resolved moderation surface).
+- **Dependencies:** U1 (rows must be insertable first).
+- **Files:** `supabase/migrations/0011_beta_user_submissions.sql` (the trigger, alongside U1) +
+  the moderation runbook documented in the migration footer and a short note in
+  `docs/social-accounts-login-SETUP.md` (or the beta subsystem doc).
+- **Approach — source-filtered trigger, not a bare dashboard webhook (#3):** A dashboard Database
+  Webhook fires on **every** insert (its UI has no row-condition field), so a webhook on
+  `problem_beta_videos` INSERT would also ping ~100× during a seed batch. Use a Postgres
+  `AFTER INSERT ... FOR EACH ROW WHEN (new.source = 'user')` trigger calling
+  `pg_net`/`net.http_post` to the owner's channel (email relay / Slack / Discord incoming webhook)
+  so only real submissions notify. The webhook URL is a configured secret (Vault / DB setting),
+  not committed.
+  - **`pg_net` is a project prerequisite, not a migration line (Q6).** Enable it once via the
+    Supabase dashboard; do **not** `create extension pg_net` inside `0011` (the extension isn't
+    installed on the throwaway test Postgres, so that line would break the RLS harness). The
+    trigger references `net.http_post`; the harness stubs it as a no-op (see U1 Files) so `0011`
+    applies wholesale and the clamp/rate-limit assertions still run.
+- **Backstop — the enrich pass is the reconciliation list (#3):** because notification delivery
+  can fail silently (expired hook, spam filter, 500), the owner's routine is: run
+  `seed_beta_videos.py --enrich-pending` (U6), which **prints the full pending queue** — that
+  list, not the notification, is what guarantees no submission is stranded.
+- **Moderation runbook (#2) — document these snippets in the `0011` footer:**
+  - **Approve:** `update problem_beta_videos set status='approved' where id = '<id>';`
+    (only after the enrich pass has filled `channel`/`duration_s` — see U6).
+  - **Reject:** `update problem_beta_videos set status='rejected', deleted=true where id='<id>';`
+    — reject **must** set `deleted=true`, not `status` alone. The dedupe index is
+    `where not deleted`, so a status-only reject leaves the tuple occupied and the clip becomes
+    permanently un-addable (see U1 / R8, #2).
+- **Test expectation:** delivery is ops/config (none), but the RLS harness **does** exercise that
+  the trigger *creates and fires* against the `net.http_post` stub (Q6) — proving the `WHEN
+  (new.source='user')` filter (fires on a user insert, **not** on a seed insert). Smoke-verify
+  real delivery once on staging: submit a beta → notification arrives; confirm `--enrich-pending`
+  lists the pending row even with the webhook disabled.
+
+### U3. `youtubeUrl.ts` — client-side URL → `video_id` extractor
+
+- **Goal:** Turn a pasted YouTube URL into an 11-char `video_id` (or `null`), entirely
+  client-side — there is no existing helper (the seed script takes the id straight from the API).
+- **Requirements:** R6 (the client's only parsing responsibility).
+- **Dependencies:** none (pure function).
+- **Files:** `web/src/beta/youtubeUrl.ts`, `web/src/beta/youtubeUrl.test.ts`.
+- **Approach:** A pure `extractYouTubeId(input: string): string | null`. Trim, tolerate a bare id,
+  parse the URL and match the known shapes: `youtu.be/<id>`, `watch?v=<id>`, `/shorts/<id>`,
+  `/embed/<id>`, `/live/<id>`. Strip extra query params and fragments. Validate the id against
+  `^[A-Za-z0-9_-]{11}$`; return `null` on any non-YouTube host or malformed id. The stored id
+  flows straight into the existing `BetaCard` thumbnail and `BetaPlayerSheet` embed templates —
+  no display work needed.
+- **Patterns to follow:** small pure-util + colocated `*.test.ts` (mirror existing `web/src/`
+  util tests); house style — no Prettier, verify with `oxlint` + `tsc -b`/`npm run build`.
+- **Execution note:** test-first (pure function, cheap to spec exhaustively).
+- **Test scenarios:**
+  - Each URL shape (`youtu.be`, `watch?v=`, `/shorts/`, `/embed/`, `/live/`) → correct id.
+  - `watch?v=<id>&t=30s&list=…` (extra params) → id only.
+  - Trailing slash / fragment (`#t=1m`) → id only.
+  - Bare 11-char id passed directly → returned as-is.
+  - Non-YouTube host (`vimeo.com/…`, `instagram.com/…`) → `null`.
+  - Empty / whitespace / garbage / wrong-length id → `null`.
+  - Leading/trailing whitespace around a valid URL → trimmed, id returned.
+
+### U4. `submitBeta` — the user-submission store write
+
+- **Goal:** Insert a pending user row from the client, with correct clamped fields and friendly
+  error handling; do **not** touch the approved-videos cache (the row is invisible until approved).
+- **Requirements:** R6.
+- **Dependencies:** U1 (INSERT policy), U3 (id extractor).
+- **Files:** `web/src/beta/betaStore.ts` (add `submitBeta`), `web/src/beta/betaStore.test.ts`.
+- **Approach:** `async submitBeta(sourceCatalogId: string, videoId: string): Promise<void>`
+  modeled on `listsStore.addProblem` (the closest UGC-insert analog):
+  - Guard `if (!supabase)` → throw the not-configured message.
+  - Resolve `userId` via `supabase.auth.getSession()` (mirror `listsStore.currentUserId()`); throw
+    "You need to be signed in…" if absent.
+  - `insert({ source_catalog_id, provider: 'youtube', video_id: videoId, source: 'user',
+    status: 'pending', added_by: userId })`.
+  - On Postgres `23505` (duplicate live clip via the `0010` partial index) → throw a friendly
+    "This video can't be added again for this problem." (FYI — avoid "already added": a dup can be
+    a *pending* row the submitter can't see, so don't assert a visible clip.) Surface other errors
+    verbatim.
+  - **Do not** insert into the `cache` map — the pending row is not approved, so it must not
+    appear in the strip; the UI shows a "pending review" toast instead. No `refetchBeta` needed.
+- **Patterns to follow:** `web/src/lists/listsStore.ts` `addProblem` (`added_by = auth.uid()`
+  client-side, 23505 handling); `betaStore.ts`'s existing `supabase`/error idioms.
+- **Test scenarios:**
+  - Unconfigured build (`supabase === null`) → throws not-configured; no network.
+  - Not signed in → throws the signed-in error; no insert attempted.
+  - Happy path → insert called with exactly `source='user', status='pending',
+    provider='youtube', added_by=<session uid>, video_id`.
+  - `23505` from the client → friendly "already added" message.
+  - Generic insert error → surfaced.
+  - Success does **not** mutate the approved-videos cache (re-render shows no new card).
+
+### U5. Submit CTA + `BetaSubmitDrawer` — the UI
+
+- **Goal:** A `＋ Add a beta` entry in the Beta section (empty **and** populated states) that
+  gates on sign-in, opens a URL-submission drawer, validates, submits, and confirms.
+- **Requirements:** R6, R7 (advertises the contribution hook the Phase-1 empty state reserved).
+- **Dependencies:** U4.
+- **Files:** `web/src/beta/BetaSubmitDrawer.tsx`, `web/src/beta/BetaSubmitDrawer.test.tsx`,
+  edit `web/src/beta/BetaVideos.tsx`.
+- **CTA placement — authoritative over R5 (#6):** the single `＋ Add a beta` button lives beside
+  the "Beta videos" `<h2>` and renders in **both** the empty and has-videos states. This
+  supersedes R5's Phase-2 line about the empty *slot itself* becoming a `＋ Add the first beta`
+  entry; R5 has been updated to match. One label everywhere: `＋ Add a beta`.
+- **Approach:**
+  - In `BetaVideos.tsx`, add the header `＋ Add a beta` button (both states — the empty state stops
+    being a dead end). Hold `signInOpen` + `submitOpen` + `resume` state locally.
+  - On tap: `const signedIn = useAuth().status !== 'signedOut'`; if `!signedIn`, set `resume=true`
+    and open `SignInDialog` (reuse `web/src/auth/SignInDialog.tsx` as `ProblemDetail` does); else
+    open `BetaSubmitDrawer`.
+  - **Sign-in resume (#7):** `SignInDialog` auto-closes itself once the session lands, so copying
+    only the gate leaves the user staring at the drawer they wanted, closed. Mirror the **`resume`
+    mechanic in `web/src/lists/useAddToList.tsx`**: a `useEffect` keyed on `signedIn` consumes the
+    `resume` flag and auto-opens `BetaSubmitDrawer` once signed in; clear `resume` if the sign-in
+    dialog is dismissed without success.
+  - `BetaSubmitDrawer` = shadcn **`Drawer`** mirroring `web/src/lists/AddToListSheet.tsx`: a
+    `<form>` with the shared `@/components/ui/input` (keeps `text-base md:text-sm`, no iOS zoom),
+    a submit `Button`, and a synchronous re-entrancy lock (`submittingRef`, per `AddToListSheet`).
+    On submit: run `extractYouTubeId`; if `null`, show an inline field error and **do not** call
+    the store. On a valid id, call `submitBeta`; on success close the drawer and
+    `toast.success("Submitted — it'll appear here once it's reviewed.")`; on failure
+    `toast.error(msg, { action: { label: 'Retry', … } })` (the `sonner` idiom from
+    `AddToListSheet`).
+  - **Inline URL-error state (FYI):** the invalid-URL message is fixed copy
+    ("Enter a YouTube video link"), shown below the field; it **clears as the user edits** and
+    resets when the drawer closes — matching the field-error rigor the four `BetaVideos` states
+    already model.
+  - **Pending signal on reopen (#8) — self-expiring (Q2):** on a successful submit, record a
+    lightweight local flag with a **timestamp** (`localStorage`, keyed by `source_catalog_id`).
+    When `BetaVideos` mounts for a problem the user has a recent pending submission on, show a
+    small "Your beta is pending review" note by the CTA so a returning submitter sees progress
+    (instead of the plain empty/populated state) and isn't tempted to resubmit a different URL.
+    The note **lapses after ~7 days** back to the plain CTA, and clears immediately if the
+    submitted `video_id` shows up in the approved fetch. This is deliberate: **rejection is
+    silent** (Q2) — a rejected row is `deleted=true` and invisible to every client, so the note
+    can't detect a reject; self-expiry stops it from saying "pending" forever after a decline. A
+    real user-facing reject outcome is deferred (see Open Questions). Purely client-local — no
+    moderation UI, no server read.
+  - **A11y:** the CTA is a labelled button; the drawer traps focus and restores it on close
+    (shadcn `Drawer` default); the input has an associated label.
+- **Patterns to follow:** `web/src/catalog/ProblemDetail.tsx` sign-in gate
+  (`if (!signedIn) { setSignInOpen(true); return }` + `<SignInDialog>`);
+  **`web/src/lists/useAddToList.tsx`** (the `resume`-after-sign-in mechanic);
+  `web/src/lists/AddToListSheet.tsx` (Drawer + form + re-entrancy + toast); `web/CLAUDE.md`
+  (shadcn only, `@/` alias, theme tokens).
+- **Test scenarios:**
+  - Signed-out: tapping ＋ opens `SignInDialog`, not the submit drawer.
+  - Signed-out → sign in succeeds → `BetaSubmitDrawer` **auto-opens** (resume, #7); sign-in
+    dismissed without success → drawer does **not** open and `resume` is cleared.
+  - Signed-in: tapping ＋ opens `BetaSubmitDrawer`.
+  - Invalid URL → inline error shown, `submitBeta` **not** called; editing the field clears it.
+  - Valid URL → `submitBeta` called with the extracted id; on success drawer closes + success
+    toast fires.
+  - `submitBeta` rejects → error toast with a Retry action; drawer stays open.
+  - Double-submit (rapid double tap / Enter) → guarded to a single insert.
+  - CTA renders in **both** empty and has-videos states.
+  - After a successful submit, reopening the same problem shows the "pending review" note (#8);
+    a different problem does not; the note is gone once the flag is older than the expiry window,
+    and clears immediately if the submitted `video_id` appears in the approved fetch (Q2).
+
+### U6. `seed_beta_videos.py --enrich-pending` — server-side metadata fill
+
+- **Goal:** Fill `title`/`channel`/`views`/`duration_s`/`is_short` for `source='user'` rows using
+  the YouTube Data API, server-side — the resolution to R6's key-never-ships constraint.
+- **Requirements:** R6 (metadata), R7 (owner's pre-approval step).
+- **Dependencies:** U1 (rows exist to enrich).
+- **Files:** `scripts/seed_beta_videos.py` (add the `--enrich-pending` mode).
+- **Approach:** A new mode that selects `problem_beta_videos where source='user'
+  and status in ('pending','approved') and (channel = '' or duration_s is null)` — note it
+  includes **approved-but-unenriched** rows too (#5), so an owner who flips `status='approved'`
+  before enriching can still repair the blank card; it is not limited to `status='pending'`. It
+  batches the selected `video_id`s through `videos.list` and updates each row's `title`,
+  `channel`, `views`, `duration_s`, and `is_short` (`dur ≤ 60`).
+  - ⚠️ **Fetch `snippet`, not just `contentDetails,statistics` (#5).** The existing `enrich()` in
+    `scripts/seed_beta_videos.py` requests only `contentDetails,statistics` (duration + views) —
+    it never fetches `snippet` and never writes `title`/`channel`. `channel` is exactly what the
+    card credits, so this mode must request `snippet,contentDetails,statistics` (channel/title
+    come from `snippet`). "Reuse the existing helper" is not enough here — the part list must be
+    extended.
+  - Reuse the script's `iso_to_secs`/service-role writer. **Does not approve** — approval stays a
+    deliberate manual dashboard action (U2/R7). Idempotent: re-running skips already-filled rows;
+    a `video_id` the API no longer returns is left untouched (or logged), never crashed on.
+- **Reconciliation output (#3) + length flag (Q3):** the run **prints the full pending queue** it
+  selected (problem, video_id, submitter, age) before/after enriching. This list — not the U2
+  notification — is the authoritative "what's waiting for me" surface, so a dropped notification
+  never strands a submission. Each row shows its enriched `duration_s`, and **non-Shorts
+  (`is_short=false`) are flagged** (e.g. `⚠ 18:42`) so a compilation/long video is a one-glance
+  reject at moderation — Phase 2 allows any length (Q3), it just makes the outlier loud rather
+  than blocking it.
+- **Patterns to follow:** the existing `videos.list` enrichment + `--revalidate` mode in
+  `scripts/seed_beta_videos.py` (extend its part list to add `snippet`); env-only
+  `YOUTUBE_API_KEY`, never committed.
+- **Execution note:** server-side batch, run by the owner as part of moderation; not a runtime job.
+- **Test scenarios / verification:** run against a freshly submitted pending row → `channel`,
+  `title`, `views`, `duration_s`, `is_short` all populate (proving `snippet` is fetched); an
+  **approved-but-blank** row is also picked up and repaired (#5); re-run → no-op (idempotent); a
+  bogus/removed `video_id` → skipped and logged, run completes; quota-exhaustion (403/429) exits
+  cleanly like the seed mode so it can resume; the run prints the pending queue (#3).
+
+---
+
+## Phase 2 — Verification
+
+- **Migration:** `supabase/migrations/tests/run_rls_test.sh` green with the new `0011` assertions
+  (clamp, no impersonation, no self-approve, pending-invisible, update/delete still zero-row).
+- **Client:** `npm run build` (= `tsc -b`) + `oxlint` in `web/`; unit tests for `youtubeUrl`,
+  `submitBeta`, and `BetaSubmitDrawer` states pass, matching the `*.test.ts(x)` neighbors.
+- **End-to-end (`/ce-test-browser`):** signed-out ＋ → sign-in; signed-in ＋ → drawer; paste a
+  real Shorts URL → "pending review" toast, no card appears; run `--enrich-pending` + flip
+  `status='approved'` in the dashboard → the clip appears in the strip on reopen; confirm the
+  submission notification fired.
+- **Security spot-check:** with a signed-in session, attempt (via devtools) to insert
+  `status='approved'` or another user's `added_by` → rejected by RLS.
+
+---
+
 ## Non-goals (this plan)
 
 - **Instagram ingestion** — deferred (no public search API; ToS-hostile to scrape). Schema
@@ -282,18 +665,30 @@ create index on public.problem_beta_videos (source_catalog_id) where not deleted
   bump. Phase 1 can ship with just the top ~80–100 seeded.
 - **OQ3 — API key hygiene.** Keep the YouTube Data API key in an env var / secret, never
   committed; restrict it to YouTube Data API v3 and add a referrer/IP restriction.
-- **OQ4 — Phase-2 moderation surface.** Where the review queue lives (a hidden admin route? a
-  Supabase-dashboard-only flow to start?) is unresolved and intentionally out of Phase 1.
+- **OQ4 — Phase-2 moderation surface.** ✅ **Resolved 2026-07-13:** **Supabase-dashboard-based
+  moderation + a submission notification** (Database Webhook), no in-app queue UI — there is no
+  admin/owner concept in the app today and a solo builder at low volume does not warrant one.
+  Owner enriches (U6) then flips `status` in the Table Editor. An in-app queue is a documented
+  follow-up if volume grows. See R7 and **U1/U2/U5/U6**.
 - **OQ5 — Non-Latin / generic names.** The ~2% the query can't match (e.g. `ポテチ`) — accept as
   user-submission long tail, or add a per-problem manual-ID override list in the seed script?
 
 ## Deferred / Open Questions
 
-### From 2026-07-10 ce-doc-review
+### From 2026-07-13 ce-doc-review (Phase 2)
+
+- **No watch signal to answer DQ1 (#10, product-lens).** Deferred by choice — Phase 2 ships no
+  instrumentation. Consequence to accept knowingly: post-launch, *submission* volume is the only
+  signal, and DQ1's original question was about *watching* beta (vs. climbers' existing YouTube/IG
+  habit). Low submissions won't distinguish "feature unwanted" from "contribution path
+  undiscovered," and nothing captures whether seeded/approved betas are actually watched. If the
+  team later wants to answer this, a lightweight "beta opened" counter is the smallest probe.
 
 - **DQ1 — User demand unproven** (product-lens). The pilot retired the *technical* risk (98%
   match), not the *demand* risk: is in-app beta wanted vs. climbers' existing YouTube/IG habit?
   Consider a thin instrumented probe (e.g. a "watch beta" deep-link) before investing further.
+  - **Decision 2026-07-13:** owner accepted the demand risk — Phase 2 ships in full **without** a
+    gating instrumentation probe. Revisit if submission volume is low post-launch.
 - **DQ2 — Seeded board** (feasibility). ✅ **Resolved 2026-07-10:** seed the default board
   **Mini 2025 (layout 7)** first — top-5 benchmarks confirmed on YouTube via a dedicated
   benchmark channel; **2019 Masters** is a later run. The seed script is parametrized by board +
@@ -304,4 +699,5 @@ create index on public.problem_beta_videos (source_catalog_id) where not deleted
   auto-accept beyond the head. Ties to the specificity threshold in R1.
 - **DQ4 — Single-video sheet vs Shorts pager** (design-lens). R3 ships **single-video** for now;
   decide whether the sheet becomes a swipeable pager across a problem's betas (a structurally
-  different component).
+  different component). **Still deferred — out of Phase 2 scope** (Phase 2 is submissions +
+  moderation, not the viewing experience).

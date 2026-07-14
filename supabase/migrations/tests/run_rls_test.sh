@@ -81,4 +81,10 @@ run_case "$HERE/0009_avatars_rls.sql" "$HERE/../0008_logbook_imports.sql" "$HERE
 # Independent of the logbook/avatars chain, so it applies alone.
 run_case "$HERE/0010_problem_beta_videos_rls.sql" "$HERE/../0010_problem_beta_videos.sql"
 
+# 0011: beta USER submissions — the authenticated INSERT clamp, video_id CHECK, per-user pending
+# cap, and the source-filtered notification trigger. Alters the 0010 table, so it applies the
+# 0010 → 0011 chain.
+run_case "$HERE/0011_beta_user_submissions_rls.sql" \
+  "$HERE/../0010_problem_beta_videos.sql" "$HERE/../0011_beta_user_submissions.sql"
+
 echo "✅ ALL RLS CASES PASSED"

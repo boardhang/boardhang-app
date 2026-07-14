@@ -79,3 +79,33 @@ create policy "Users insert their own profile"
 create policy "Users update their own profile"
     on public.profiles for update to authenticated
     using (id = auth.uid()) with check (id = auth.uid());
+
+-- pg_net stub. Real Supabase provides net.http_post (the pg_net extension) for the
+-- beta-submission notification trigger in 0011. The throwaway Postgres has no pg_net, so stub a
+-- no-op that LOGS each call into net._test_calls — this lets the 0011 RLS case assert the trigger
+-- fires on a user insert but NOT on a seed insert (the WHEN source='user' filter). SECURITY
+-- DEFINER so it can log regardless of the caller's role. This is a test-harness stand-in only;
+-- pg_net must be enabled on the real Supabase project (a documented prerequisite, not a migration
+-- line — see 0011's footer).
+create schema if not exists net;
+grant usage on schema net to anon, authenticated;
+create table if not exists net._test_calls (
+    id        bigserial   primary key,
+    url       text,
+    called_at timestamptz not null default now()
+);
+-- The 0011 case counts calls as the `authenticated` role (before/after a user insert), so it
+-- needs SELECT here; the no-op logger writes via SECURITY DEFINER regardless.
+grant select on net._test_calls to anon, authenticated;
+create or replace function net.http_post(
+    url                  text,
+    body                 jsonb default '{}'::jsonb,
+    params               jsonb default '{}'::jsonb,
+    headers              jsonb default '{}'::jsonb,
+    timeout_milliseconds int   default 5000
+) returns bigint
+    language sql
+    security definer
+    set search_path = net, pg_catalog
+as $$ insert into net._test_calls (url) values (url) returning id $$;
+grant execute on function net.http_post(text, jsonb, jsonb, jsonb, int) to anon, authenticated;

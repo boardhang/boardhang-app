@@ -68,6 +68,36 @@ export function refetchBeta(id: string): void {
   void fetchBeta(id)
 }
 
+/**
+ * Submit a user beta for a problem. Inserts a PENDING user row carrying only the video_id —
+ * the 0011 RLS clamp forces source='user', status='pending', added_by=auth.uid() and empty
+ * metadata (the server enrich pass fills title/channel/views later). The row is invisible until
+ * an owner approves it, so we deliberately do NOT touch the per-problem cache: the UI shows a
+ * "pending review" affordance, never a card. Mirrors listsStore.addProblem's userId + 23505 shape.
+ */
+export async function submitBeta(sourceCatalogId: string, videoId: string): Promise<void> {
+  if (!supabase) throw new Error("Sign-in isn't set up in this build.")
+  const { data } = await supabase.auth.getSession()
+  const userId = data.session?.user.id
+  if (!userId) throw new Error('You need to be signed in to add a beta video.')
+  const { error } = await supabase.from('problem_beta_videos').insert({
+    source_catalog_id: sourceCatalogId,
+    provider: 'youtube',
+    video_id: videoId,
+    source: 'user',
+    status: 'pending',
+    added_by: userId,
+  })
+  if (error) {
+    // Partial dedupe index (0010) → this clip is already live (approved OR someone's pending) for
+    // this problem. Don't assert a *visible* row — a pending dup is invisible to the submitter.
+    if ((error as { code?: string }).code === '23505') {
+      throw new Error("This video can't be added again for this problem.")
+    }
+    throw new Error(error.message)
+  }
+}
+
 /** Test hook: clear the module-level singleton between cases. */
 export function _resetBetaCache(): void {
   cache.clear()

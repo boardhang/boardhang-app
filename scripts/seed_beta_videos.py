@@ -51,6 +51,10 @@ Examples
   # re-validate stored clips and soft-delete dead ones (freshness / seed-rot cleanup):
   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… YOUTUBE_API_KEY=… \
       python3 scripts/seed_beta_videos.py --revalidate
+
+  # Phase 2: fill metadata on USER submissions + print the pending moderation queue:
+  SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… YOUTUBE_API_KEY=… \
+      python3 scripts/seed_beta_videos.py --enrich-pending
 """
 import argparse
 import json
@@ -142,6 +146,17 @@ def search(name, suffix, key):
     } for it in data.get("items", []) if it["id"].get("videoId")]
 
 
+def _video_metrics(it):
+    """duration_s / is_short / views from one videos.list item. Shared by the seed enrich() and the
+    user-submission fetch_video_meta() so Short-detection and view-count handling can't drift."""
+    secs = iso_to_secs(it.get("contentDetails", {}).get("duration"))
+    return {
+        "duration_s": secs,
+        "is_short": secs is not None and secs <= SHORT_MAX_SECS,
+        "views": int(it.get("statistics", {}).get("viewCount") or 0),
+    }
+
+
 def enrich(cands, key):
     """Attach duration + views (one videos.list call for the whole candidate batch)."""
     if not cands:
@@ -151,12 +166,27 @@ def enrich(cands, key):
         VIDEOS_URL, {"part": "contentDetails,statistics", "id": ids, "key": key}
     ).get("items", [])}
     for c in cands:
-        it = meta.get(c["video_id"], {})
-        secs = iso_to_secs(it.get("contentDetails", {}).get("duration"))
-        c["duration_s"] = secs
-        c["is_short"] = secs is not None and secs <= SHORT_MAX_SECS
-        c["views"] = int(it.get("statistics", {}).get("viewCount") or 0)
+        c.update(_video_metrics(meta.get(c["video_id"], {})))
     return cands
+
+
+def fetch_video_meta(video_ids, key):
+    """title + channel + views + duration for a list of video_ids (videos.list, 50 ids / 1 unit).
+    Unlike enrich() this requests `snippet` too — snippet carries channelTitle/title, which the
+    user-submission enrich pass (--enrich-pending) must write and which enrich() (contentDetails,
+    statistics only) never fetched. Returns {video_id: {title, channel, views, duration_s,
+    is_short}} for ids YouTube still returns; a removed/private id is simply absent."""
+    meta = {}
+    for i in range(0, len(video_ids), 50):
+        chunk = video_ids[i:i + 50]
+        got = _yt_get(VIDEOS_URL, {"part": "snippet,contentDetails,statistics",
+                                   "id": ",".join(chunk), "key": key})
+        for it in got.get("items", []):
+            m = _video_metrics(it)
+            m["title"] = it.get("snippet", {}).get("title", "")
+            m["channel"] = it.get("snippet", {}).get("channelTitle", "")
+            meta[it["id"]] = m
+    return meta
 
 
 def pick_match(name, cands):
@@ -359,6 +389,79 @@ def run_revalidate(args, yt_key, base_url, sb_key):
     print(f"Soft-deleted {done}/{len(dead)} dead clips.")
 
 
+def _patch_row(base_url, key, row_id, payload):
+    u = f"{base_url}/rest/v1/problem_beta_videos?id=eq.{urllib.parse.quote(str(row_id))}"
+    req = Request(u, data=json.dumps(payload).encode(),
+                  headers=_sb_headers(key, {"Prefer": "return=minimal"}), method="PATCH")
+    with urlopen(req, timeout=30):
+        pass
+
+
+def _fmt_dur(secs):
+    return "  ?  " if secs is None else f"{secs // 60}:{secs % 60:02d}"
+
+
+def run_enrich_pending(args, yt_key, base_url, sb_key):
+    """Fill title/channel/views/duration_s/is_short on USER submissions from the YouTube API
+    (server-side — the key never ships to the client, so this is how a user row gets its metadata).
+    Selects rows still missing metadata, including `approved`-but-blank ones so an out-of-order
+    approve (owner flipped status before enriching) is still repairable — not just `pending`.
+    Does NOT approve; approval stays a manual dashboard action. Then prints the pending moderation
+    queue (the authoritative reconciliation list, independent of the notification), flagging
+    non-Shorts so a long compilation is a one-glance reject.
+
+    The "needs enrichment" signal is `channel = ''` ONLY — a successful videos.list always returns
+    a channelTitle, so a fetched row is done. We deliberately do NOT re-select on
+    `duration_s is null`: a live stream / premiere legitimately has no duration, and filtering on
+    it would re-fetch that row (burning a quota unit) on every run forever without ever clearing."""
+    q = ("?select=id,source_catalog_id,video_id,status"
+         "&source=eq.user&deleted=eq.false&status=in.(pending,approved)"
+         "&channel=eq.")
+    req = Request(f"{base_url}/rest/v1/problem_beta_videos{q}",
+                  headers=_sb_headers(sb_key, {"Range-Unit": "items", "Range": "0-99999"}))
+    with urlopen(req, timeout=60) as r:
+        rows = json.load(r)
+    print(f"{len(rows)} user submission(s) need enrichment.")
+
+    if rows and args.dry_run:
+        print("[dry-run] would enrich these (no API calls, no writes):")
+        for c in rows:
+            print(f"  {c['status']:8} {c['video_id']}  (problem {c['source_catalog_id']})")
+    elif rows:
+        try:
+            meta = fetch_video_meta([c["video_id"] for c in rows], yt_key)
+        except QuotaExhausted as e:
+            sys.exit(f"Quota exhausted during enrich: {e}")
+        filled = skipped = 0
+        for c in rows:
+            m = meta.get(c["video_id"])
+            if not m:  # removed/private video — leave untouched, report it
+                skipped += 1
+                print(f"  ! {c['video_id']} not returned by YouTube (removed/private?) — skipped")
+                continue
+            _patch_row(base_url, sb_key, c["id"], m)
+            filled += 1
+        print(f"Enriched {filled} row(s); {skipped} skipped (video gone).")
+
+    # Reconciliation list: every pending user clip awaiting a moderation decision. This — not the
+    # submission notification — is the authoritative "what's waiting for me" surface.
+    pq = ("?select=source_catalog_id,video_id,channel,duration_s,is_short"
+          "&source=eq.user&status=eq.pending&deleted=eq.false&order=created_at.asc")
+    req = Request(f"{base_url}/rest/v1/problem_beta_videos{pq}",
+                  headers=_sb_headers(sb_key, {"Range-Unit": "items", "Range": "0-99999"}))
+    with urlopen(req, timeout=60) as r:
+        pending = json.load(r)
+    print(f"\n── Pending moderation queue: {len(pending)} clip(s) ──")
+    for c in pending:
+        flag = "" if c.get("is_short") else "  ⚠ non-Short"
+        chan = c.get("channel") or "(unenriched)"
+        print(f"  {_fmt_dur(c.get('duration_s'))}  {c['video_id']}  {chan[:30]:30}"
+              f"  prob {c['source_catalog_id']}{flag}")
+    if pending:
+        print("Approve:  update problem_beta_videos set status='approved' where id='<id>';")
+        print("Reject :  update problem_beta_videos set status='rejected', deleted=true where id='<id>';")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--board", choices=sorted(BOARDS), default="mini2025",
@@ -369,6 +472,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="no Supabase writes")
     ap.add_argument("--revalidate", action="store_true",
                     help="check stored clips still exist; soft-delete dead ones")
+    ap.add_argument("--enrich-pending", action="store_true",
+                    help="fill title/channel/views/duration on user submissions (server-side) "
+                         "and print the pending moderation queue")
     ap.add_argument("--from-file", metavar="PATH",
                     help="insert previously-matched rows from a sidecar JSON (zero-quota "
                          "recovery after a failed write); no YouTube calls")
@@ -382,11 +488,15 @@ def main():
         sys.exit("Set YOUTUBE_API_KEY in the environment (or pass --dry-run / --from-file).")
     base_url = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
     sb_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not args.dry_run and (not base_url or not sb_key):
+    # --enrich-pending always reads the DB (even --dry-run, which just previews the queue).
+    db_needed = not args.dry_run or args.enrich_pending
+    if db_needed and (not base_url or not sb_key):
         sys.exit("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or pass --dry-run).")
 
     if args.from_file:
         run_from_file(args, base_url, sb_key)
+    elif args.enrich_pending:
+        run_enrich_pending(args, yt_key, base_url, sb_key)
     elif args.revalidate:
         run_revalidate(args, yt_key, base_url, sb_key)
     else:
