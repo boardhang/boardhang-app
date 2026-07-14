@@ -27,9 +27,10 @@ describe('extractYouTubeId', () => {
     expect(extractYouTubeId(`www.youtube.com/watch?v=${ID}`)).toBe(ID)
   })
 
-  it('accepts a bare 11-char id', () => {
-    expect(extractYouTubeId(ID)).toBe(ID)
-    expect(extractYouTubeId(`  ${ID}  `)).toBe(ID) // trimmed
+  it('rejects a bare id / 11-char word (must be a real YouTube link)', () => {
+    expect(extractYouTubeId(ID)).toBeNull() // a raw id is not a link
+    expect(extractYouTubeId('screenshots')).toBeNull() // 11-char word that matches the id charset
+    expect(extractYouTubeId('Hello_World')).toBeNull()
   })
 
   it('trims whitespace around a URL', () => {

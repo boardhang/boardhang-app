@@ -28,16 +28,15 @@ function parseUrl(raw: string): URL | null {
 }
 
 /**
- * Extract an 11-char YouTube video id from a pasted URL (or a bare id). Handles youtu.be/<id>,
- * watch?v=<id>, /shorts/<id>, /embed/<id>, /live/<id>, tolerates extra query params and
- * fragments, and returns null for non-YouTube hosts or malformed ids.
+ * Extract an 11-char YouTube video id from a pasted URL. Handles youtu.be/<id>, watch?v=<id>,
+ * /shorts/<id>, /embed/<id>, /live/<id>, tolerates extra query params and fragments, and returns
+ * null for non-YouTube hosts or malformed ids. A bare id (no URL) is intentionally NOT accepted:
+ * ordinary 11-char words match the id charset, so requiring a real YouTube link avoids stuck
+ * pending rows from a fumbled paste — real users paste share links, not raw ids.
  */
 export function extractYouTubeId(input: string): string | null {
   const trimmed = input.trim()
   if (!trimmed) return null
-
-  // A bare id pasted directly.
-  if (ID_RE.test(trimmed)) return trimmed
 
   const url = parseUrl(trimmed)
   if (!url) return null
