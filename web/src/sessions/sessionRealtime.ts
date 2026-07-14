@@ -60,16 +60,19 @@ function onNudge(author: string | undefined): void {
 }
 
 /**
- * A member joined or left: reload the roster (live avatars in SessionBar) and, on a join, toast
- * each newly-added member by name — skipping ourselves. member-left just reloads (avatars shrink;
- * no toast). Best-effort — a failed reload leaves the roster on its last-good state.
+ * A member joined or left: reload the roster (live avatars in SessionBar) and toast the delta by
+ * name — "<name> joined" for new members, "<name> left" for departed ones — skipping ourselves.
+ * Toasting off the actual roster delta (not the event name) means a burst that adds and removes
+ * in one reload still narrates both. Best-effort — a failed reload keeps the last-good roster.
  */
-async function onMembershipChange(event: string): Promise<void> {
-  const joined = await reloadActiveRoster()
-  if (event !== MEMBER_JOINED_EVENT) return
+async function onMembershipChange(): Promise<void> {
+  const { joined, left } = await reloadActiveRoster()
   const self = getSessionsSnapshot().selfId
   for (const m of joined) {
     if (m.userId !== self) toast(`${memberLabel(m)} joined the session`)
+  }
+  for (const m of left) {
+    if (m.userId !== self) toast(`${memberLabel(m)} left the session`)
   }
 }
 
@@ -113,11 +116,11 @@ export function activateSessionRealtime(sessionId: string | null): void {
       })
       ch.on('broadcast', { event: MEMBER_JOINED_EVENT }, () => {
         if (myToken !== activationToken) return
-        void onMembershipChange(MEMBER_JOINED_EVENT)
+        void onMembershipChange()
       })
       ch.on('broadcast', { event: MEMBER_LEFT_EVENT }, () => {
         if (myToken !== activationToken) return
-        void onMembershipChange(MEMBER_LEFT_EVENT)
+        void onMembershipChange()
       })
       ch.subscribe()
       channel = ch

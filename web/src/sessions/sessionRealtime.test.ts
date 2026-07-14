@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
   refetchCalls: 0,
   rosterReloads: 0,
   joined: [] as RosterMember[],
+  left: [] as RosterMember[],
   selfId: 'self' as string | null,
   toasts: [] as string[],
 }))
@@ -40,7 +41,7 @@ vi.mock('./memberAscentsStore', () => ({
 vi.mock('./sessionsStore', () => ({
   reloadActiveRoster: () => {
     h.rosterReloads += 1
-    return Promise.resolve(h.joined)
+    return Promise.resolve({ joined: h.joined, left: h.left })
   },
   getSessionsSnapshot: () => ({ selfId: h.selfId }),
 }))
@@ -105,6 +106,7 @@ beforeEach(() => {
   h.refetchCalls = 0
   h.rosterReloads = 0
   h.joined = []
+  h.left = []
   h.selfId = 'self'
   h.toasts = []
 })
@@ -227,8 +229,18 @@ describe('sessionRealtime', () => {
     expect(h.toasts).toEqual([])
   })
 
-  it('member-left reloads the roster without toasting', async () => {
-    h.joined = [] // nobody new on a leave
+  it('member-left reloads the roster and toasts the departed member by name', async () => {
+    h.left = [{ userId: 'other', displayName: 'Bob', handle: null, avatarUrl: null, joinedAt: '' }]
+    activateSessionRealtime('S1')
+    await flush()
+    fire('member-left')
+    await flush()
+    expect(h.rosterReloads).toBe(1)
+    expect(h.toasts).toEqual(['Bob left the session'])
+  })
+
+  it('does not toast our own departure', async () => {
+    h.left = [{ userId: 'self', displayName: 'Me', handle: null, avatarUrl: null, joinedAt: '' }]
     activateSessionRealtime('S1')
     await flush()
     fire('member-left')

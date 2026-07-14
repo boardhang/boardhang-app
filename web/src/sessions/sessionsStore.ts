@@ -215,16 +215,22 @@ async function loadRoster(session: Session, gen: number): Promise<void> {
 
 /**
  * Reload the active session's roster in response to a realtime membership nudge (0012) — drives
- * the live member avatars in SessionBar. Returns the roster entries that are NEW since the
- * previous roster (the joiners a "joined" toast should name); empty when there is no active
- * session or nobody new joined (e.g. a member-left nudge).
+ * the live member avatars in SessionBar. Returns the delta vs the previous roster: `joined` are
+ * new entries (for a "joined" toast), `left` are entries that disappeared (for a "left" toast —
+ * captured from the OLD roster, since they're gone from the reloaded one). Both empty when there
+ * is no active session.
  */
-export async function reloadActiveRoster(): Promise<SessionMember[]> {
+export async function reloadActiveRoster(): Promise<{ joined: SessionMember[]; left: SessionMember[] }> {
   const active = state.activeSession
-  if (!active) return []
-  const before = new Set(state.roster.map((m) => m.userId))
+  if (!active) return { joined: [], left: [] }
+  const before = state.roster
+  const beforeIds = new Set(before.map((m) => m.userId))
   await loadRoster(active, generation)
-  return state.roster.filter((m) => !before.has(m.userId))
+  const afterIds = new Set(state.roster.map((m) => m.userId))
+  return {
+    joined: state.roster.filter((m) => !beforeIds.has(m.userId)),
+    left: before.filter((m) => !afterIds.has(m.userId)),
+  }
 }
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
