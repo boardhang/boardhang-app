@@ -23,7 +23,7 @@ execution: code
 
 ### Summary
 
-Session sharing already renders a QR of the join URL (`ShareSession`), but the joiner must use their phone's camera app to scan it. This adds an in-app scanner-first launcher: the catalog's single "Start or join" button opens a centered dialog **straight to the camera** — a friend's session QR in frame auto-joins — with "Start your own session" demoted below the viewfinder as the host path. The boards overview offers the same launcher camera-only (no board context to host in). The scanner is a thin camera→token→navigate layer; auth, consent, and joining stay owned by `/session/join/$token`.
+Session sharing already renders a QR of the join URL (`ShareSession`), but the joiner must use their phone's camera app to scan it. This adds an in-app scanner-first launcher: the catalog's single "Session" button opens a centered dialog **straight to the camera** — a friend's session QR in frame auto-joins — with "Start your own session" demoted below the viewfinder as the host path. The boards overview offers the same launcher camera-only (no board context to host in). The scanner is a thin camera→token→navigate layer; auth, consent, and joining stay owned by `/session/join/$token`.
 
 ### Problem Frame
 
@@ -33,7 +33,7 @@ The joiner is standing at the wall next to the sharer, often already inside the 
 
 **Entry & visibility**
 
-- R1. The catalog `StartBar` shows a single "Start or join" button that opens the launcher; it renders only when no session is active (the existing `StartBar`/`ActiveBar` swap gives this for free). The boards overview shows a "Scan to join a session" button (camera-only launcher) that hides while a session is active.
+- R1. The catalog `StartBar` shows a single "Session" button that opens the launcher; it renders only when no session is active (the existing `StartBar`/`ActiveBar` swap gives this for free). The boards overview shows a "Scan to join a session" button (camera-only launcher) that hides while a session is active.
 - R2. The launcher's join path is usable while signed out — the join route owns sign-in (token survives via its existing sessionStorage resume). Only the host action ("Start your own session") requires sign-in; it is disabled with a hint when signed out.
 
 **Launcher surface**
@@ -104,7 +104,7 @@ stateDiagram-v2
     scanning --> [*] : user closes — tear down stream
 ```
 
-Flow across components: entry button (`StartBar` "Start or join" / `MyBoards` "Scan to join") → `ScanToJoin` dialog (lazy scanner + optional host action) → `parseJoinUrl` → `navigate({ to: '/session/join/$token' })` → existing `JoinSession` route (sign-in → consent → RPC → catalog). The host action, when present, calls the caller's `onStart` (createSession) and closes the dialog.
+Flow across components: entry button (`StartBar` "Session" / `MyBoards` "Scan to join") → `ScanToJoin` dialog (lazy scanner + optional host action) → `parseJoinUrl` → `navigate({ to: '/session/join/$token' })` → existing `JoinSession` route (sign-in → consent → RPC → catalog). The host action, when present, calls the caller's `onStart` (createSession) and closes the dialog.
 
 ---
 
@@ -158,9 +158,9 @@ Flow across components: entry button (`StartBar` "Start or join" / `MyBoards` "S
 - **Requirements:** R1, R2, KTD-7.
 - **Dependencies:** U3.
 - **Files:** `web/src/catalog/SessionBar.tsx`, `web/src/catalog/SessionBar.test.tsx`, `web/src/shell/MyBoards.tsx`, `web/src/shell/MyBoards.test.tsx`.
-- **Approach:** `StartBar`: a single "Start or join" button opens `<ScanToJoin>` with `onStart` (the existing `createSession` flow, which closes the dialog and opens Share), `starting`, and `canStart={signedIn}` — so joining works signed-out and hosting is gated. The old separate scan icon + "Start session" button are replaced. `MyBoards`: a "Scan to join a session" button (`ScanToJoinButton`, camera-only) near the top; the component imports `useSessions` (from `web/src/sessions/sessionsStore.ts`) to hide it while a session is active — signed-out users still see it (R2).
+- **Approach:** `StartBar`: a single "Session" button opens `<ScanToJoin>` with `onStart` (the existing `createSession` flow, which closes the dialog and opens Share), `starting`, and `canStart={signedIn}` — so joining works signed-out and hosting is gated. The old separate scan icon + "Start session" button are replaced. `MyBoards`: a "Scan to join a session" button (`ScanToJoinButton`, camera-only) near the top; the component imports `useSessions` (from `web/src/sessions/sessionsStore.ts`) to hide it while a session is active — signed-out users still see it (R2).
 - **Test scenarios:**
-  - StartBar: "Start or join" opens the launcher (scanner surface visible); "Start your own session" inside it triggers `createSession` and opens Share; that host action is disabled when signed out; the "Start or join" button is absent when a session is active (`ActiveBar` swap).
+  - StartBar: "Session" opens the launcher (scanner surface visible); "Start your own session" inside it triggers `createSession` and opens Share; that host action is disabled when signed out; the "Session" button is absent when a session is active (`ActiveBar` swap).
   - MyBoards: affordance visible with no active session (signed in and signed out); hidden while a session is active.
 - **Verification:** both test files green; manual check that the boards overview affordance doesn't disturb the zero-boards empty state.
 

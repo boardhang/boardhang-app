@@ -85,7 +85,7 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   unchanged. Dimmed when the projection is paused/stale so it never shows crisp "who" the filter
   itself no longer trusts), `catalog/SessionBar.tsx`
   (in-context bar: rename, members, refresh, Share, Leave;
-  a single **Start or join** button when solo), `sessions/ShareSession.tsx` (QR +
+  a single **Session** button when solo), `sessions/ShareSession.tsx` (QR +
   copy/share of the join link), `shell/SessionPill.tsx` (global pill on every non-catalog route,
   with roster + owner remove-member + Leave), `sessions/JoinSession.tsx` (`/session/join/$token`
   — sign-in → consent → join → land in the board catalog).
@@ -101,7 +101,7 @@ doesn't need their phone's camera app — a friend's session QR in frame **auto-
 **decode → parse → navigate** layer: it lifts the token via `parseJoinUrl` and navigates to the
 existing `/session/join/$token` route, which still owns consent and the join RPC unchanged.
 
-- **Scanner-first, host demoted.** The catalog's single "Start or join" button opens the launcher
+- **Scanner-first, host demoted.** The catalog's single "Session" button opens the launcher
   on the camera (joining is the time-sensitive at-the-wall act); "Start your own session" sits
   below an "or" divider as the host path. `ScanToJoin` takes an optional `onStart`/`starting`/
   `canStart` — the boards overview (`shell/MyBoards.tsx`, via `ScanToJoinButton`) omits it and is

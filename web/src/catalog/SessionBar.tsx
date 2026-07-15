@@ -67,7 +67,7 @@ function StartBar({
 }) {
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // The single "Start or join" button opens the scanner-first launcher: it opens on the camera to
+  // The single "Session" button opens the scanner-first launcher: it opens on the camera to
   // join, with "Start your own session" as the demoted host path inside the same dialog.
   const [open, setOpen] = useState(false)
 
@@ -95,7 +95,7 @@ function StartBar({
       <div className="flex items-center gap-2">
         {error && <span className="truncate text-xs text-destructive">{error}</span>}
         <Button size="sm" onClick={() => setOpen(true)}>
-          Start or join
+          Session
         </Button>
 
         <ScanToJoin
