@@ -8,13 +8,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import qrcode from 'qrcode-generator'
 import { Check, Copy, RotateCw } from 'lucide-react'
 import { getInviteToken } from './sessionsStore'
+import { buildJoinUrl } from './joinUrl'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-
-function buildJoinUrl(token: string): string {
-  return `${window.location.origin}/session/join/${token}`
-}
 
 /** QR of the join URL. On any generation failure, falls back to the copyable text link so
  *  the Share sheet is never a dead end (U7). Rendered on a white card so it scans in both
