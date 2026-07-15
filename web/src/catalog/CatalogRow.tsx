@@ -4,13 +4,16 @@
 // the detail pager (U11). In a collaboration session a third row carries the "sends
 // pill" — who in the crew has sent this problem (see useMemberSenders).
 
-import { BadgeCheck, CheckCircle2, Heart } from 'lucide-react'
+import { useRef } from 'react'
+import { BadgeCheck, CheckCircle2, Heart, Plus } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import { CatalogBoard } from '../board/CatalogBoard'
 import type { CatalogProblem } from './catalogSync'
 import type { SenderChip } from './useMemberSenders'
 import { ProblemMeta } from './ProblemMeta'
 import { MemberAvatar } from '../sessions/MemberAvatar'
+import { useSessions } from '../sessions/sessionsStore'
+import { useSwipeToQueue } from './useSwipeToQueue'
 import { AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 
@@ -59,12 +62,46 @@ export function CatalogRow({
   // (empty map, no pill), the local self-check stays as the fallback so a known send is never
   // hidden with nowhere to show.
   const selfInPill = senders?.some((s) => s.isSelf) ?? false
+
+  // Swipe-left-to-queue (U7): active only while an active session targets THIS board. Reads the
+  // sessions store directly (the useMemberSenders no-prop-drill idiom), so the gesture stays inert
+  // and adds no behavior when the crew isn't in a session on this board.
+  const { activeSession } = useSessions()
+  const swipeEnabled = !!activeSession && activeSession.boardLayoutId === board.layoutId
+  const rowRef = useRef<HTMLButtonElement>(null)
+  const swipe = useSwipeToQueue(rowRef, {
+    sourceCatalogId: problem.source_catalog_id,
+    boardLayoutId: board.layoutId,
+    enabled: swipeEnabled,
+  })
+
   return (
-    <button
-      type="button"
-      onClick={() => onSelect?.(problem)}
-      className="flex w-full items-center gap-3 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-accent/50 active:bg-accent"
-    >
+    <div className="relative overflow-hidden">
+      {/* Queue action revealed behind the row as it slides left (decorative; the swipe itself and
+          the sonner confirmation convey the action). */}
+      {swipeEnabled && (
+        <div
+          aria-hidden
+          className="absolute inset-y-0 right-0 flex items-center gap-1.5 bg-primary px-4 text-sm font-semibold text-primary-foreground"
+        >
+          <Plus className="size-4" />
+          Queue
+        </div>
+      )}
+      <button
+        ref={rowRef}
+        type="button"
+        onClick={() => onSelect?.(problem)}
+        style={
+          swipeEnabled
+            ? {
+                transform: `translateX(${swipe.offset}px)`,
+                transition: swipe.offset === 0 ? 'transform 0.2s ease-out' : 'none',
+              }
+            : undefined
+        }
+        className="relative flex w-full items-center gap-3 border-b border-border/50 bg-background px-3 py-2.5 text-left transition-colors hover:bg-accent/50 active:bg-accent"
+      >
       {showThumbnail && (
         <div className="w-[72px] shrink-0">
           <CatalogBoard board={board} holds={problem.holds} highlightHolds={highlightHolds} />
@@ -120,6 +157,7 @@ export function CatalogRow({
       <span className="shrink-0 rounded-md bg-secondary px-2.5 py-1 text-sm font-bold tabular-nums text-secondary-foreground">
         {problem.grade}
       </span>
-    </button>
+      </button>
+    </div>
   )
 }
