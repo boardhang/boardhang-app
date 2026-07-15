@@ -90,6 +90,51 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   remove-member + Leave), `sessions/JoinSession.tsx` (`/session/join/$token` — sign-in →
   consent → join → land in the board catalog).
 
+## Session queue (playlist)
+
+A session also carries a shared, ordered **queue** of problems the crew wants to try — its
+short-term memory for "what's next", distinct from the sent-status projection above. Any member
+adds, reorders, checks off, and removes; changes push to co-members over the session's existing
+private Broadcast channel.
+
+Backend: [`supabase/migrations/0015_session_queue.sql`](../supabase/migrations/0015_session_queue.sql).
+
+- **`session_queue`** — one row per queued problem occurrence: `session_id` (FK, cascade),
+  `source_catalog_id`, `board_layout_id`, `added_by`, `position`, lifecycle `done_at` / `done_by`,
+  soft-delete `deleted`. Modeled on `list_problems` (0003) plus ordering and a done lifecycle.
+- **Lifecycle** — *active* (`done_at` null) / *done* (`done_at` set, kept in a "Done" group for
+  the life of the session) / *removed* (`deleted`). A partial unique index on
+  `(session_id, source_catalog_id) WHERE deleted = false AND done_at IS NULL` makes a problem
+  active at most once, while allowing a checked-off problem to be re-added as a fresh active item.
+- **Ordering** — integer `position` among active rows; every read sorts `position, created_at,
+  id` (a deterministic tiebreak, so an add racing a reorder still resolves to one identical order
+  on every client). Reorder is one `SECURITY DEFINER` RPC
+  `reorder_session_queue(p_session_id, p_ordered_ids)` that rewrites positions in a single
+  transaction. Because a DEFINER RPC bypasses RLS, it both checks caller membership **and**
+  constrains the write to `session_id = p_session_id` — a member of one session cannot reorder
+  another's rows.
+- **Attribution is server-authoritative** — `added_by` is pinned on INSERT and immutable on
+  UPDATE; `done_by` is pinned to the checker at check-off (a `BEFORE UPDATE` trigger). A member
+  cannot spoof who added or checked off an item.
+- **RLS** — members-only read/write via `is_session_member`; no DELETE policy (removal is a
+  soft-delete UPDATE). Access goes **direct through RLS** (no projection RPC) — the queue has no
+  cross-user privacy constraint, unlike `ascents`.
+- **Realtime** — a data-free `queue-changed` broadcast on the row's own `session:<id>` channel
+  (reusing 0012's `realtime.messages` receive policy — no new policy); clients debounce-refetch.
+  Because Broadcast is best-effort, the store also reconciles on foreground, active-session
+  change, and reconnect, so a dropped nudge never strands a stale queue.
+
+Client: `sessions/queueStore.ts` (reactive store + optimistic mutations), `sessions/QueueDrawer.tsx`
++ `QueueItemRow.tsx` (the drawer, opened from `SessionBar` / `SessionPill`),
+`sessions/useDragReorder.ts` (touch drag; per-row up/down controls are the pointer/keyboard path),
+`catalog/ProblemDetailAddToQueue.tsx` (add from a problem), `catalog/useSwipeToQueue.ts` (swipe a
+catalog row left to add). The sent-marker on a queue row reuses `useMemberSenders`.
+
+**Persistence dependency (load-bearing):** `session_queue.session_id` is `ON DELETE CASCADE`,
+which never fires today (sessions are only soft-deleted). If the deferred hard-delete sweep of
+expired sessions ever ships, it must preserve or relocate queue rows first — a future sessions
+logbook is intended to read queue history, and the cascade would otherwise erase it.
+
 ## Security posture (read before changing)
 
 - **`invite_token` is a bearer capability.** Anyone holding the link/QR can join. v1 revokes
@@ -104,10 +149,11 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
 
 ## v1 / v2 boundary
 
-**v1 (this):** on-demand pull (open / foreground / manual refresh); static roster;
+**v1 (this):** on-demand pull (open / foreground / manual refresh) for the status projection;
+realtime `queue-changed` / sent-status nudges; a shared session queue (playlist); static roster;
 board-scoped; status-only projection.
 
-**Deferred to v2:** realtime cross-member updates and online-now presence; shared "crew
-projects" list; friend graph / standing groups; multi-board sessions; iOS; member avatars;
-a scheduled hard-delete sweep of expired sessions (v1 makes them inert via the RPC guards);
-`invite_token` rotation.
+**Deferred to v2:** online-now presence; a sessions logbook (post-session history, reading queue
+rows); friend graph / standing groups; multi-board sessions; iOS; member avatars; a scheduled
+hard-delete sweep of expired sessions (v1 makes them inert via the RPC guards — a sweep must
+preserve `session_queue` rows first); `invite_token` rotation.
