@@ -108,9 +108,18 @@ alter table public.session_queue enable row level security;
 create policy "Members read the queue"
     on public.session_queue for select to authenticated
     using (public.is_session_member(session_id, auth.uid()));
+-- A queue item is always created ACTIVE and attributed to the caller: `added_by = auth.uid()`,
+-- and `done_at`/`done_by` must be null on insert. Without the done-column clause a member could
+-- INSERT a row with a forged `done_by` (the attribution trigger below pins it only on UPDATE),
+-- spoofing who checked an item off. Check-off happens through UPDATE, where the trigger pins it.
 create policy "Members add to the queue"
     on public.session_queue for insert to authenticated
-    with check (public.is_session_member(session_id, auth.uid()) and added_by = auth.uid());
+    with check (
+        public.is_session_member(session_id, auth.uid())
+        and added_by = auth.uid()
+        and done_at is null
+        and done_by is null
+    );
 create policy "Members edit the queue"
     on public.session_queue for update to authenticated
     using (public.is_session_member(session_id, auth.uid()))

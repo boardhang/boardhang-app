@@ -117,6 +117,24 @@ begin
     raise notice 'PASS: done_by is pinned to auth.uid() at check-off';
 end $$;
 
+-- INSERT-time forge: a member cannot create a row pre-marked done or attributed to someone else.
+-- The INSERT policy requires done_at IS NULL AND done_by IS NULL — check-off happens only via
+-- UPDATE, where the attribution trigger pins done_by to the caller.
+select set_config('test.uid', :'A', false);
+do $$
+begin
+    begin
+        insert into public.session_queue
+            (session_id, source_catalog_id, added_by, position, done_at, done_by)
+        values ('11111111-1111-1111-1111-111111111111', 'prob-forge',
+                'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 5, now(),
+                'dddddddd-dddd-dddd-dddd-dddddddddddd');
+        raise exception 'FAIL: a member inserted a row with a forged done_at/done_by';
+    exception when insufficient_privilege then
+        raise notice 'PASS: INSERT with a non-null done_at/done_by is denied (no attribution forge)';
+    end;
+end $$;
+
 -- ── (D) reorder_session_queue is session-scoped (KTD3a) ──────────────────────────
 reset role;
 insert into public.session_queue (id, session_id, source_catalog_id, added_by, position) values

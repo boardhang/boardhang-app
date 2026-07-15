@@ -37,9 +37,12 @@ export function computeTargetIndex(
   return Math.max(0, Math.min(count - 1, startIndex + steps))
 }
 
-/** Move the item at `from` to index `to`, returning a new array. Same-slot is the same reference. */
+/** Move the item at `from` to index `to`, returning a new array. Same-slot is the same reference.
+ *  Out-of-range `from`/`to` return the input unchanged, so a stale index can never splice an
+ *  `undefined` id into the order (defensive against a list that shrank mid-drag). */
 export function reorderIds(ids: string[], from: number, to: number): string[] {
   if (from === to) return ids
+  if (from < 0 || from >= ids.length || to < 0 || to >= ids.length) return ids
   const next = [...ids]
   const [moved] = next.splice(from, 1)
   next.splice(to, 0, moved)
@@ -149,13 +152,19 @@ export function useDragReorder(
     const onEnd = (): void => {
       if (itemId === null) return
       const didEngage = engaged
-      const from = startIndex
-      const to = target
+      const movedId = itemId
       if (didEngage) suppressNextClick()
       reset()
-      if (didEngage && to !== from) {
-        optsRef.current.onReorder(reorderIds(optsRef.current.ids, from, to))
-      }
+      if (!didEngage) return
+      // Resolve `from` against the LIVE id list, not the touchstart snapshot: the queue mutates over
+      // the session's realtime channel, so a co-member's add/remove/reorder during the drag can have
+      // shifted the list. Bail if the dragged row left the list mid-drag; clamp `to` to the current
+      // length so a shrunk list can't index past the end.
+      const liveIds = optsRef.current.ids
+      const from = liveIds.indexOf(movedId)
+      if (from < 0) return
+      const to = Math.min(target, liveIds.length - 1)
+      if (to !== from) optsRef.current.onReorder(reorderIds(liveIds, from, to))
     }
 
     list.addEventListener('touchstart', onStart, { passive: true })
@@ -167,6 +176,12 @@ export function useDragReorder(
       list.removeEventListener('touchmove', onMove)
       list.removeEventListener('touchend', onEnd)
       list.removeEventListener('touchcancel', onEnd)
+      // If the effect re-runs mid-drag (e.g. a co-member removal drops the active count so `enabled`
+      // flips false), no touchend will fire — clear any lingering drag state so the row isn't left
+      // stuck visually lifted.
+      setDraggingId(null)
+      setOffsetY(0)
+      setTargetIndex(null)
     }
   }, [opts.enabled, listRef])
 

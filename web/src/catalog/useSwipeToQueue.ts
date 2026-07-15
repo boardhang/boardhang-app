@@ -158,7 +158,11 @@ export function useSwipeToQueue(
       }
       const horizontal = axis === 'horizontal'
       const trigger = horizontal && dxNow <= -SWIPE_TRIGGER
-      if (horizontal) suppressNextClick()
+      // Swallow the synthesized tap-open ONLY when the swipe actually fires the add. Axis commits at
+      // just SWIPE_AXIS_LOCK (10px), so a near-tap with a little horizontal drift is "horizontal"
+      // without ever reaching the trigger — suppressing its click would leave it neither queuing nor
+      // opening (a dead gesture). A sub-trigger horizontal drift snaps back and still opens on tap.
+      if (trigger) suppressNextClick()
       clear()
       setOffset(0)
       setArmed(false)
