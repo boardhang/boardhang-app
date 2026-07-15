@@ -41,6 +41,12 @@ export interface QueueItemRowProps {
   onUnCheck?: () => void
   onRemove?: () => void
   onMove?: (dir: -1 | 1) => void
+  /** U5 drag state: this row is the one being dragged — it lifts and follows the finger. */
+  isDragging?: boolean
+  /** Live vertical translate for the dragged row (px); ignored unless `isDragging`. */
+  dragOffsetY?: number
+  /** Show the drop indicator above this row — it marks where a dragged row will land. */
+  showDropIndicator?: boolean
 }
 
 export function QueueItemRow({
@@ -55,12 +61,25 @@ export function QueueItemRow({
   onUnCheck,
   onRemove,
   onMove,
+  isDragging = false,
+  dragOffsetY = 0,
+  showDropIndicator = false,
 }: QueueItemRowProps) {
   const name = problem?.name ?? 'this climb'
   const isDone = variant === 'done'
 
   return (
-    <li className={cn('flex items-center gap-1 border-b border-border/50 py-1.5', isDone && 'opacity-70')}>
+    <li
+      style={isDragging ? { transform: `translateY(${dragOffsetY}px)` } : undefined}
+      className={cn(
+        'flex items-center gap-1 border-b border-border/50 py-1.5',
+        isDone && 'opacity-70',
+        // The row currently in the drop slot carries a top accent marking where the drag lands.
+        showDropIndicator && 'border-t-2 border-t-primary',
+        // The dragged row lifts above the list and follows the finger (no snap-back transition).
+        isDragging && 'relative z-10 rounded-md bg-background shadow-lg',
+      )}
+    >
       {variant === 'active' && (
         // Drag handle placeholder. U5 (useDragReorder) attaches the touch-drag gesture to the
         // `data-queue-drag-handle` element; until then it is inert and aria-hidden, and the

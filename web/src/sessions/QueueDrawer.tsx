@@ -10,7 +10,7 @@
 // Rendered only when a session is active on this board: SessionBar mounts it on the board catalog
 // (a same-route ?problem update); SessionPill mounts it off-catalog (navigate to the board first).
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ListMusic } from 'lucide-react'
 import { toast } from 'sonner'
 import type { CatalogBoardDef } from '../board/boards'
@@ -20,6 +20,7 @@ import { addProblem, checkOff, removeItem, reorder, unCheck, useSessionQueue } f
 import type { QueueItem } from './queueTypes'
 import { useSessions } from './sessionsStore'
 import { QueueItemRow } from './QueueItemRow'
+import { useDragReorder } from './useDragReorder'
 import { Badge } from '@/components/ui/badge'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -50,6 +51,7 @@ export function QueueDrawer({ board, onOpenProblem, triggerClassName }: QueueDra
 
   const [open, setOpen] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
+  const activeListRef = useRef<HTMLUListElement>(null)
   const [problemsById, setProblemsById] = useState<Map<string, CatalogProblem>>(new Map())
 
   // Resolve queued ids → catalog titles/grades (board-agnostic, offline IndexedDB lookup). Keyed
@@ -73,9 +75,23 @@ export function QueueDrawer({ board, onOpenProblem, triggerClassName }: QueueDra
     }
   }, [idsKey])
 
+  const nameOf = (id: string) => problemsById.get(id)?.name ?? 'this climb'
+
+  // Touch drag-to-reorder (U5), bound to the active list. Only a press starting on a row's drag
+  // handle engages; a drop into a new slot emits the new order (a same-slot drop is a no-op).
+  // Declared before the `sessionForBoard` guard so the hook order is stable across renders.
+  const drag = useDragReorder(activeListRef, {
+    ids: activeItems.map((i) => i.id),
+    enabled: activeItems.length > 1,
+    onReorder: (nextIds) => {
+      const movedId = drag.draggingId
+      const moved = activeItems.find((i) => i.id === movedId)
+      submitReorder(nextIds, nameOf(moved?.sourceCatalogId ?? ''), nextIds.indexOf(movedId ?? '') + 1)
+    },
+  })
+
   if (!sessionForBoard) return null
 
-  const nameOf = (id: string) => problemsById.get(id)?.name ?? 'this climb'
   const count = activeItems.length
 
   const openRow = (item: QueueItem) => {
@@ -119,6 +135,14 @@ export function QueueDrawer({ board, onOpenProblem, triggerClassName }: QueueDra
       .catch(() => toast.error(QUEUE_WRITE_ERROR))
   }
 
+  // Shared reorder submit for both paths (up/down controls + U5 drag): optimistic RPC in the store,
+  // rollback-to-server-order on failure surfaced as the same error toast as every other write.
+  const submitReorder = (nextIds: string[], name: string, position: number) => {
+    void reorder(nextIds)
+      .then(() => setLiveMessage(`${name} moved to position ${position}`))
+      .catch(() => toast.error(QUEUE_WRITE_ERROR))
+  }
+
   const handleMove = (item: QueueItem, dir: -1 | 1) => {
     const ids = activeItems.map((i) => i.id)
     const idx = ids.indexOf(item.id)
@@ -126,10 +150,7 @@ export function QueueDrawer({ board, onOpenProblem, triggerClassName }: QueueDra
     if (idx < 0 || target < 0 || target >= ids.length) return
     const next = [...ids]
     ;[next[idx], next[target]] = [next[target], next[idx]]
-    const name = nameOf(item.sourceCatalogId)
-    void reorder(next)
-      .then(() => setLiveMessage(`${name} moved to position ${target + 1}`))
-      .catch(() => toast.error(QUEUE_WRITE_ERROR))
+    submitReorder(next, nameOf(item.sourceCatalogId), target + 1)
   }
 
   const isEmpty = activeItems.length === 0 && doneItems.length === 0
@@ -171,7 +192,7 @@ export function QueueDrawer({ board, onOpenProblem, triggerClassName }: QueueDra
           ) : (
             <>
               {activeItems.length > 0 && (
-                <ul className="mb-1">
+                <ul ref={activeListRef} className="mb-1">
                   {activeItems.map((item, i) => (
                     <QueueItemRow
                       key={item.id}
@@ -185,6 +206,9 @@ export function QueueDrawer({ board, onOpenProblem, triggerClassName }: QueueDra
                       onCheckOff={() => handleCheckOff(item)}
                       onRemove={() => handleRemove(item)}
                       onMove={(dir) => handleMove(item, dir)}
+                      isDragging={drag.draggingId === item.id}
+                      dragOffsetY={drag.offsetY}
+                      showDropIndicator={drag.draggingId !== null && drag.targetIndex === i && drag.draggingId !== item.id}
                     />
                   ))}
                 </ul>
