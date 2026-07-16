@@ -18,6 +18,7 @@ import { holdSetContext, isClimbable } from '../board/holdSetMembership'
 import { CatalogList } from './CatalogList'
 import { FilterSheet } from './FilterSheet'
 import { FilterPillBar } from './FilterPillBar'
+import { GradeRangeSlider } from './GradeRangeSlider'
 import { SessionBar } from './SessionBar'
 import { RecentsSheet } from './RecentsSheet'
 import { LastOpenedBar } from './LastOpenedBar'
@@ -168,6 +169,12 @@ export function CatalogScreen() {
     return idx.length ? [Math.min(...idx), Math.max(...idx)] : [0, FONT_GRADES.length - 1]
   }, [problems])
 
+  // The always-visible header slider only makes sense once the slab has produced a real
+  // range to drag: hide it while cold (no problems yet — the empty-slab fallback above is
+  // the full scale, not a real span) and on a single-grade slab (nothing to narrow). The
+  // drawer's copy stays regardless, so grade is never unreachable.
+  const showGradeSlider = problems.length > 0 && gradeSpan[1] > gradeSpan[0]
+
   // Installed-hold-set climbable check. The raw string is read in render (boardStore
   // re-renders this component when it changes) and is a memo dep, so toggling installed
   // sets re-derives the filter without relying on a coincidental re-render.
@@ -285,13 +292,26 @@ export function CatalogScreen() {
     <div className="flex flex-1 flex-col">
       {headerFilterSlot &&
         createPortal(
-          <FilterPillBar
-            filters={filters}
-            onChange={setFilters}
-            inSession={sessionForBoard !== null}
-            statusReady={statusReady}
-            boardLists={boardLists}
-          />,
+          <>
+            <FilterPillBar
+              filters={filters}
+              onChange={setFilters}
+              inSession={sessionForBoard !== null}
+              statusReady={statusReady}
+              boardLists={boardLists}
+            />
+            {/* Always-visible grade range: adjust the band without opening the filter
+                sheet. Commit-on-release (GradeRangeSlider) so the visible list re-filters
+                once per drag, not per pixel. Shares filters.gradeRange with the sheet's
+                copy, so the two stay in lockstep. */}
+            {showGradeSlider && (
+              <GradeRangeSlider
+                value={filters.gradeRange}
+                span={gradeSpan}
+                onCommit={(gradeRange) => setFilters({ ...filters, gradeRange })}
+              />
+            )}
+          </>,
           headerFilterSlot,
         )}
       {/* Pull-to-refresh indicator: a zero-height strip at the top of the scroll content

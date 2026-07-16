@@ -10,7 +10,7 @@ import { useId, useState } from 'react'
 import { ChevronRight, RefreshCw } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import type { SavedList } from '../lists/listsTypes'
-import { FONT_GRADES } from '../board/grades'
+import { GradeRangeSlider } from './GradeRangeSlider'
 import { HoldFilterPicker } from './HoldFilterPicker'
 import { MemberStatusRow } from './MemberStatusRow'
 import { useSessionFilterRows } from './useSessionFilterRows'
@@ -31,7 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Slider } from '@/components/ui/slider'
 import { Toggle } from '@/components/ui/toggle'
 import { cn } from '@/lib/utils'
 
@@ -96,7 +95,6 @@ export function FilterControls({
   const statusHintId = useId()
   const toggleStatus = (k: StatusKey, active: boolean) =>
     set({ statusFilters: active ? [...state.statusFilters, k] : state.statusFilters.filter((x) => x !== k) })
-  const range = state.gradeRange ?? gradeSpan
   const secondaryOptions = SORT_KEYS.filter(
     (k) => sortDimension(k) !== sortDimension(state.sortPrimary),
   )
@@ -148,17 +146,11 @@ export function FilterControls({
         </Field>
       </div>
 
-      <Field label={`Grade · ${FONT_GRADES[range[0]]} – ${FONT_GRADES[range[1]]}`}>
-        <Slider
-          aria-label="Grade range"
-          min={gradeSpan[0]}
-          max={gradeSpan[1]}
-          step={1}
-          value={[range[0], range[1]]}
-          onValueChange={(value) => {
-            const [lo, hi] = value as number[]
-            set({ gradeRange: lo === gradeSpan[0] && hi === gradeSpan[1] ? null : [lo, hi] })
-          }}
+      <Field label="Grade">
+        <GradeRangeSlider
+          value={state.gradeRange}
+          span={gradeSpan}
+          onCommit={(gradeRange) => set({ gradeRange })}
         />
       </Field>
 
