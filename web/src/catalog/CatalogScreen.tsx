@@ -312,7 +312,7 @@ export function CatalogScreen() {
         </div>
       </div>
       {!added && <UnaddedBoardBanner name={board.name} onAdd={() => addBoard(board.layoutId)} />}
-      <SessionBar board={board} />
+      <SessionBar board={board} onOpenProblem={openDrawer} />
       <CatalogList
         board={board}
         angle={angle}

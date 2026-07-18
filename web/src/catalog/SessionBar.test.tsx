@@ -48,7 +48,7 @@ afterEach(() => vi.restoreAllMocks())
 
 describe('SessionBar', () => {
   it('offers Start session and creates one for this board, opening Share', async () => {
-    render(<SessionBar board={board} />)
+    render(<SessionBar board={board} onOpenProblem={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Start session' }))
     expect(h.createSession).toHaveBeenCalledWith(board.layoutId, expect.any(String))
     expect(await screen.findByText('share-surface')).toBeInTheDocument()
@@ -56,13 +56,13 @@ describe('SessionBar', () => {
 
   it('disables Start session when signed out', () => {
     h.authStatus = 'signedOut'
-    render(<SessionBar board={board} />)
+    render(<SessionBar board={board} onOpenProblem={() => {}} />)
     expect(screen.getByRole('button', { name: 'Start session' })).toBeDisabled()
   })
 
   it('renders nothing when a session is active for a different board', () => {
     h.sessions = { activeSession: { id: 'S1', name: 'Other', boardLayoutId: 99 }, roster: [], selfId: null }
-    const { container } = render(<SessionBar board={board} />)
+    const { container } = render(<SessionBar board={board} onOpenProblem={() => {}} />)
     expect(container).toBeEmptyDOMElement()
   })
 
@@ -72,7 +72,7 @@ describe('SessionBar', () => {
       roster: [{ userId: 'me', joinedAt: '', handle: 'me', displayName: 'Me' }],
       selfId: null,
     }
-    render(<SessionBar board={board} />)
+    render(<SessionBar board={board} onOpenProblem={() => {}} />)
     expect(screen.getByRole('button', { name: 'Crew' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Session options' }))
     fireEvent.click(screen.getByRole('button', { name: 'Leave session' }))
@@ -88,7 +88,7 @@ describe('SessionBar', () => {
       ],
       selfId: 'me',
     }
-    render(<SessionBar board={board} />)
+    render(<SessionBar board={board} onOpenProblem={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Session options' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove Bob' }))
     expect(h.removeMember).toHaveBeenCalledWith('bob')
@@ -100,7 +100,7 @@ describe('SessionBar', () => {
       roster: [{ userId: 'me', joinedAt: '', handle: 'me', displayName: 'Me' }],
       selfId: 'me',
     }
-    render(<SessionBar board={board} />)
+    render(<SessionBar board={board} onOpenProblem={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Session options' }))
     fireEvent.click(screen.getByRole('button', { name: 'End session for everyone' }))
     expect(h.endSession).toHaveBeenCalled()
@@ -112,7 +112,7 @@ describe('SessionBar', () => {
       roster: [{ userId: 'me', joinedAt: '', handle: 'me', displayName: 'Me' }],
       selfId: 'me',
     }
-    render(<SessionBar board={board} />)
+    render(<SessionBar board={board} onOpenProblem={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Session options' }))
     expect(screen.queryByRole('button', { name: 'End session for everyone' })).toBeNull()
   })
@@ -126,7 +126,7 @@ describe('SessionBar', () => {
       ],
       selfId: 'me',
     }
-    render(<SessionBar board={board} />)
+    render(<SessionBar board={board} onOpenProblem={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Session options' }))
     expect(screen.queryByRole('button', { name: /Remove/ })).toBeNull()
   })
