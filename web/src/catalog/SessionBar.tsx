@@ -137,7 +137,8 @@ function ActiveBar({ board, onShare }: { board: CatalogBoardDef; onShare: () => 
   const shown = roster.slice(0, 6)
   const extra = roster.length - shown.length
   // Solo session: no one else to leave behind, so collapse to a single "End session".
-  const alone = roster.length <= 1
+  // Require exactly one member so a not-yet-loaded roster (length 0) keeps the full menu.
+  const alone = roster.length === 1
 
   return (
     <div className="flex items-center gap-2 border-b border-border bg-muted/60 px-3 py-2 text-sm">
