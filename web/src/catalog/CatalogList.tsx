@@ -40,6 +40,8 @@ interface CatalogListProps {
   favoriteIds?: Set<string>
   /** Catalog ids the user has a logged send for — drives the green sent check. */
   sentIds?: Set<string>
+  /** Catalog ids in the active session's queue — drives the in-queue marker (empty off a session). */
+  queuedIds?: Set<string>
   /** Per-problem "who sent it" chips for an active session (crew, self included) — the sends pill.
    *  Undefined = no session on this board; an empty/absent entry = nobody sent that problem. */
   senders?: Map<string, SenderChip[]>
@@ -63,6 +65,7 @@ export function CatalogList({
   degraded,
   favoriteIds = new Set(),
   sentIds = new Set(),
+  queuedIds = new Set(),
   senders,
   sendersDimmed = false,
   transform,
@@ -163,6 +166,7 @@ export function CatalogList({
           board={board}
           isFavorite={favoriteIds.has(p.source_catalog_id)}
           isSent={sentIds.has(p.source_catalog_id)}
+          isQueued={queuedIds.has(p.source_catalog_id)}
           senders={senders?.get(p.source_catalog_id)}
           sendersDimmed={sendersDimmed}
           showThumbnail={showThumbnails}

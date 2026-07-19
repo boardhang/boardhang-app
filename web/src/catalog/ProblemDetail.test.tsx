@@ -8,6 +8,7 @@ import { getRecentIds } from './recentsStore'
 import { ProblemDetail } from './ProblemDetail'
 import { AuthProvider } from '../auth/AuthProvider'
 import * as ble from '../ble/useBle'
+import { useActiveQueueProblems } from '../sessions/useActiveQueueProblems'
 import { toast } from 'sonner'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
@@ -18,6 +19,12 @@ vi.mock('../ble/useBle', () => ({
   isConnected: vi.fn(() => false),
   setBleError: vi.fn(),
   bleClient: { send: vi.fn(), state: 'disconnected' },
+}))
+
+// The always-on queue strip reads the live session queue through this hook — mock it so tests
+// control whether (and what) the queue contains. Default: empty (no strip).
+vi.mock('../sessions/useActiveQueueProblems', () => ({
+  useActiveQueueProblems: vi.fn(() => []),
 }))
 
 const board = boardByLayoutId(7)!
@@ -45,7 +52,17 @@ const list = [problem('a', 'First'), problem('b', 'Middle'), problem('c', 'Last'
 // shown problem; ProblemDetail pages by calling onNavigate. `displayed` is the paging
 // domain; the shown problem is resolved against it, falling back to `slab` (so a
 // deep-linked, filtered-out problem still renders standalone).
-function Pager({ id, displayed, slab = list }: { id: string; displayed: CatalogProblem[]; slab?: CatalogProblem[] }) {
+function Pager({
+  id,
+  displayed,
+  slab = list,
+  onPageOverQueue,
+}: {
+  id: string
+  displayed: CatalogProblem[]
+  slab?: CatalogProblem[]
+  onPageOverQueue?: (id: string, stack: CatalogProblem[]) => void
+}) {
   const [current, setCurrent] = useState(id)
   const resolved =
     displayed.find((p) => p.source_catalog_id === current) ??
@@ -60,6 +77,7 @@ function Pager({ id, displayed, slab = list }: { id: string; displayed: CatalogP
         favoriteIds={new Set()}
         sentIds={new Set()}
         onNavigate={setCurrent}
+        onPageOverQueue={onPageOverQueue}
       />
     </AuthProvider>
   )
@@ -75,6 +93,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(ble.useBle).mockReturnValue({ state: 'disconnected', deviceName: null, error: null })
   vi.mocked(ble.isConnected).mockReturnValue(false)
+  vi.mocked(useActiveQueueProblems).mockReturnValue([])
 })
 
 describe('ProblemDetail', () => {
@@ -138,6 +157,51 @@ describe('ProblemDetail', () => {
       [{ col: 0, row: 1, type: 'start' }],
       expect.objectContaining({ rows: 12, showBeta: true }),
     )
+  })
+
+  it('does not render the queue strip when the session queue is empty', () => {
+    vi.mocked(useActiveQueueProblems).mockReturnValue([])
+    renderDetail('b')
+    expect(screen.queryByRole('region', { name: 'Queue' })).not.toBeInTheDocument()
+  })
+
+  it('renders the queue strip whenever the queue is non-empty, regardless of open origin', () => {
+    // Viewing a climb NOT in the queue — the strip still shows (nothing highlighted).
+    vi.mocked(useActiveQueueProblems).mockReturnValue([problem('q1', 'Q-One'), problem('q2', 'Q-Two')])
+    render(<Pager id="b" displayed={list} />)
+    expect(screen.getByRole('region', { name: 'Queue' })).toBeInTheDocument()
+    expect(screen.getByText('Q-One')).toBeInTheDocument()
+    expect(screen.getByText('Q-Two')).toBeInTheDocument()
+  })
+
+  it('highlights the shown climb in the strip only when it is itself queued', () => {
+    // Shown climb IS in the queue → its card is marked current (aria-current="true").
+    vi.mocked(useActiveQueueProblems).mockReturnValue([problem('b', 'Middle'), problem('c', 'Last')])
+    const { rerender } = render(<Pager id="b" displayed={list} />)
+    expect(screen.getByRole('button', { name: /Middle/ })).toHaveAttribute('aria-current', 'true')
+    // Shown climb is NOT in the queue → no card is current.
+    vi.mocked(useActiveQueueProblems).mockReturnValue([problem('q1', 'Q-One'), problem('q2', 'Q-Two')])
+    rerender(<Pager id="b" displayed={list} />)
+    expect(
+      screen.queryByRole('button', { name: /Q-One|Q-Two/, current: true }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('hands paging off to the queue on a card tap (onPageOverQueue)', () => {
+    const queue = [problem('q1', 'Q-One'), problem('q2', 'Q-Two')]
+    vi.mocked(useActiveQueueProblems).mockReturnValue(queue)
+    const onPageOverQueue = vi.fn()
+    render(<Pager id="b" displayed={list} onPageOverQueue={onPageOverQueue} />)
+    fireEvent.click(screen.getByRole('button', { name: /Q-Two/ }))
+    expect(onPageOverQueue).toHaveBeenCalledWith('q2', queue)
+  })
+
+  it('falls back to plain navigation on a card tap when the host has no queue hand-off', () => {
+    vi.mocked(useActiveQueueProblems).mockReturnValue([problem('a', 'First'), problem('c', 'Last')])
+    render(<Pager id="b" displayed={list} />)
+    // No onPageOverQueue → onNavigate opens the climb (the harness swaps the shown problem).
+    fireEvent.click(screen.getByRole('button', { name: /Last/ }))
+    expect(screen.getAllByText('Last').length).toBeGreaterThan(0)
   })
 
   it('surfaces a send error as a toast', async () => {

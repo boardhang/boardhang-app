@@ -71,6 +71,13 @@ describe('CatalogRow', () => {
     expect(screen.getByLabelText('Sent')).toBeInTheDocument()
   })
 
+  it('shows the in-queue cue only when isQueued', () => {
+    const { rerender } = render(<CatalogRow problem={problem()} board={board} />)
+    expect(screen.queryByText('In queue')).toBeNull()
+    rerender(<CatalogRow problem={problem()} board={board} isQueued />)
+    expect(screen.getByText('In queue')).toBeInTheDocument()
+  })
+
   it('keeps the name-line check as a fallback until self is actually in the pill', () => {
     // Session active but the projection has not (yet) placed self — empty senders (loading/stale):
     // the local self-check stays on the name line so a known send is never hidden with no home.

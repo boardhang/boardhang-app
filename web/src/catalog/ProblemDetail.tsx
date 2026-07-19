@@ -30,6 +30,9 @@ import { LogAscentSheet, type LogTarget } from '../logbook/LogAscentSheet'
 import { useAddToList } from '../lists/useAddToList'
 import { BetaVideos } from '../beta/BetaVideos'
 import { ProblemDetailAddToQueue } from './ProblemDetailAddToQueue'
+import { ProblemDetailQueueStrip } from './ProblemDetailQueueStrip'
+import { useActiveQueueProblems } from '../sessions/useActiveQueueProblems'
+import { useShowPreviews } from './previewsStore'
 import { Button } from '@/components/ui/button'
 
 interface ProblemDetailProps {
@@ -46,6 +49,10 @@ interface ProblemDetailProps {
   highlightHolds?: Set<string>
   /** Page to another problem (replace-navigates ?problem). */
   onNavigate: (id: string) => void
+  /** Tap a queue-strip card: page to `id` AND hand prev/next off to the queue's order (`stack`).
+   *  Only hosts with a swappable pager domain pass this (CatalogScreen); elsewhere a strip tap
+   *  falls back to `onNavigate` (opens the climb without changing the paging list). */
+  onPageOverQueue?: (id: string, stack: CatalogProblem[]) => void
 }
 
 export function ProblemDetail({
@@ -57,8 +64,13 @@ export function ProblemDetail({
   sentIds,
   highlightHolds,
   onNavigate,
+  onPageOverQueue,
 }: ProblemDetailProps) {
   const swipeStart = useRef<{ x: number; y: number } | null>(null)
+  const showThumbnails = useShowPreviews('catalog')
+  // The board's active session queue (empty when no session targets this board) — the strip shows
+  // whenever it's non-empty, regardless of how the detail was opened.
+  const queueProblems = useActiveQueueProblems(board)
   const { toggleFavorite } = useFavorites()
   const { status } = useAuth()
   const signedIn = status !== 'signedOut'
@@ -327,8 +339,22 @@ export function ProblemDetail({
       </div>
       </div>
 
-      {/* Below the fold — its own snap target, revealed by scrolling/dragging up. */}
-      <div className="snap-start pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-2">
+      {/* Below the fold — its own snap target, revealed by scrolling/dragging up. Whenever the
+          board's session queue is non-empty, the queue strip leads this page (above beta) so
+          scrolling up surfaces "up next". Tapping a card hands prev/next off to the queue's order
+          (onPageOverQueue) where the host supports it, else just opens the climb. */}
+      <div className="snap-start space-y-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-2">
+        {queueProblems.length > 0 && (
+          <ProblemDetailQueueStrip
+            items={queueProblems}
+            currentId={currentId}
+            board={board}
+            showThumbnail={showThumbnails}
+            onSelect={(id) =>
+              onPageOverQueue ? onPageOverQueue(id, queueProblems) : onNavigate(id)
+            }
+          />
+        )}
         <BetaVideos sourceCatalogId={currentId} />
       </div>
 

@@ -40,6 +40,7 @@ import { useProblemDrawer } from './useProblemDrawer'
 import { useEnsureAscentsLoaded } from '../logbook/ascents'
 import { useAuth } from '../auth/AuthProvider'
 import { useSessions } from '../sessions/sessionsStore'
+import { useSessionQueue } from '../sessions/queueStore'
 import { useMemberAscents, withSelfSends } from '../sessions/memberAscentsStore'
 import { useBoardSelfSends } from './useBoardSelfSends'
 import { useMemberSenders } from './useMemberSenders'
@@ -105,6 +106,15 @@ export function CatalogScreen() {
   // stores directly (no prop drilling), mirroring the useSessionFilterRows pattern; undefined
   // when no session targets this board.
   const memberSenders = useMemberSenders(board)
+
+  // Which problems are already in the session's active queue — drives the in-queue marker on the
+  // catalog rows (mirrors the sentIds Set). Null session → empty set (the marker never shows off
+  // a session, matching where swipe-to-queue is offered).
+  const { activeItems: queueActiveItems } = useSessionQueue(sessionForBoard?.id ?? null)
+  const queuedIds = useMemo(
+    () => new Set(queueActiveItems.map((i) => i.sourceCatalogId)),
+    [queueActiveItems],
+  )
 
   const filters = useMemo(() => searchToFilters(search), [search])
 
@@ -228,7 +238,7 @@ export function CatalogScreen() {
   // when opened from the recents sheet (so paging stays within recents, filter-
   // independent — iOS parity), else null → the filtered `displayed` list.
   const openId = search.problem
-  const { pagerStack, openProblem: openDrawer, showProblem, closeDrawer } = useProblemDrawer({
+  const { pagerStack, openProblem: openDrawer, showProblem, pageOver, closeDrawer } = useProblemDrawer({
     openId,
     pushProblem: (id) => void navigate({ search: (prev) => ({ ...prev, problem: id }) }),
     replaceProblem: (id) =>
@@ -312,6 +322,8 @@ export function CatalogScreen() {
         </div>
       </div>
       {!added && <UnaddedBoardBanner name={board.name} onAdd={() => addBoard(board.layoutId)} />}
+      {/* Opening from the queue pages over the queue's order (the stack SessionBar/QueueDrawer
+          hands up becomes the pager domain). The always-on queue strip is independent of this. */}
       <SessionBar board={board} onOpenProblem={openDrawer} />
       <CatalogList
         board={board}
@@ -321,6 +333,7 @@ export function CatalogScreen() {
         degraded={degraded}
         favoriteIds={favoriteIds}
         sentIds={sentIds}
+        queuedIds={queuedIds}
         senders={memberSenders?.senders}
         sendersDimmed={memberSenders?.state === 'paused'}
         transform={transform}
@@ -378,6 +391,7 @@ export function CatalogScreen() {
               sentIds={sentIds}
               highlightHolds={highlightHolds}
               onNavigate={showProblem}
+              onPageOverQueue={pageOver}
             />
           ) : problemPending ? (
             <div

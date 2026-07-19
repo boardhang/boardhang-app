@@ -33,6 +33,10 @@ interface UseProblemDrawerResult {
   openProblem: (id: string, stack?: CatalogProblem[] | null) => void
   /** Page to another problem within the open drawer (replace, no history push). */
   showProblem: (id: string) => void
+  /** Page to `id` AND swap the pager domain to `stack` (replace, no history push) — used to hand
+   *  browsing off to a different list mid-drawer, e.g. tapping the queue strip switches prev/next
+   *  to the queue's order. */
+  pageOver: (id: string, stack: CatalogProblem[]) => void
   /** Close the drawer: pop history if we push-opened it, else clear `?problem` in place. */
   closeDrawer: () => void
 }
@@ -46,10 +50,10 @@ export function useProblemDrawer({
   const router = useRouter()
   const [pagerStack, setPagerStack] = useState<CatalogProblem[] | null>(null)
 
-  // Drop the snapshot whenever the drawer closes (`?problem` cleared by any means: Back,
-  // gesture, deep-link removal) so a later open never pages over a stale domain. Keyed on
-  // `openId` only — not `pagerStack` — so it doesn't fire in the render between
-  // `setPagerStack` and the router committing `?problem` on open.
+  // Drop the snapshot whenever the drawer closes (`?problem` cleared by any means: Back, gesture,
+  // deep-link removal) so a later open never pages over a stale domain. Keyed on `openId` only —
+  // not `pagerStack` — so it doesn't fire in the render between `setPagerStack` and the router
+  // committing `?problem` on open.
   useEffect(() => {
     if (!openId) setPagerStack(null)
   }, [openId])
@@ -64,6 +68,10 @@ export function useProblemDrawer({
     pushProblem(id)
   }
   const showProblem = (id: string) => replaceProblem(id)
+  const pageOver = (id: string, stack: CatalogProblem[]) => {
+    setPagerStack(stack)
+    replaceProblem(id)
+  }
   const closeDrawer = () => {
     if (pushed.current) {
       pushed.current = false
@@ -73,5 +81,5 @@ export function useProblemDrawer({
     }
   }
 
-  return { pagerStack, openProblem, showProblem, closeDrawer }
+  return { pagerStack, openProblem, showProblem, pageOver, closeDrawer }
 }
