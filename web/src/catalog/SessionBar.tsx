@@ -4,7 +4,7 @@
 // DIFFERENT board is active it renders nothing (the global pill surfaces that one).
 
 import { useCallback, useRef, useState } from 'react'
-import { MoreHorizontal, RefreshCw, Share2, Users, X } from 'lucide-react'
+import { MoreHorizontal, Plus, RefreshCw, Share2, Users, X } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import type { CatalogProblem } from './catalogSync'
 import { QueueDrawer } from '../sessions/QueueDrawer'
@@ -23,6 +23,7 @@ import { refreshMemberAscents } from '../sessions/memberAscentsStore'
 import { defaultSessionName, MAX_SESSION_NAME, memberInitials, memberLabel } from '../sessions/sessionsTypes'
 import { MemberAvatar } from '../sessions/MemberAvatar'
 import { ShareSession } from '../sessions/ShareSession'
+import { ScanToJoin } from '../sessions/ScanToJoin'
 import { AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -77,6 +78,9 @@ function StartBar({
 }) {
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The icon button opens the scanner-first launcher: it opens on the camera to join, with
+  // "Start your own session" as the demoted host path inside the same dialog.
+  const [open, setOpen] = useState(false)
 
   const start = useCallback(async () => {
     if (starting) return // guard double-tap → no duplicate session
@@ -84,6 +88,7 @@ function StartBar({
     setError(null)
     try {
       await createSession(board.layoutId, defaultSessionName(boardShortLabel(board.name), new Date()))
+      setOpen(false)
       onStarted()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Couldn’t start a session.')
@@ -96,18 +101,28 @@ function StartBar({
     <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/60 px-3 py-2 text-sm">
       <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
         <Users className="size-4 shrink-0" />
-        <span className="truncate">Filter with friends</span>
+        <span className="truncate">Session with friends</span>
       </span>
       <div className="flex items-center gap-2">
         {error && <span className="truncate text-xs text-destructive">{error}</span>}
         <Button
-          size="sm"
-          disabled={!signedIn || starting}
-          title={signedIn ? undefined : 'Sign in to start a session'}
-          onClick={() => void start()}
+          variant="outline"
+          size="icon"
+          className="size-8"
+          onClick={() => setOpen(true)}
+          aria-label="Start or join a session"
+          title="Start or join a session"
         >
-          {starting ? 'Starting…' : 'Start session'}
+          <Plus className="size-4" />
         </Button>
+
+        <ScanToJoin
+          open={open}
+          onOpenChange={setOpen}
+          onStart={() => void start()}
+          starting={starting}
+          canStart={signedIn}
+        />
       </div>
     </div>
   )
@@ -140,6 +155,9 @@ function ActiveBar({
   if (!activeSession) return null
   const shown = roster.slice(0, 6)
   const extra = roster.length - shown.length
+  // Solo session: no one else to leave behind, so collapse to a single "End session".
+  // Require exactly one member so a not-yet-loaded roster (length 0) keeps the full menu.
+  const alone = roster.length === 1
 
   return (
     <div className="flex items-center gap-2 border-b border-border bg-muted/60 px-3 py-2 text-sm">
@@ -210,20 +228,22 @@ function ActiveBar({
                   void endSession()
                 }}
               >
-                End session for everyone
+                {alone ? 'End session' : 'End session for everyone'}
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-destructive hover:text-destructive"
-              onClick={() => {
-                setMenuOpen(false)
-                void leaveSession()
-              }}
-            >
-              Leave session
-            </Button>
+            {!(isOwner && alone) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start text-destructive hover:text-destructive"
+                onClick={() => {
+                  setMenuOpen(false)
+                  void leaveSession()
+                }}
+              >
+                Leave session
+              </Button>
+            )}
           </PopoverContent>
         </Popover>
       </div>

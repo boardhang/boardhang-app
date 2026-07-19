@@ -88,6 +88,58 @@ message building, build from the real type, not the displayed one.
 - `ConnectionView` only surfaces the LED-test entry point when `.connected`; it starts scanning
   in `onAppear` and stops in `onDisappear`.
 
+## Web client (`web/src/ble/`)
+
+The PWA reimplements the same NUS protocol over Web Bluetooth — `moonboard.ts`
+(`MoonBoardClient`, a module-level singleton exposed reactively via `useBle.ts`),
+with the "connect if needed, then send" interaction in `useLightUp.ts`. Same wire
+format, same 20-byte chunking rule; chunks are drained by awaiting each
+`writeValueWithoutResponse` sequentially (the web equivalent of the flow-controlled
+queue), with a single short retry per chunk for transient GATT hiccups.
+
+### Reconnect model
+
+Web Bluetooth has no background contract: Android Chrome throttles a hidden PWA's
+timers, freezes the page after ~5 minutes, and may discard the process entirely —
+the GATT link dies with it, sometimes without `gattserverdisconnected` ever being
+delivered. The client therefore designs for disconnection instead of fighting it
+(the board keeps its own LED state, so the link only matters at send time):
+
+- **Unexpected disconnect** keeps the `BluetoothDevice` — permission persists for
+  the life of the page, so `device.gatt.connect()` reconnects **without the
+  chooser** — and retries on a short finite backoff (0.5/1/2/4 s), only while the
+  page is visible.
+- **`visibilitychange` → visible** probes `gatt.connected` and reconnects if the
+  link died while the page was frozen (covers the dropped-event case where state
+  still claims connected).
+- **`connect()` with a retained device** skips the chooser. If the board is
+  unreachable, the device is dropped and the error surfaces — the *next* tap gets
+  the chooser. Don't chain a failed silent reconnect into `requestDevice()`: the
+  transient user activation has expired by then and the chooser call would be
+  rejected.
+- **The iOS invariant #1 applies here too:** `userDisconnect` is set in
+  `disconnect()` and cleared only in `connect()`; while set, all auto-reconnect
+  paths are no-ops.
+- **`establish()` re-checks before it commits.** Its GATT awaits can settle
+  *after* a disconnect (user tap or a second link drop) has already landed —
+  Web Bluetooth's `gatt.disconnect()` does not reliably reject an in-flight
+  `gatt.connect()`. Before setting the characteristic and `'connected'` state it
+  re-checks `userDisconnect`, device identity, and `gatt.connected`; on any
+  mismatch it disconnects the freshly-opened link and bails, so a late
+  resolution can't resurrect a severed connection.
+- **`gatt.connect()` is bounded by a 10 s timeout.** It has no built-in timeout
+  and can hang on a flaky link; a forever-pending attempt would wedge the shared
+  `inflight` promise and freeze every later `connect()` (including user taps) at
+  `'connecting'` with no UI escape. On timeout the attempt aborts the link and
+  rejects into the normal backoff/chooser-fallback paths.
+
+`requestDevice()` (first connect, or after a retained device was dropped) must be
+called from a user gesture. `getDevices()`/`watchAdvertisements()` (chooser-free
+reconnect after a full page reload) are still behind Chrome flags and are not used.
+
+Web Bluetooth itself only works in Chromium browsers (desktop Chrome/Edge, Android
+Chrome) and Bluefy on iOS — see `web/src/shell/BleBrowserBanner.tsx`.
+
 ## Gotchas summary
 
 - 20-byte chunks + flow control are load-bearing; never size from MTU. (bug's root cause)

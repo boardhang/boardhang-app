@@ -1,9 +1,19 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getActiveBoardId } from '../board/boardStore'
+
+const h = vi.hoisted(() => ({ activeSession: null as unknown }))
+vi.mock('../sessions/sessionsStore', () => ({ useSessions: () => ({ activeSession: h.activeSession }) }))
+vi.mock('../sessions/ScanToJoin', () => ({
+  ScanToJoinButton: (p: { children: React.ReactNode; 'aria-label'?: string }) => (
+    <button aria-label={p['aria-label']}>{p.children}</button>
+  ),
+}))
+
 import { MyBoards } from './MyBoards'
 
 beforeEach(() => {
+  h.activeSession = null
   localStorage.clear()
   window.dispatchEvent(new StorageEvent('storage')) // reset boardStore snapshot
 })
@@ -27,6 +37,17 @@ describe('MyBoards', () => {
     render(<MyBoards onActivated={() => {}} />)
     expect(screen.getByText('Add your first board')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(5)
+  })
+
+  it('offers Join a session with no active session (including first-run)', () => {
+    render(<MyBoards onActivated={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Join a session' })).toBeInTheDocument()
+  })
+
+  it('hides Join a session while a session is active', () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 7 }
+    render(<MyBoards onActivated={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Join a session' })).not.toBeInTheDocument()
   })
 
   it('makes the first owned board active, and Browse opens its catalog', () => {

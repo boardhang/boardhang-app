@@ -85,10 +85,47 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   unchanged. Dimmed when the projection is paused/stale so it never shows crisp "who" the filter
   itself no longer trusts), `catalog/SessionBar.tsx`
   (in-context bar: rename, members, refresh, Share, Leave;
-  Start session when solo), `sessions/ShareSession.tsx` (QR + copy/share of the join link),
-  `shell/SessionPill.tsx` (global pill on every non-catalog route, with roster + owner
-  remove-member + Leave), `sessions/JoinSession.tsx` (`/session/join/$token` — sign-in →
-  consent → join → land in the board catalog).
+  a single **`+`** launcher button when solo), `sessions/ShareSession.tsx` (QR +
+  copy/share of the join link), `shell/SessionPill.tsx` (global pill on every non-catalog route,
+  with roster + owner remove-member + Leave), `sessions/JoinSession.tsx` (`/session/join/$token`
+  — sign-in → consent → join → land in the board catalog).
+- **`sessions/joinUrl.ts`** — `buildJoinUrl` / `parseJoinUrl`, the single owner of the join-URL
+  shape so the QR writer and the scan/paste readers can't drift. `parseJoinUrl` matches
+  `/session/join/:token` on **any** origin (prod/preview/localhost QRs interop) and only ever
+  yields the token — the scanned origin is never navigated to.
+
+## Starting or joining: the session launcher
+
+`sessions/ScanToJoin.tsx` is a centered **`Dialog`** titled "Session with friends" that opens on a
+**chooser**: scan a friend's QR, paste their link, or start your own. A joiner doesn't need their
+phone's camera app. It's a thin **decode → parse → navigate** layer: it lifts the token via
+`parseJoinUrl` and navigates to the existing `/session/join/$token` route, which still owns consent
+and the join RPC unchanged.
+
+- **Chooser-first, camera on demand.** The camera starts only when the user taps "Scan a QR code",
+  so merely opening the launcher never triggers the OS camera-permission prompt (an earlier
+  scanner-first variant did, for everyone including would-be hosts). Paste is a first-class peer of
+  scanning — always visible on the chooser — which also makes it the natural fallback when the
+  camera is denied or the decoder can't load offline (scanning drops back to the chooser with a
+  "Camera unavailable" note). "Start your own session" sits below an "or" divider. `ScanToJoin`
+  takes an optional `onStart`/`starting`/`canStart`: the catalog's `+` button passes it; the boards
+  overview (`shell/MyBoards.tsx`, via `ScanToJoinButton`, a "Join a session" button) omits it and
+  is join-only, since there's no board context to host in. Joining works signed-out (`JoinSession`
+  owns sign-in); only hosting needs an account.
+- **`sessions/qrDecoder.ts`** is the dynamic-import boundary: the `@yudiel/react-qr-scanner`
+  wrapper and the ~433 kB `zxing-wasm` reader load only when the dialog opens (the app's first
+  code-split). iOS Safari still ships `BarcodeDetector` disabled, so a WASM decoder is mandatory.
+- The reader WASM is **self-hosted** (bundled via Vite `?url`, never fetched from jsDelivr) and
+  **excluded from the SW precache** (`globIgnores` + a CacheFirst runtime route in
+  `vite.config.ts`) — it would bloat every install, and scanning needs the network anyway.
+- WASM prep is a **retryable** runtime step (`ensureDecoder`), not a top-level await: a failed
+  offline fetch clears its memo so a later retry recovers, rather than leaving the module record
+  permanently errored. A load failure drops back to the chooser, whose paste field reuses the same
+  `parseJoinUrl` — so a camera-less or offline joiner is never stuck.
+- The body branches on `phase` (`menu` / `scanning`); the camera mounts only in `scanning`, so
+  leaving it (Back, close, or a failure) tears the stream down. Rear camera
+  (`facingMode: 'environment'`); re-acquired on foreground (iOS standalone PWAs freeze the stream
+  when backgrounded).
 
 ## Session queue (playlist)
 

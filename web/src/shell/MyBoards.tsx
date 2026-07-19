@@ -7,11 +7,13 @@
 // first-run surface (zero added boards).
 
 import { useRef, useState } from 'react'
-import { Settings2 } from 'lucide-react'
+import { ScanQrCode, Settings2 } from 'lucide-react'
 import { BOARDS, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { activeCsv, holdSetContext } from '../board/holdSetMembership'
 import { CatalogBoard } from '../board/CatalogBoard'
+import { useSessions } from '../sessions/sessionsStore'
+import { ScanToJoinButton } from '../sessions/ScanToJoin'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -33,6 +35,10 @@ interface MyBoardsProps {
 export function MyBoards({ onActivated }: MyBoardsProps) {
   const { addedBoards, activeBoard, addBoard, removeBoard, activateBoard, setAngle, setActiveHoldSetsRaw } =
     useBoardStore()
+  // Joining a session is a no-session action, so hide the scan affordance once one is active
+  // (mirrors the catalog StartBar/ActiveBar swap). Signed-out users still see it — the join
+  // route owns sign-in.
+  const { activeSession } = useSessions()
   const addedIds = new Set(addedBoards.map((b) => b.layoutId))
   const addable = BOARDS.filter((b) => !addedIds.has(b.layoutId))
 
@@ -57,6 +63,12 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
 
   return (
     <div className="space-y-4">
+      {!activeSession && (
+        <ScanToJoinButton variant="outline" className="w-full">
+          <ScanQrCode className="size-4" />
+          Join a session
+        </ScanToJoinButton>
+      )}
       {addedBoards.length === 0 ? (
         <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
           <p className="mb-1 font-medium text-foreground">Add your first board</p>

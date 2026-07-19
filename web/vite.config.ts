@@ -27,6 +27,21 @@ export default defineConfig({
         // they resolve to the real file, not index.html.
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/assets\//],
+        // The ~433 kB QR-decoder WASM is fetched on demand when the scanner opens,
+        // never precached — it would bloat every install for a feature most users
+        // rarely touch. A CacheFirst runtime route keeps repeat scans decodable
+        // (and offline-warm) without paying the download on every open.
+        globIgnores: ['**/*.wasm'],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.endsWith('.wasm'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'qr-decoder-wasm',
+              expiration: { maxEntries: 4 },
+            },
+          },
+        ],
       },
       manifest: {
         name: 'Boardhang',
