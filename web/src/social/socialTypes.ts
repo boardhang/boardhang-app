@@ -51,7 +51,7 @@ export function searchResultFromRow(row: SearchResultRow): SearchResult {
   return { ...cardFromRow(row), edgeStatus: row.edge_status ?? 'none' }
 }
 
-// ─── A send (get_follow_feed / get_user_sends projection) ─────────────────────
+// ─── A send (get_user_sends projection) ──────────────────────────────────────
 
 export interface SendItem {
   ascentId: string

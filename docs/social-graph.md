@@ -8,7 +8,8 @@ Supabase backend is platform-agnostic for a later iOS client.
 
 Plan of record: `docs/plans/2026-07-20-001-feat-web-friends-feed-plan.md` (R1–R24, KTD1–KTD12).
 A follow **feed** was scoped and built, then removed before launch in favour of profile-centric
-viewing; the backend feed RPC is retained but unused (see the RPC catalog note).
+viewing — the `get_follow_feed` RPC and its web surface are both gone. The plan of record still
+describes the feed as historical context.
 
 ## Shape at a glance
 
@@ -56,11 +57,11 @@ Cross-user reads of owner-only `ascents` (0002) **never relax `ascents` RLS** �
 minimal-projection SECURITY DEFINER core, exactly like 0004's list group-status RPC.
 
 - **The projection core `_sends_for_actors` is granted to NO client role** (`revoke all from
-  public`, no grant). It carries no gate; only the SECURITY-DEFINER wrappers
-  (`get_user_sends`, and the retained-but-unused `get_follow_feed`, same owner) may call it. "Internal" is a naming
+  public`, no grant). It carries no gate; only the SECURITY-DEFINER wrapper
+  `get_user_sends` (same owner) may call it. "Internal" is a naming
   convention — the revoke is the access control (KTD4). A direct client call is denied.
 - **`is_blocked(a,b)` (bidirectional) is applied in every social read**: `request_follow`,
-  `get_profile_card`, `get_follow_feed`, `get_user_sends`, `get_follow_list`,
+  `get_profile_card`, `get_user_sends`, `get_follow_list`,
   `get_follow_requests`, `get_notifications`, `search_profiles` (KTD5). `block_user` also deletes
   edges both ways **and** purges cross-pair notifications in one transaction.
 - **Effective privacy = `is_private OR privacy_choice_at IS NULL`** (KTD9a — *private-until-chosen*).
@@ -81,8 +82,7 @@ minimal-projection SECURITY DEFINER core, exactly like 0004's list group-status 
 | `get_follow_list(target, kind, limit)` / `get_follow_counts(target)` | Follower/following lists + counts, block- + effective-private-gated (`can_view_social_graph`). |
 | `get_follow_requests(limit)` | Pending requests toward the caller (requester cards) — sourced from `follows`, not notifications. |
 | `_sends_for_actors(ids, limit, cursor…)` | **Revoked** projection core: minimal columns, keyset. |
-| `get_follow_feed(limit, cursor…)` | The caller's active, non-blocked followees → core. **Retained but unused** — the web feed surface was removed; kept so a feed can return without a migration. |
-| `get_user_sends(target, limit, cursor…)` | Single actor after the R6/R12 gate → core. Powers the profile page (`ProfileSends`). |
+| `get_user_sends(target, limit, cursor…)` | Single actor after the R6/R12 gate → core. Powers the profile page (`ProfileSends`); the only wrapper over the core. |
 | `get_notifications(limit)` / `mark_notifications_read(ids)` | Block-aware activity read / mark read. |
 
 **Requests are sourced from `follows` (status='pending'), never duplicated into `notifications`**

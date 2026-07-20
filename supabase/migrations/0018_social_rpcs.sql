@@ -7,8 +7,8 @@
 --   • Follow lifecycle: request_follow, respond_to_follow, unfollow, remove_follower.
 --   • Block: block_user (tears down edges + cross-pair notifications, then blocks), unblock_user.
 --   • Discovery: search_profiles, suggest_co_members.
---   • Reads: get_profile_card, get_follow_counts, get_follow_list, get_follow_feed,
---     get_user_sends, get_notifications; the internal _sends_for_actors projection core.
+--   • Reads: get_profile_card, get_follow_counts, get_follow_list, get_user_sends,
+--     get_notifications; the internal _sends_for_actors projection core.
 --   • Notifications: mark_notifications_read.
 --
 -- Load-bearing invariants (see docs/plans/2026-07-20-001-feat-web-friends-feed-plan.md):
@@ -464,33 +464,6 @@ $$;
 -- call it.
 revoke all on function public._sends_for_actors(uuid[], int, timestamptz, uuid)
     from public, anon, authenticated, service_role;
-
--- get_follow_feed: the caller's actively-followed, non-blocked actors → the core. (An active
--- edge already implies the follow was allowed, so no effective-private check here — R9.)
-create or replace function public.get_follow_feed(
-        p_limit int default 30,
-        p_before_first_sent timestamptz default null,
-        p_before_id uuid default null)
-    returns table (ascent_id uuid, actor_id uuid, handle text, display_name text, avatar_url text,
-                   source_catalog_id text, user_problem_id uuid, problem_name text,
-                   problem_grade text, board_layout_id int, climbed_at timestamptz,
-                   first_sent_at timestamptz)
-    language sql
-    security definer
-    set search_path = ''
-    stable
-as $$
-    select *
-    from public._sends_for_actors(
-        (select array_agg(f.followee_id)
-         from public.follows f
-         where f.follower_id = auth.uid() and f.status = 'active'
-           and not public.is_blocked(auth.uid(), f.followee_id)),
-        p_limit, p_before_first_sent, p_before_id);
-$$;
-
-revoke all on function public.get_follow_feed(int, timestamptz, uuid) from public;
-grant execute on function public.get_follow_feed(int, timestamptz, uuid) to authenticated;
 
 -- get_user_sends: a single actor after the R6/R12 gate — blocked → empty; effectively-private
 -- and neither self nor an active follower → empty.

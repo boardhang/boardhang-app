@@ -1,7 +1,7 @@
 -- Assertions for 0018_social_rpcs.sql. Run after stub_supabase.sql + the
 -- 0002 → 0003 → 0007 → 0017 → 0018 chain + the "Supabase default grants" step. Verifies the
 -- follow/block/search/discovery RPCs and — the load-bearing part — that the block + effective-
--- private gates hold across card/sends/feed/lists/notifications, and that the projection core
+-- private gates hold across card/sends/lists/notifications, and that the projection core
 -- is unreachable by a client.
 -- Seeds run as the default (superuser) role (bypassing RLS); each assertion role-switches to
 -- `authenticated` and sets test.uid per the stub's auth.uid().
@@ -24,7 +24,7 @@ insert into public.profiles (id, handle, display_name, is_private, privacy_choic
     (:'OUT', 'dev',   'Dev',   false, now());
 
 -- B has three sent ascents (distinct first_sent_at via the 0017 trigger + tiny sleeps), one
--- unsent attempt, and one soft-deleted send — only the three live sends may reach a feed.
+-- unsent attempt, and one soft-deleted send — only the three live sends may surface.
 \set SB1 '10000000-0000-0000-0000-000000000001'
 \set SB2 '10000000-0000-0000-0000-000000000002'
 \set SB3 '10000000-0000-0000-0000-000000000003'
@@ -139,35 +139,37 @@ begin
     raise notice 'PASS: private-until-chosen (privacy_choice_at null treated private)';
 end $$;
 
--- ── feed: active-followee sends only, ordered, keyset, no attempts/tombstones ──
--- A actively follows B (public) and C (accepted). Feed should show B's 3 live sends + C's 1.
+-- ── profile sends: one actor's live sends, ordered, keyset, no attempts/tombstones ──
+-- A actively follows B (public). get_user_sends(B) should show B's 3 live sends, newest-first.
 do $$
 declare _n int; _first uuid; _cursor_fs timestamptz; _cursor_id uuid; _page2 int;
 begin
-    select count(*) into _n from public.get_follow_feed();
-    assert _n = 4, 'FAIL: feed expected 4 live sends (B:3 + C:1), saw ' || _n;
+    select count(*) into _n from public.get_user_sends('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+    assert _n = 3, 'FAIL: B''s profile expected 3 live sends, saw ' || _n;
 
-    -- newest first: C's send was seeded last → most recent arrival → top of the feed.
-    select ascent_id into _first from public.get_follow_feed() limit 1;
-    assert _first = '20000000-0000-0000-0000-000000000001',
-        'FAIL: feed not ordered newest-first (top was ' || _first || ')';
+    -- newest first: SB3 (last of the three seeded) has the most recent arrival → top.
+    select ascent_id into _first from public.get_user_sends('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb') limit 1;
+    assert _first = '10000000-0000-0000-0000-000000000003',
+        'FAIL: profile sends not ordered newest-first (top was ' || _first || ')';
 
-    -- and within B, SB3 (last of the three) precedes SB1 (first).
+    -- and SB3 (last) precedes SB1 (first) across the whole set.
     if (select array_position(
             array_agg(ascent_id order by first_sent_at desc, ascent_id desc),
             '10000000-0000-0000-0000-000000000003'::uuid)
         > array_position(
             array_agg(ascent_id order by first_sent_at desc, ascent_id desc),
             '10000000-0000-0000-0000-000000000001'::uuid)
-        from public.get_follow_feed()) then
+        from public.get_user_sends('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')) then
         raise exception 'FAIL: within-actor order wrong (SB3 should precede SB1)';
     end if;
 
     -- keyset: page after the first row returns the rest without overlap.
-    select first_sent_at, ascent_id into _cursor_fs, _cursor_id from public.get_follow_feed() limit 1;
-    select count(*) into _page2 from public.get_follow_feed(30, _cursor_fs, _cursor_id);
-    assert _page2 = 3, 'FAIL: keyset page 2 expected 3, saw ' || _page2;
-    raise notice 'PASS: feed = active-followee live sends, newest-first, keyset paginates';
+    select first_sent_at, ascent_id into _cursor_fs, _cursor_id
+        from public.get_user_sends('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb') limit 1;
+    select count(*) into _page2
+        from public.get_user_sends('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 30, _cursor_fs, _cursor_id);
+    assert _page2 = 2, 'FAIL: keyset page 2 expected 2, saw ' || _page2;
+    raise notice 'PASS: profile sends = live sends, newest-first, keyset paginates';
 end $$;
 
 -- ── projection core is unreachable directly (execute revoked) ─────────────────
@@ -273,10 +275,6 @@ begin
            or (follower_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' and followee_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     assert _n = 0, 'FAIL: block did not delete the follow edge (' || _n || ')';
 
-    -- A's feed no longer contains B's sends (only C's remains).
-    select count(*) into _n from public.get_follow_feed();
-    assert _n = 1, 'FAIL: blocked user''s sends still in feed (feed count ' || _n || ', expected 1 = C only)';
-
     -- A cannot see B's card, sends, or find B in search; re-follow is rejected.
     select count(*) into _n from public.get_profile_card('bruno');
     assert _n = 0, 'FAIL: blocked user''s profile card still visible';
@@ -289,7 +287,7 @@ begin
         assert false, 'FAIL: could re-follow a blocked user';
     exception when others then null;
     end;
-    raise notice 'PASS: block severs edges + gates card/sends/feed/search + blocks re-follow';
+    raise notice 'PASS: block severs edges + gates card/sends/search + blocks re-follow';
 end $$;
 
 -- Block is bidirectional: B cannot see A's card either, AND the cross-pair notification was
