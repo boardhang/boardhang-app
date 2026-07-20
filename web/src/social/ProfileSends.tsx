@@ -12,10 +12,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { boardByLayoutId } from '../board/boards'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { GradePyramid } from '../logbook/GradePyramid'
+import type { PyramidInput } from '../logbook/sessions'
 import { relativeTime } from './relativeTime'
 import { fetchSendsPage, SENDS_PAGE } from './sendsPage'
-import { gradeHistogram, latestSession, type SessionCluster } from './profileStats'
+import { latestSession, type SessionCluster } from './profileStats'
 import type { SendItem } from './socialTypes'
+
+/** Map profile sends to the pyramid's minimal shape — projection sends are all `sent`. */
+function toPyramidInput(sends: SendItem[]): PyramidInput[] {
+  return sends.map((s) => ({
+    sent: true,
+    sourceCatalogId: s.sourceCatalogId,
+    problemName: s.problemName,
+    problemGrade: s.problemGrade,
+    date: s.climbedAt,
+    tries: s.tries,
+  }))
+}
 
 type LoadState = 'loading' | 'loaded' | 'error'
 
@@ -68,7 +82,7 @@ export function ProfileSends({ userId }: { userId: string }) {
   }
 
   const session = useMemo(() => latestSession(sends), [sends])
-  const bars = useMemo(() => gradeHistogram(sends), [sends])
+  const pyramidInput = useMemo(() => toPyramidInput(sends), [sends])
 
   if (status === 'loading') {
     return (
@@ -91,7 +105,10 @@ export function ProfileSends({ userId }: { userId: string }) {
   return (
     <div className="flex flex-col gap-6">
       {session && <LatestSessionCard session={session} />}
-      <GradeHistogram bars={bars} />
+      <section>
+        <h2 className="px-1 pb-2 text-sm font-semibold text-foreground">Grades</h2>
+        <GradePyramid items={pyramidInput} />
+      </section>
       <div className="flex flex-col">
         <p className="px-1 pb-2 text-sm font-medium text-muted-foreground">
           All sends
@@ -131,32 +148,6 @@ function LatestSessionCard({ session }: { session: SessionCluster }) {
           <SendRow key={s.ascentId} send={s} />
         ))}
       </ul>
-    </section>
-  )
-}
-
-function GradeHistogram({ bars }: { bars: { grade: string; count: number }[] }) {
-  if (bars.length === 0) return null
-  const max = Math.max(...bars.map((b) => b.count))
-  return (
-    <section>
-      <h2 className="px-1 pb-2 text-sm font-semibold text-foreground">Grades</h2>
-      <div className="flex flex-col gap-1">
-        {bars.map((b) => (
-          <div key={b.grade} className="flex items-center gap-2">
-            <span className="w-9 shrink-0 text-xs font-medium text-muted-foreground">{b.grade}</span>
-            <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
-              <div
-                className="h-full rounded bg-primary"
-                style={{ width: `${Math.max((b.count / max) * 100, 4)}%` }}
-              />
-            </div>
-            <span className="w-6 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-              {b.count}
-            </span>
-          </div>
-        ))}
-      </div>
     </section>
   )
 }

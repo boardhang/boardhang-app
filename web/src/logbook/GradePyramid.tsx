@@ -5,8 +5,7 @@
 import { useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from 'recharts'
 import { ChartContainer, type ChartConfig } from '@/components/ui/chart'
-import type { Ascent } from './ascents'
-import { pyramid } from './sessions'
+import { pyramid, type PyramidInput } from './sessions'
 import { TRY_BUCKETS, TRY_BUCKET_COLOR } from './tryBucket'
 
 // ChartContainer requires a config; we render our own legend and use direct fills, so
@@ -24,8 +23,8 @@ interface LabelProps {
   index?: number
 }
 
-export function GradePyramid({ ascents }: { ascents: Ascent[] }) {
-  const { rows } = useMemo(() => pyramid(ascents), [ascents])
+export function GradePyramid({ items }: { items: PyramidInput[] }) {
+  const { rows } = useMemo(() => pyramid(items), [items])
   const [selected, setSelected] = useState<string | null>(null)
 
   const toggle = (index: number) => {

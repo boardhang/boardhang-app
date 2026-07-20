@@ -1,7 +1,7 @@
 # Social graph — profiles, follow graph, blocking (web)
 
 The **friends** subsystem: an asymmetric follow graph and profile pages where you view another
-user's sends — their **grade breakdown**, **latest climbing session**, and full send history. It
+user's sends — their **grade pyramid**, **latest climbing session**, and full send history. It
 is **additive** to the membership-based sharing of collaboration sessions and collaborative lists
 — following is a persistent relationship independent of any list or session. Web-first; the
 Supabase backend is platform-agnostic for a later iOS client.
@@ -15,7 +15,7 @@ describes the feed as historical context.
 
 - **Follow** is asymmetric (`follows`, statuses `pending`/`active`). Following a **public** account
   is instant; following an **effectively-private** one creates a request the target approves.
-- **Sends are viewed on a profile** (`/u/:handle`), not in a feed: a per-grade histogram, the
+- **Sends are viewed on a profile** (`/u/:handle`), not in a feed: the grade pyramid, the
   most-recent day's session, and a keyset-paged send list. Read-only in v1 (no reactions).
 - **Blocking** is a bidirectional cut threaded through *every* social read.
 - **Privacy** is per-account, with an explicit public/private choice made by every user.
@@ -99,10 +99,10 @@ read data). Module-level state + `useSyncExternalStore`, cleared on identity cha
   `block`/`unblock` over the RPCs, rolling back on error so the caller toasts loudly (KTD10).
   `seedEdge` primes status from `search_profiles` rows.
 - **`ProfileSends`** (+ pure `profileStats.ts`) — one keyset fetch over `get_user_sends` (via the
-  shared `sendsPage.ts`) feeds three profile sections: the **grade histogram** (`gradeHistogram` —
-  per-grade counts, hardest-first; no try-bucket split since the projection carries no attempt
-  count), the **latest session** (`latestSession` — the most-recent local-day cluster), and the
-  keyset-paged **all-sends** list. "Load more" grows all three.
+  shared `sendsPage.ts`) feeds three profile sections: the **grade pyramid** — the logbook's own
+  `GradePyramid`/`pyramid()`, try-bucket-split (flash/2nd/3rd/4+), fed by the `tries` the projection
+  now carries — the **latest session** (`latestSession` — the most-recent local-day cluster), and
+  the keyset-paged **all-sends** list. "Load more" grows all three.
 - **`notificationsStore`** — requests (from `get_follow_requests`) + activity (`get_notifications`);
   `badgeCount` = pending requests + unread activity (a request has no `read_at` and is the most
   actionable item, so it counts even with zero unread activity).
@@ -113,7 +113,7 @@ read data). Module-level state + `useSyncExternalStore`, cleared on identity cha
 | --- | --- |
 | `/people` | `DiscoverScreen` — search + co-members + follow-back. |
 | `/notifications` | `NotificationsScreen` — requests (approve/decline) + activity. |
-| `/u/$handle` | `ProfileScreen` — card + relationship button + block + `ProfileSends` (histogram, latest session, list); block-gated "unavailable" state. |
+| `/u/$handle` | `ProfileScreen` — card + relationship button + block + `ProfileSends` (grade pyramid, latest session, list); block-gated "unavailable" state. |
 
 `RelationshipButton` is the visible follow state machine (Follow / Requested→cancel /
 Following→confirm-then-unfollow). `PersonRow` (avatar + identity link + button) is shared across

@@ -66,8 +66,10 @@ export interface SendItem {
   boardLayoutId: number
   /** When the climb happened (display: "sent 3 days ago"). */
   climbedAt: string
-  /** Server arrival stamp — the feed's sort key (never shown; drives keyset paging). */
+  /** Server arrival stamp — the sort key (never shown; drives keyset paging). */
   firstSentAt: string
+  /** Attempt count — drives the profile grade pyramid's try-bucket split (same as the logbook). */
+  tries: number
 }
 
 export interface SendRow {
@@ -83,6 +85,7 @@ export interface SendRow {
   board_layout_id: number
   climbed_at: string
   first_sent_at: string
+  tries: number
 }
 
 // ─── Notifications (get_notifications activity rows) ──────────────────────────
@@ -152,5 +155,6 @@ export function sendFromRow(row: SendRow): SendItem {
     boardLayoutId: row.board_layout_id,
     climbedAt: row.climbed_at,
     firstSentAt: row.first_sent_at,
+    tries: row.tries,
   }
 }
