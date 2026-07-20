@@ -16,7 +16,7 @@ Plan of record: `docs/plans/2026-07-20-001-feat-web-friends-feed-plan.md` (R1–
 - **Blocking** is a bidirectional cut threaded through *every* social read.
 - **Privacy** is per-account, with an explicit public/private choice made by every user.
 
-## Data model (migration `supabase/migrations/0016_social_graph.sql`)
+## Data model (migration `supabase/migrations/0017_social_graph.sql`)
 
 | Table / column | Purpose |
 | --- | --- |
@@ -47,7 +47,7 @@ backfill-invisibility. The feed **displays** the climb `date` but **sorts** by `
 Backfill of pre-existing sends runs *before* the trigger is created (or it would re-stamp `now()`).
 A partial index `ascents (first_sent_at desc, id desc) where sent and not deleted` serves the keyset.
 
-## Access control (migration `0017_social_rpcs.sql`)
+## Access control (migration `0018_social_rpcs.sql`)
 
 Cross-user reads of owner-only `ascents` (0002) **never relax `ascents` RLS** — they go through a
 minimal-projection SECURITY DEFINER core, exactly like 0004's list group-status RPC.
@@ -140,9 +140,9 @@ private-until-chosen gate (KTD9a):
 ## Testing
 
 No local Supabase — migrations are validated on throwaway Postgres via
-`supabase/migrations/tests/run_rls_test.sh` (the `0002 → 0003 → 0007 → 0016 → 0017` chain for the
+`supabase/migrations/tests/run_rls_test.sh` (the `0002 → 0003 → 0007 → 0017 → 0018` chain for the
 RPC case). The `stub_supabase.sql` stub adds `citext` + a `handle` column for `search_profiles`.
-`0016_social_graph_rls.sql` covers the `first_sent_at` gaming path + RLS; `0017_social_rpcs_rls.sql`
+`0017_social_graph_rls.sql` covers the `first_sent_at` gaming path + RLS; `0018_social_rpcs_rls.sql`
 covers the follow/block/gate matrix — including that the projection core is **not** client-callable.
 Web: vitest unit tests per store + screen; `npm run build` (`tsc -b`) + `npm run lint` (oxlint).
 

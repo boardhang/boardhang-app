@@ -67,7 +67,7 @@ begin
   if to_regclass('public.session_queue') is not null then
     execute 'grant select, insert, update, delete on public.session_queue to anon, authenticated';
   end if;
-  -- 0016 chain: the social-graph RLS assertions read/write follows/blocks/notifications as
+  -- 0017 chain: the social-graph RLS assertions read/write follows/blocks/notifications as
   -- `authenticated` (RLS still gates rows; the negative INSERT cases assert denial).
   if to_regclass('public.follows') is not null then
     execute 'grant select, insert, update, delete on public.follows, public.blocks, public.notifications to anon, authenticated';
@@ -147,24 +147,24 @@ run_case "$HERE/0016_session_resume_rls.sql" \
   "$HERE/../0007_collaboration_sessions.sql" \
   "$HERE/../0016_session_resume.sql"
 
-# 0016: social graph — follows/blocks/notifications tables + RLS, the is_blocked bidirectional
+# 0017: social graph — follows/blocks/notifications tables + RLS, the is_blocked bidirectional
 # helper, and the ascents.first_sent_at server-stamped trigger. Needs ascents + set_updated_at
 # (0002); the stub provides profiles/auth.users. The trigger cases run as superuser, the RLS
 # cases as `authenticated`.
-run_case "$HERE/0016_social_graph_rls.sql" \
+run_case "$HERE/0017_social_graph_rls.sql" \
   "$HERE/../0002_logbook_sync.sql" \
-  "$HERE/../0016_social_graph.sql"
+  "$HERE/../0017_social_graph.sql"
 
-# 0017: social RPCs — follow lifecycle, block, search, discovery, and the block/effective-
+# 0018: social RPCs — follow lifecycle, block, search, discovery, and the block/effective-
 # private-gated feed/profile-sends projection core. Needs ascents (0002), list_members (0003)
-# and session_members (0007) for suggest_co_members, and the 0016 tables/helpers. The RPCs are
+# and session_members (0007) for suggest_co_members, and the 0017 tables/helpers. The RPCs are
 # SECURITY DEFINER, so reads run as owner; the case asserts the projection core is NOT
 # executable by the `authenticated` client (gate cannot be bypassed).
-run_case "$HERE/0017_social_rpcs_rls.sql" \
+run_case "$HERE/0018_social_rpcs_rls.sql" \
   "$HERE/../0002_logbook_sync.sql" \
   "$HERE/../0003_collaborative_lists.sql" \
   "$HERE/../0007_collaboration_sessions.sql" \
-  "$HERE/../0016_social_graph.sql" \
-  "$HERE/../0017_social_rpcs.sql"
+  "$HERE/../0017_social_graph.sql" \
+  "$HERE/../0018_social_rpcs.sql"
 
 echo "✅ ALL RLS CASES PASSED"

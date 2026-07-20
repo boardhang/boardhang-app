@@ -1,4 +1,4 @@
--- Assertions for 0016_social_graph.sql. Run after stub_supabase.sql + the 0002 → 0016 chain
+-- Assertions for 0017_social_graph.sql. Run after stub_supabase.sql + the 0002 → 0017 chain
 -- + the "Supabase default grants" step. Verifies:
 --   • the first_sent_at trigger: stamps on sent, never moves once set, ignores client values;
 --   • follows/blocks/notifications RLS: self-scoped reads, no direct edge/block/notif INSERT;
@@ -242,4 +242,4 @@ end $$;
 
 reset role;
 
-\echo 'ALL 0016 SOCIAL-GRAPH ASSERTIONS PASSED'
+\echo 'ALL 0017 SOCIAL-GRAPH ASSERTIONS PASSED'

@@ -1,5 +1,5 @@
--- Assertions for 0017_social_rpcs.sql. Run after stub_supabase.sql + the
--- 0002 → 0003 → 0007 → 0016 → 0017 chain + the "Supabase default grants" step. Verifies the
+-- Assertions for 0018_social_rpcs.sql. Run after stub_supabase.sql + the
+-- 0002 → 0003 → 0007 → 0017 → 0018 chain + the "Supabase default grants" step. Verifies the
 -- follow/block/search/discovery RPCs and — the load-bearing part — that the block + effective-
 -- private gates hold across card/sends/feed/lists/notifications, and that the projection core
 -- is unreachable by a client.
@@ -23,7 +23,7 @@ insert into public.profiles (id, handle, display_name, is_private, privacy_choic
     (:'E',   'ellis', 'Ellis', false, null),
     (:'OUT', 'dev',   'Dev',   false, now());
 
--- B has three sent ascents (distinct first_sent_at via the 0016 trigger + tiny sleeps), one
+-- B has three sent ascents (distinct first_sent_at via the 0017 trigger + tiny sleeps), one
 -- unsent attempt, and one soft-deleted send — only the three live sends may reach a feed.
 \set SB1 '10000000-0000-0000-0000-000000000001'
 \set SB2 '10000000-0000-0000-0000-000000000002'
@@ -263,4 +263,4 @@ end $$;
 
 reset role;
 
-\echo 'ALL 0017 SOCIAL-RPCS ASSERTIONS PASSED'
+\echo 'ALL 0018 SOCIAL-RPCS ASSERTIONS PASSED'

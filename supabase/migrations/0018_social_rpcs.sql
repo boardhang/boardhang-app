@@ -1,5 +1,5 @@
--- 0017_social_rpcs.sql
--- Friends / follow feed — the RPC layer over 0016's storage (mirrors the 0003→0004
+-- 0018_social_rpcs.sql
+-- Friends / follow feed — the RPC layer over 0017's storage (mirrors the 0003→0004
 -- storage-then-RPC split). Every cross-user read of owner-only `ascents` (0002) goes through
 -- a minimal-projection SECURITY DEFINER core here; `ascents` RLS stays owner-only, untouched.
 --
@@ -51,7 +51,7 @@ grant execute on function public.is_effectively_private(uuid) to authenticated;
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Follow lifecycle.
 
--- request_follow: the ONLY writer of a follow edge (0016 has no INSERT policy). Sets
+-- request_follow: the ONLY writer of a follow edge (0017 has no INSERT policy). Sets
 -- pending vs active from the target's EFFECTIVE privacy — the client never chooses. Rejects
 -- self-follow and a blocked pair (either direction). Lands a `follow` notification only when
 -- the edge is newly created AND active (a public / already-chosen target). Idempotent:
@@ -125,7 +125,7 @@ grant execute on function public.respond_to_follow(uuid, boolean) to authenticat
 
 -- unfollow: the follower removes their own outgoing edge (active OR pending — cancels a
 -- request). remove_follower: the followee removes an incoming edge. Both are also expressible
--- via 0016's DELETE policy; the RPCs keep the client surface uniform.
+-- via 0017's DELETE policy; the RPCs keep the client surface uniform.
 create or replace function public.unfollow(p_target uuid)
     returns void
     language sql
@@ -151,10 +151,10 @@ revoke all on function public.remove_follower(uuid) from public;
 grant execute on function public.remove_follower(uuid) to authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Block. block_user is the only writer of a block row (0016 has no INSERT policy). In one
+-- Block. block_user is the only writer of a block row (0017 has no INSERT policy). In one
 -- transaction it deletes follow edges BOTH ways, purges cross-pair notifications BOTH ways
 -- (so a stale "new follower" row can't keep rendering a now-blocked user's card), then inserts
--- the block. unblock_user removes the block row (also expressible via 0016's DELETE policy).
+-- the block. unblock_user removes the block row (also expressible via 0017's DELETE policy).
 create or replace function public.block_user(p_target uuid)
     returns void
     language plpgsql
@@ -520,8 +520,8 @@ revoke all on function public.mark_notifications_read(uuid[]) from public;
 grant execute on function public.mark_notifications_read(uuid[]) to authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Account deletion: no change. These are functions only; the 0016 tables they write carry the
+-- Account deletion: no change. These are functions only; the 0017 tables they write carry the
 -- ON DELETE CASCADE FKs that public.delete_user() (0001) relies on.
 --
--- Manual step (no SQL equivalent): apply this migration to the Supabase project after 0016.
+-- Manual step (no SQL equivalent): apply this migration to the Supabase project after 0017.
 -- ─────────────────────────────────────────────────────────────────────────────
