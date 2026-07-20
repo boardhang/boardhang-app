@@ -71,9 +71,16 @@ begin
         raise exception 'cannot follow a blocked user';
     end if;
 
+    -- Conditional INSERT ... SELECT (not VALUES): the WHERE re-checks is_blocked at insert time.
+    -- The explicit check above gives a clear error on the common already-blocked case; this
+    -- re-check narrows the TOCTOU where a concurrent block_user commits between that check and
+    -- this insert — without it, the block would land and this insert would still create an orphan
+    -- follow edge coexisting with the block. No sends leak either way (every sends read re-gates
+    -- on is_blocked); this keeps the follow graph itself consistent with the block.
     insert into public.follows (follower_id, followee_id, status)
-    values (auth.uid(), p_target,
-            case when public.is_effectively_private(p_target) then 'pending' else 'active' end)
+    select auth.uid(), p_target,
+           case when public.is_effectively_private(p_target) then 'pending' else 'active' end
+    where not public.is_blocked(auth.uid(), p_target)
     on conflict (follower_id, followee_id) do nothing
     returning * into _edge;
 
@@ -211,6 +218,16 @@ grant execute on function public.unblock_user(uuid) to authenticated;
 -- profile. The R7 card exemption (a private account's card stays visible to non-followers) is
 -- NOT extended to blocked users — hence this gate. Match is case-insensitive via lower() on the
 -- ::text form (handle is citext, but its operators aren't resolvable under an empty search_path).
+--
+-- SECURITY BOUNDARY (accepted v1 limitation): this gate is UI-deep, not a hard access boundary.
+-- `profiles` is world-readable to any authenticated user (0001 SELECT `using (true)`), which
+-- AuthProvider and the session-member UI read directly, so a determined client can bypass this
+-- RPC and read a blocked user's handle/display_name/is_private straight from the table (and page
+-- the whole profile list, sidestepping search_profiles' anti-scrape floor). We accept this for
+-- v1: profile handle/display_name are low-sensitivity in a signed-in app, and the REAL privacy
+-- boundary is the SENDS/activity gate (the revoked _sends_for_actors core + is_blocked in every
+-- sends read), which is hard-enforced and cannot be bypassed this way. Narrowing the `profiles`
+-- policy (and routing session-member + card reads through gated RPCs) is a tracked follow-up.
 create or replace function public.get_profile_card(p_handle text)
     returns table (id uuid, handle text, display_name text, avatar_url text, is_private boolean)
     language plpgsql
@@ -335,11 +352,16 @@ begin
     if not public.can_view_social_graph(p_target) then
         return;  -- gated: no counts
     end if;
+    -- Exclude the viewer's blocked pairs from the counts so they agree with get_follow_list
+    -- (which drops blocked users per row). Without this, counts and the rendered list disagree by
+    -- exactly the blocked/orphan edges.
     return query
-        select (select count(*) from public.follows
-                    where followee_id = p_target and status = 'active'),
-               (select count(*) from public.follows
-                    where follower_id = p_target and status = 'active');
+        select (select count(*) from public.follows f
+                    where f.followee_id = p_target and f.status = 'active'
+                      and not public.is_blocked(auth.uid(), f.follower_id)),
+               (select count(*) from public.follows f
+                    where f.follower_id = p_target and f.status = 'active'
+                      and not public.is_blocked(auth.uid(), f.followee_id));
 end;
 $$;
 

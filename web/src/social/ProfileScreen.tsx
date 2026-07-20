@@ -13,7 +13,6 @@ import { MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '../supabase/client'
 import { useAuth } from '../auth/AuthProvider'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -30,7 +29,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { memberInitials } from '../sessions/sessionsTypes'
+import { PersonAvatar } from './PersonAvatar'
 import { RelationshipButton } from './RelationshipButton'
 import { UserSendsList } from './UserSendsList'
 import { block, loadEdge, unblock, useEdge } from './followStore'
@@ -128,17 +127,18 @@ function ProfileHeader({
   isSelf: boolean
 }) {
   const edge = useEdge(card.id)
-  const initials = memberInitials({ displayName: card.displayName, handle: card.handle, userId: card.id })
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-4">
-        <Avatar size="lg" className="size-16">
-          {card.avatarUrl && <AvatarImage src={card.avatarUrl} alt="" />}
-          <AvatarFallback className="bg-primary/15 text-lg font-semibold text-foreground">
-            {initials}
-          </AvatarFallback>
-        </Avatar>
+        <PersonAvatar
+          handle={card.handle}
+          displayName={card.displayName}
+          userId={card.id}
+          avatarUrl={card.avatarUrl}
+          size="lg"
+          className="size-16"
+        />
         <div className="min-w-0 flex-1">
           {card.displayName.trim() && (
             <p className="truncate font-semibold text-foreground">{card.displayName}</p>

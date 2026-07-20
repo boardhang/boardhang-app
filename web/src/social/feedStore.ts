@@ -13,6 +13,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { supabase } from '../supabase/client'
+import { currentUserId } from './currentUser'
 import { sendFromRow, type SendItem, type SendRow } from './socialTypes'
 
 export type FeedStatus = 'idle' | 'loading' | 'loaded' | 'stale' | 'offline' | 'error'
@@ -40,12 +41,6 @@ let loadToken = 0
 function setState(next: Partial<FeedState>): void {
   state = { ...state, ...next }
   for (const l of listeners) l()
-}
-
-async function currentUserId(): Promise<string | null> {
-  if (!supabase) return null
-  const { data } = await supabase.auth.getSession()
-  return data.session?.user.id ?? null
 }
 
 interface CacheShape {

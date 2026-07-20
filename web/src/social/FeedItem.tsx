@@ -4,10 +4,9 @@
 // isn't openable in the bundled catalog, so it renders as plain text.
 
 import { useNavigate } from '@tanstack/react-router'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { boardByLayoutId } from '../board/boards'
 import { catalogNavTarget } from '../catalog/catalogNav'
-import { memberInitials } from '../sessions/sessionsTypes'
+import { PersonAvatar } from './PersonAvatar'
 import { relativeTime } from './relativeTime'
 import type { SendItem } from './socialTypes'
 
@@ -15,7 +14,6 @@ import type { SendItem } from './socialTypes'
 export function FeedItem({ send, hideAvatar = false }: { send: SendItem; hideAvatar?: boolean }) {
   const navigate = useNavigate()
   const board = boardByLayoutId(send.boardLayoutId)
-  const initials = memberInitials({ displayName: send.displayName, handle: send.handle, userId: send.actorId })
   const openable = Boolean(send.sourceCatalogId && board)
 
   function open() {
@@ -27,12 +25,12 @@ export function FeedItem({ send, hideAvatar = false }: { send: SendItem; hideAva
   const body = (
     <>
       {!hideAvatar && (
-        <Avatar size="sm">
-          {send.avatarUrl && <AvatarImage src={send.avatarUrl} alt="" />}
-          <AvatarFallback className="bg-primary/15 font-semibold text-foreground">
-            {initials}
-          </AvatarFallback>
-        </Avatar>
+        <PersonAvatar
+          handle={send.handle}
+          displayName={send.displayName}
+          userId={send.actorId}
+          avatarUrl={send.avatarUrl}
+        />
       )}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm text-foreground">

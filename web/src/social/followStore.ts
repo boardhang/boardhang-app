@@ -12,6 +12,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { supabase } from '../supabase/client'
+import { currentUserId } from './currentUser'
 import { purgeActorFromFeed } from './feedStore'
 import type { EdgeStatus } from './socialTypes'
 
@@ -51,12 +52,6 @@ export function getEdge(id: string): EdgeState {
 export function seedEdge(id: string, status: EdgeStatus): void {
   if (edges.has(id)) return
   setEdge(id, { status, blocked: false })
-}
-
-async function currentUserId(): Promise<string | null> {
-  if (!supabase) return null
-  const { data } = await supabase.auth.getSession()
-  return data.session?.user.id ?? null
 }
 
 /** Load the viewer's current edge toward `targetId` from the graph (RLS-scoped to own edges). */

@@ -6,10 +6,9 @@
 import { useEffect } from 'react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { memberInitials } from '../sessions/sessionsTypes'
+import { PersonAvatar } from './PersonAvatar'
 import { relativeTime } from './relativeTime'
 import {
   loadNotifications,
@@ -82,27 +81,6 @@ export function NotificationsScreen() {
         </section>
       )}
     </div>
-  )
-}
-
-function PersonAvatar({
-  handle,
-  displayName,
-  userId,
-  avatarUrl,
-}: {
-  handle: string
-  displayName: string
-  userId: string
-  avatarUrl: string | null
-}) {
-  return (
-    <Avatar size="sm">
-      {avatarUrl && <AvatarImage src={avatarUrl} alt="" />}
-      <AvatarFallback className="bg-primary/15 font-semibold text-foreground">
-        {memberInitials({ displayName, handle, userId })}
-      </AvatarFallback>
-    </Avatar>
   )
 }
 

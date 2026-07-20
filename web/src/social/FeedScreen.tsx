@@ -8,11 +8,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ChevronDown } from 'lucide-react'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { memberInitials } from '../sessions/sessionsTypes'
 import { FeedItem } from './FeedItem'
+import { PersonAvatar } from './PersonAvatar'
 import { groupFeed, type BurstEntry } from './feedGrouping'
 import { loadFeed, loadMoreFeed, useFeed } from './feedStore'
 import { relativeTime } from './relativeTime'
@@ -102,11 +101,6 @@ export function FeedScreen() {
 
 function BurstRow({ entry }: { entry: BurstEntry }) {
   const [open, setOpen] = useState(false)
-  const initials = memberInitials({
-    displayName: entry.displayName,
-    handle: entry.handle,
-    userId: entry.actorId,
-  })
   return (
     <div className="py-1">
       <button
@@ -115,12 +109,12 @@ function BurstRow({ entry }: { entry: BurstEntry }) {
         aria-expanded={open}
         className="flex w-full items-center gap-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Avatar size="sm">
-          {entry.avatarUrl && <AvatarImage src={entry.avatarUrl} alt="" />}
-          <AvatarFallback className="bg-primary/15 font-semibold text-foreground">
-            {initials}
-          </AvatarFallback>
-        </Avatar>
+        <PersonAvatar
+          handle={entry.handle}
+          displayName={entry.displayName}
+          userId={entry.actorId}
+          avatarUrl={entry.avatarUrl}
+        />
         <p className="min-w-0 flex-1 truncate text-sm text-foreground">
           <span className="font-medium">@{entry.handle}</span> logged{' '}
           <span className="font-medium">{entry.sends.length} sends</span>

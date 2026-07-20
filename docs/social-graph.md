@@ -146,6 +146,24 @@ RPC case). The `stub_supabase.sql` stub adds `citext` + a `handle` column for `s
 covers the follow/block/gate matrix — including that the projection core is **not** client-callable.
 Web: vitest unit tests per store + screen; `npm run build` (`tsc -b`) + `npm run lint` (oxlint).
 
+## Security boundary — what is and isn't hard-enforced
+
+The **sends/activity gate is the real privacy boundary and is hard-enforced**: the projection
+core `_sends_for_actors` is executable by no client role (revoked from `public`, `anon`,
+`authenticated`, `service_role` — a `revoke from public` alone is insufficient under Supabase's
+default function privileges), and `is_blocked` (both directions) + the effective-private gate are
+applied in every sends read. A client cannot read another user's private/blocked sends.
+
+The **profile-card and search gates are UI-deep, not hard boundaries** (accepted v1 limitation).
+`profiles` is world-readable to any authenticated user (`0001` SELECT `using (true)`) because
+AuthProvider and the session-member UI read it directly. So a determined client can bypass
+`get_profile_card`/`search_profiles` and read any handle/display_name/`is_private` — or page the
+whole profile table — straight from PostgREST. R11's "blocked → profile appears absent" and KTD8's
+anti-scrape floor therefore hold in the app UI but not at the API layer. This is accepted for v1:
+profile handle/display_name are low-sensitivity in a signed-in app, and no *activity* leaks.
+Narrowing the `profiles` policy (routing session-member + card reads through gated RPCs) is a
+tracked follow-up.
+
 ## Gotchas
 
 - **`handle` is returned as `text`** from every RPC (`handle::text`) — the `citext` type isn't
