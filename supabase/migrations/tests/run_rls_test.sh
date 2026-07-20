@@ -155,4 +155,16 @@ run_case "$HERE/0016_social_graph_rls.sql" \
   "$HERE/../0002_logbook_sync.sql" \
   "$HERE/../0016_social_graph.sql"
 
+# 0017: social RPCs — follow lifecycle, block, search, discovery, and the block/effective-
+# private-gated feed/profile-sends projection core. Needs ascents (0002), list_members (0003)
+# and session_members (0007) for suggest_co_members, and the 0016 tables/helpers. The RPCs are
+# SECURITY DEFINER, so reads run as owner; the case asserts the projection core is NOT
+# executable by the `authenticated` client (gate cannot be bypassed).
+run_case "$HERE/0017_social_rpcs_rls.sql" \
+  "$HERE/../0002_logbook_sync.sql" \
+  "$HERE/../0003_collaborative_lists.sql" \
+  "$HERE/../0007_collaboration_sessions.sql" \
+  "$HERE/../0016_social_graph.sql" \
+  "$HERE/../0017_social_rpcs.sql"
+
 echo "✅ ALL RLS CASES PASSED"
