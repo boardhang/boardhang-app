@@ -4,6 +4,7 @@
 
 import { boardByLayoutId } from '../board/boards'
 import type { Session } from './sessionsTypes'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export interface ResumableSessionRowProps {
@@ -16,12 +17,13 @@ export interface ResumableSessionRowProps {
 
 export function ResumableSessionRow({ session, disabled, onResume, className }: ResumableSessionRowProps) {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       disabled={disabled}
       onClick={() => onResume(session)}
       className={cn(
-        'flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition hover:bg-accent disabled:opacity-60',
+        'flex h-auto w-full items-center justify-between gap-2 px-3 py-2 text-left font-normal',
         className,
       )}
     >
@@ -34,6 +36,6 @@ export function ResumableSessionRow({ session, disabled, onResume, className }: 
       <span className="shrink-0 text-xs font-medium text-primary">
         {disabled ? 'Resuming…' : 'Resume'}
       </span>
-    </button>
+    </Button>
   )
 }

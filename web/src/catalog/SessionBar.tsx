@@ -1,7 +1,8 @@
 // In-context catalog session bar (U7). Shows the active session for THIS board — its name
-// (inline-renameable), member initials, a manual refresh, Share (QR + link), and a ⋯ menu
-// with Leave. When no session is active it offers "Start session"; when a session for a
-// DIFFERENT board is active it renders nothing (the global pill surfaces that one).
+// (inline-renameable), member initials, Share (QR + link), and a ⋯ menu with Leave. When no
+// session is active it offers "Start session" and stacks any cross-device Resume rows for
+// this board above it; when a session for a DIFFERENT board is active it renders nothing
+// (the global pill surfaces that one).
 
 import { useCallback, useRef, useState } from 'react'
 import { MoreHorizontal, Plus, Share2, Users, X } from 'lucide-react'

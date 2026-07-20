@@ -88,8 +88,8 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   suppressed in a session since the pill is the sole home for send status; solo browsing is
   unchanged. Dimmed when the projection is paused/stale so it never shows crisp "who" the filter
   itself no longer trusts), `catalog/SessionBar.tsx`
-  (in-context bar: rename, members, refresh, Share, Leave;
-  a single **`+`** launcher button when solo), `sessions/ShareSession.tsx` (QR +
+  (in-context bar: rename, members, Share, Leave, plus stacked cross-device Resume rows for
+  this board above StartBar; a single **`+`** launcher button when solo), `sessions/ShareSession.tsx` (QR +
   copy/share of the join link), `shell/SessionPill.tsx` (global pill on every non-catalog route,
   with roster + owner remove-member + Leave), `sessions/JoinSession.tsx` (`/session/join/$token`
   — sign-in → consent → join → land in the board catalog).

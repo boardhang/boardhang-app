@@ -19,7 +19,7 @@ export interface UseResumableSessionsOptions {
   boardLayoutId?: number
 }
 
-export interface UseResumableSessions {
+export interface UseResumableSessionsResult {
   /** Live sessions the caller can resume, filtered by `boardLayoutId` when set. */
   resumable: Session[]
   /** Id of the session currently being resumed (row should render as pending), or null. */
@@ -29,13 +29,19 @@ export interface UseResumableSessions {
    *  notice for a session the user never tapped. */
   endedNotice: boolean
   /** Adopt a listed session. On `{ live }` → navigate to its catalog (also activates the
-   *  board); on dead → drop the row and set `endedNotice`. */
+   *  board); on dead → drop the row and set `endedNotice`. No-op while another resume is
+   *  already in flight (rapid-tap guard). */
   onResume: (session: Session) => Promise<void>
 }
 
-export function useResumableSessions(opts: UseResumableSessionsOptions = {}): UseResumableSessions {
+export function useResumableSessions(
+  opts: UseResumableSessionsOptions = {},
+): UseResumableSessionsResult {
   const { boardLayoutId } = opts
-  const { activeSession } = useSessions()
+  // Depend on `selfId` so an identity swap that leaves `signedIn` true and `activeSession` null
+  // (syncSessionsIdentity clearing the store without a sign-out flip) still re-runs the effect —
+  // the mount-scoped `alive` flag alone would let user A's in-flight fetch resolve into user B's UI.
+  const { activeSession, selfId } = useSessions()
   const { status } = useAuth()
   const signedIn = status !== 'signedOut'
   const navigate = useNavigate()
@@ -46,6 +52,8 @@ export function useResumableSessions(opts: UseResumableSessionsOptions = {}): Us
   // Mirror `resumable` so `load` can skip a no-op empty→empty dispatch entirely (not just bail on
   // re-render) — an idle fetch that finds nothing must not touch state at all.
   const resumableRef = useRef<Session[]>([])
+  // Rapid-tap guard — read inside onResume to bail without racing on the resumingId setState.
+  const resumingRef = useRef<string | null>(null)
   const setList = useCallback((next: Session[]) => {
     resumableRef.current = next
     setResumable(next)
@@ -68,26 +76,39 @@ export function useResumableSessions(opts: UseResumableSessionsOptions = {}): Us
       setList(filtered)
     }
     void load()
-    const refetch = () => void load()
+    // Guard on `visible` so tab-hide events don't also trigger a fetch (fires on both edges).
+    const refetch = () => {
+      if (document.visibilityState === 'visible') void load()
+    }
+    const refetchOnline = () => void load()
     document.addEventListener('visibilitychange', refetch)
-    window.addEventListener('online', refetch)
+    window.addEventListener('online', refetchOnline)
     return () => {
       alive = false
       document.removeEventListener('visibilitychange', refetch)
-      window.removeEventListener('online', refetch)
+      window.removeEventListener('online', refetchOnline)
     }
-  }, [signedIn, activeSession, boardLayoutId, setList])
+  }, [signedIn, activeSession, selfId, boardLayoutId, setList])
 
   const onResume = useCallback(
     async (s: Session) => {
+      // Rapid-tap guard: a second tap (same or different row) while the first is in flight
+      // must not interleave setActiveSession/navigate. The ref check is race-free vs setState.
+      if (resumingRef.current) return
+      resumingRef.current = s.id
       setEndedNotice(false)
       setResumingId(s.id)
-      const { live } = await resumeSession(s)
-      if (live) {
-        navigateToSessionBoard(navigate, s)
-      } else {
-        setList(resumableRef.current.filter((x) => x.id !== s.id))
-        setEndedNotice(true)
+      try {
+        const { live } = await resumeSession(s)
+        if (live) {
+          navigateToSessionBoard(navigate, s)
+        } else {
+          setList(resumableRef.current.filter((x) => x.id !== s.id))
+          setEndedNotice(true)
+        }
+      } finally {
+        // Always release — otherwise a throwing navigate leaves the row disabled forever.
+        resumingRef.current = null
         setResumingId(null)
       }
     },
