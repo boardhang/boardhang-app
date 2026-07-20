@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   touched: [] as string[],
   selectCount: 0,
   clientNull: false,
+  rpcError: false,
 }))
 
 function dayFromNow(days: number): string {
@@ -114,6 +115,20 @@ vi.mock('../supabase/client', () => {
         if (s) s.expires_at = dayFromNow(1)
         return { data: null, error: null }
       }
+      if (name === 'list_my_live_sessions') {
+        if (h.rpcError) return { data: null, error: { message: 'boom' } }
+        const now = Date.now()
+        const rows = h.sessions
+          .filter(
+            (s) =>
+              !s.deleted &&
+              Date.parse(s.expires_at as string) > now &&
+              h.members.some((m) => m.session_id === s.id && m.user_id === h.userId),
+          )
+          .sort((a, b) => Date.parse(b.expires_at as string) - Date.parse(a.expires_at as string))
+          .map(({ invite_token: _omit, ...rest }) => rest) // RPC never returns invite_token
+        return { data: rows, error: null }
+      }
       return { data: null, error: null }
     }
     return { then: (res: (v: unknown) => void) => res(run()) }
@@ -144,6 +159,8 @@ import {
   initSessions,
   joinSession,
   leaveSession,
+  listMyLiveSessions,
+  resumeSession,
   refreshActiveSession,
   reloadActiveRoster,
   removeMemberFromRoster,
@@ -151,7 +168,7 @@ import {
   setMemberStatus,
   syncSessionsIdentity,
 } from './sessionsStore'
-import { SESSION_COLUMNS } from './sessionsTypes'
+import { SESSION_COLUMNS, fromSessionRow, type Session } from './sessionsTypes'
 
 const ACTIVE_KEY = 'sessionsActive'
 
@@ -165,6 +182,7 @@ beforeEach(() => {
   h.touched = []
   h.selectCount = 0
   h.clientNull = false
+  h.rpcError = false
   clearSessionsCache() // reset in-memory module state
   localStorage.clear() // clearSessionsCache may have re-touched keys
 })
@@ -331,5 +349,92 @@ describe('sessionsStore', () => {
     expect(gone?.userId).toBe('user-B')
     expect(getSessionsSnapshot().roster.map((m) => m.userId)).not.toContain('user-B')
     expect(removeMemberFromRoster('nope')).toBeNull()
+  })
+
+  // ── U2: cross-device resume — listMyLiveSessions + resumeSession ──
+
+  /** Seed a live server session that user-A is a member of, and return the client-shaped
+   *  Session candidate (as listMyLiveSessions would yield — camelCase, no invite_token). */
+  function seedLiveForA(overrides: Record<string, unknown> = {}): Session {
+    const id = (overrides.id as string) ?? `S-${++h.seq}`
+    const now = new Date().toISOString()
+    const row = {
+      owner_id: 'user-A',
+      name: 'Crew',
+      board_layout_id: 7,
+      invite_token: `tok-${id}`,
+      expires_at: dayFromNow(1),
+      created_at: now,
+      updated_at: now,
+      deleted: false,
+      ...overrides,
+      id, // computed above (overrides.id ?? generated); wins over any spread id
+    }
+    h.sessions.push(row)
+    h.members.push({ session_id: id, user_id: 'user-A', joined_at: now })
+    return fromSessionRow(row as never)
+  }
+
+  it('listMyLiveSessions returns the caller live sessions as camelCase Sessions, no invite_token', async () => {
+    seedLiveForA({ id: 'S-live' })
+    // A session A is not a member of — must be excluded by the RPC's membership gate.
+    h.sessions.push({
+      id: 'S-notmine', owner_id: 'other', name: 'x', board_layout_id: 7, invite_token: 't',
+      expires_at: dayFromNow(1), created_at: '', updated_at: '', deleted: false,
+    })
+    const list = await listMyLiveSessions()
+    expect(list.map((s) => s.id)).toEqual(['S-live'])
+    expect(list[0]).toMatchObject({ boardLayoutId: 7, ownerId: 'user-A' })
+    expect(list[0]).not.toHaveProperty('invite_token')
+  })
+
+  it('listMyLiveSessions returns [] on RPC error', async () => {
+    seedLiveForA()
+    h.rpcError = true
+    expect(await listMyLiveSessions()).toEqual([])
+  })
+
+  it('listMyLiveSessions returns [] when the client is unconfigured', async () => {
+    h.clientNull = true
+    expect(await listMyLiveSessions()).toEqual([])
+  })
+
+  it('resumeSession adopts a live session: active + persisted pointer + { live: true }', async () => {
+    const candidate = seedLiveForA({ id: 'S-resume' })
+    localStorage.setItem('sessionMemberStatus:S-resume', JSON.stringify({ 'user-A': ['sent'] }))
+    const res = await resumeSession(candidate)
+    expect(res).toEqual({ live: true })
+    expect(getSessionsSnapshot().activeSession?.id).toBe('S-resume')
+    expect(JSON.parse(localStorage.getItem(ACTIVE_KEY)!).id).toBe('S-resume')
+    // Seeds memberStatus from localStorage for that session id (R3).
+    expect(getSessionsSnapshot().memberStatus).toEqual({ 'user-A': ['sent'] })
+    // KTD-7: the persisted pointer never carries the invite_token.
+    expect(localStorage.getItem(ACTIVE_KEY)).not.toContain('tok-')
+  })
+
+  it('resumeSession does not bump expiry (never calls touch_session) — R4', async () => {
+    const candidate = seedLiveForA({ id: 'S-notouch' })
+    await resumeSession(candidate)
+    expect(h.touched).toEqual([])
+  })
+
+  it('resumeSession on a dead-on-arrival session returns { live: false } and leaves no active session', async () => {
+    const candidate = seedLiveForA({ id: 'S-dead' })
+    // The session ended between list and tap: server row now soft-deleted. The candidate itself is
+    // not locally expired, so resume adopts then the reconcile retires it.
+    h.sessions.find((s) => s.id === 'S-dead')!.deleted = true
+    const res = await resumeSession(candidate)
+    expect(res).toEqual({ live: false })
+    expect(getSessionsSnapshot().activeSession).toBeNull()
+  })
+
+  it('resumeSession on a locally-expired session is a no-op — { live: false }, no server read', async () => {
+    const candidate = seedLiveForA({ id: 'S-old' })
+    const stale = { ...candidate, expiresAt: new Date(Date.now() - 3 * 86_400_000).toISOString() }
+    h.selectCount = 0
+    const res = await resumeSession(stale)
+    expect(res).toEqual({ live: false })
+    expect(getSessionsSnapshot().activeSession).toBeNull()
+    expect(h.selectCount).toBe(0) // short-circuited before any server reconcile
   })
 })

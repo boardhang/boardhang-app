@@ -1,9 +1,30 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getActiveBoardId } from '../board/boardStore'
 
-const h = vi.hoisted(() => ({ activeSession: null as unknown }))
-vi.mock('../sessions/sessionsStore', () => ({ useSessions: () => ({ activeSession: h.activeSession }) }))
+const h = vi.hoisted(() => ({
+  activeSession: null as unknown,
+  status: 'signedInWithProfile' as string,
+  liveSessions: [] as unknown[],
+  resumeResult: { live: true } as { live: boolean },
+  listMyLiveSessions: vi.fn(),
+  resumeSession: vi.fn(),
+  navigate: vi.fn(),
+  navigateToSessionBoard: vi.fn(),
+}))
+vi.mock('@tanstack/react-router', async (orig) => ({
+  ...((await orig()) as Record<string, unknown>),
+  useNavigate: () => h.navigate,
+}))
+vi.mock('../auth/AuthProvider', () => ({ useAuth: () => ({ status: h.status }) }))
+vi.mock('../sessions/sessionsStore', () => ({
+  useSessions: () => ({ activeSession: h.activeSession }),
+  listMyLiveSessions: (...a: unknown[]) => h.listMyLiveSessions(...a),
+  resumeSession: (...a: unknown[]) => h.resumeSession(...a),
+}))
+vi.mock('../sessions/sessionNav', () => ({
+  navigateToSessionBoard: (...a: unknown[]) => h.navigateToSessionBoard(...a),
+}))
 vi.mock('../sessions/ScanToJoin', () => ({
   ScanToJoinButton: (p: { children: React.ReactNode; 'aria-label'?: string }) => (
     <button aria-label={p['aria-label']}>{p.children}</button>
@@ -14,6 +35,13 @@ import { MyBoards } from './MyBoards'
 
 beforeEach(() => {
   h.activeSession = null
+  h.status = 'signedInWithProfile'
+  h.liveSessions = []
+  h.resumeResult = { live: true }
+  h.listMyLiveSessions.mockReset().mockImplementation(async () => h.liveSessions)
+  h.resumeSession.mockReset().mockImplementation(async () => h.resumeResult)
+  h.navigate.mockClear()
+  h.navigateToSessionBoard.mockClear()
   localStorage.clear()
   window.dispatchEvent(new StorageEvent('storage')) // reset boardStore snapshot
 })
@@ -118,5 +146,108 @@ describe('MyBoards', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
     fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
     expect(screen.queryByText('My boards')).toBeNull() // back to first-run
+  })
+
+  // ── U3: cross-device "Resume session" surface ──
+
+  const tick = () => new Promise((r) => setTimeout(r))
+
+  it('lists resumable sessions when signed in with no active session (R1)', async () => {
+    h.liveSessions = [{ id: 'S9', name: 'Tuesday crew', boardLayoutId: 7 }]
+    render(<MyBoards onActivated={() => {}} />)
+    expect(await screen.findByText('Resume session')).toBeInTheDocument()
+    expect(screen.getByText('Tuesday crew')).toBeInTheDocument()
+  })
+
+  it('does not fetch or list resumable sessions while a session is active (R5)', async () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 7 }
+    h.liveSessions = [{ id: 'S9', name: 'Tuesday crew', boardLayoutId: 7 }]
+    render(<MyBoards onActivated={() => {}} />)
+    await tick()
+    expect(h.listMyLiveSessions).not.toHaveBeenCalled()
+    expect(screen.queryByText('Resume session')).not.toBeInTheDocument()
+  })
+
+  it('does not fetch resumable sessions when signed out (R5)', async () => {
+    h.status = 'signedOut'
+    h.liveSessions = [{ id: 'S9', name: 'Tuesday crew', boardLayoutId: 7 }]
+    render(<MyBoards onActivated={() => {}} />)
+    await tick()
+    expect(h.listMyLiveSessions).not.toHaveBeenCalled()
+    expect(screen.queryByText('Resume session')).not.toBeInTheDocument()
+  })
+
+  it('renders no Resume section when there are no live sessions (R5)', async () => {
+    h.liveSessions = []
+    render(<MyBoards onActivated={() => {}} />)
+    await waitFor(() => expect(h.listMyLiveSessions).toHaveBeenCalled())
+    expect(screen.queryByText('Resume session')).not.toBeInTheDocument()
+  })
+
+  it('resumes a live session and lands in its board catalog (R3)', async () => {
+    h.liveSessions = [{ id: 'S9', name: 'Tuesday crew', boardLayoutId: 7 }]
+    h.resumeResult = { live: true }
+    render(<MyBoards onActivated={() => {}} />)
+    fireEvent.click(await screen.findByText('Tuesday crew'))
+    await waitFor(() =>
+      expect(h.resumeSession).toHaveBeenCalledWith(expect.objectContaining({ id: 'S9' })),
+    )
+    await waitFor(() =>
+      expect(h.navigateToSessionBoard).toHaveBeenCalledWith(
+        h.navigate,
+        expect.objectContaining({ id: 'S9' }),
+      ),
+    )
+  })
+
+  it('shows an ended notice and drops the row for a dead-on-arrival session (R3)', async () => {
+    h.liveSessions = [{ id: 'S9', name: 'Tuesday crew', boardLayoutId: 7 }]
+    h.resumeResult = { live: false }
+    render(<MyBoards onActivated={() => {}} />)
+    fireEvent.click(await screen.findByText('Tuesday crew'))
+    expect(await screen.findByText('That session has ended.')).toBeInTheDocument()
+    expect(h.navigateToSessionBoard).not.toHaveBeenCalled()
+    expect(screen.queryByText('Tuesday crew')).not.toBeInTheDocument()
+  })
+
+  it('hides the ended notice once a refetch repopulates the resume list (R3/R5)', async () => {
+    h.liveSessions = [{ id: 'S9', name: 'Tuesday crew', boardLayoutId: 7 }]
+    h.resumeResult = { live: false }
+    render(<MyBoards onActivated={() => {}} />)
+    fireEvent.click(await screen.findByText('Tuesday crew'))
+    expect(await screen.findByText('That session has ended.')).toBeInTheDocument()
+    // A later refetch surfaces a different live session — the stale ended notice must not coexist
+    // with a populated Resume list.
+    h.liveSessions = [{ id: 'S10', name: 'Wednesday crew', boardLayoutId: 7 }]
+    window.dispatchEvent(new Event('online'))
+    expect(await screen.findByText('Wednesday crew')).toBeInTheDocument()
+    expect(screen.queryByText('That session has ended.')).not.toBeInTheDocument()
+  })
+
+  it('does not resurrect the ended notice after a repopulate-then-empty refetch cycle (R3/R5)', async () => {
+    h.liveSessions = [{ id: 'S9', name: 'Tuesday crew', boardLayoutId: 7 }]
+    h.resumeResult = { live: false }
+    render(<MyBoards onActivated={() => {}} />)
+    fireEvent.click(await screen.findByText('Tuesday crew'))
+    expect(await screen.findByText('That session has ended.')).toBeInTheDocument()
+    // A refetch surfaces a new session → the stale notice is cleared, not just masked.
+    h.liveSessions = [{ id: 'S10', name: 'Wednesday crew', boardLayoutId: 7 }]
+    window.dispatchEvent(new Event('online'))
+    expect(await screen.findByText('Wednesday crew')).toBeInTheDocument()
+    // That session then ends elsewhere and the list empties again: the notice must NOT reappear —
+    // the user never re-triggered it (guards against the phantom-notice edge).
+    h.liveSessions = []
+    window.dispatchEvent(new Event('online'))
+    await waitFor(() => expect(screen.queryByText('Wednesday crew')).not.toBeInTheDocument())
+    expect(screen.queryByText('That session has ended.')).not.toBeInTheDocument()
+  })
+
+  it('refetches resumable sessions on foreground and reconnect (R5 self-heal)', async () => {
+    render(<MyBoards onActivated={() => {}} />)
+    await waitFor(() => expect(h.listMyLiveSessions).toHaveBeenCalledTimes(1))
+    document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => expect(h.listMyLiveSessions).toHaveBeenCalledTimes(2))
+    window.dispatchEvent(new Event('online'))
+    await waitFor(() => expect(h.listMyLiveSessions).toHaveBeenCalledTimes(3))
   })
 })

@@ -133,4 +133,13 @@ run_case "$HERE/0015_session_queue_rls.sql" \
   "$HERE/stub_realtime.sql" \
   "$HERE/../0015_session_queue.sql"
 
+# 0016: cross-device session resume — list_my_live_sessions(), the membership-scoped, live-only,
+# pure-read RPC that lets a second device discover the caller's resumable sessions. Needs sessions /
+# session_members / is_session_member (0007); 0002 seeds the auth/profile substrate the chain
+# assumes. No realtime stub (pure read, no broadcast).
+run_case "$HERE/0016_session_resume_rls.sql" \
+  "$HERE/../0002_logbook_sync.sql" \
+  "$HERE/../0007_collaboration_sessions.sql" \
+  "$HERE/../0016_session_resume.sql"
+
 echo "✅ ALL RLS CASES PASSED"

@@ -38,7 +38,10 @@ Because filtering is client-side, a member can effectively see another member's 
 sent/tried list for the board (not only aggregate matches). This is accepted — it's what
 climbing partners tell each other out loud (R9).
 
-## The four RPCs
+## The session RPCs
+
+The 0007 core is four RPCs; `list_my_live_sessions` (0016) is a later addition for cross-device
+resume (see below).
 
 | RPC | Gate | Purpose |
 | --- | --- | --- |
@@ -46,6 +49,7 @@ climbing partners tell each other out loud (R9).
 | `session_member_ascents(p_session_id)` | member **and** live | The status-only cross-member projection (above). Pure read. |
 | `touch_session(p_session_id)` | member **and** live | Bumps `expires_at` for manual refresh + rename. Members can't `UPDATE` `sessions` directly (owner-only), so this is their sanctioned expiry-bump path. |
 | `session_invite_token(p_session_id)` | member (**no** liveness check) | Re-fetch the share secret on demand — so the token never enters the client cache/pointer. Membership-only so a still-member can retrieve it even for an ended session; harmless because `join_session_by_token` refuses the ended token. |
+| `list_my_live_sessions()` (0016) | caller is a member | Enumerate the caller's **live** sessions (`deleted = false AND expires_at > now()`) for cross-device resume. Returns the `SESSION_COLUMNS` shape **without** `invite_token`. **Pure read** — never bumps `expires_at`, so listing on an idle second device can't revive a dying crew. |
 
 RLS: `session_members` has **no member-facing INSERT policy** (joins go only through the RPC);
 the creator is seated by an owner-seat trigger. DELETE is self-leave **or** owner-removes-member.
@@ -126,6 +130,40 @@ and the join RPC unchanged.
   leaving it (Back, close, or a failure) tears the stream down. Rear camera
   (`facingMode: 'environment'`); re-acquired on foreground (iOS standalone PWAs freeze the stream
   when backgrounded).
+
+## Cross-device resume
+
+The active session is **device-local**: the pointer lives only in the originating device's
+`localStorage` (`sessionsStore.ts`), and the client otherwise never enumerates a user's sessions.
+So a second device signed into the same account could not see a session created/joined on the
+first. **Resume** closes that gap without changing the sharing model — it is discovery, not a new
+join.
+
+Backend: [`supabase/migrations/0016_session_resume.sql`](../supabase/migrations/0016_session_resume.sql)
+— the `list_my_live_sessions()` RPC (see the RPC table above).
+
+- **`sessionsStore.ts`** — `listMyLiveSessions()` calls the RPC and maps rows to `Session` (returns
+  `[]` on error/unconfigured, so an offline fetch just renders nothing). `resumeSession(session)`
+  adopts a listed session as this device's active session — the tail of `joinSession` **without**
+  the join RPC, consent, or an `expires_at` bump (the caller is already a member; resuming is a pure
+  adopt). It **awaits** the server reconcile (`refreshActiveSession`) and returns `{ live }` so the
+  caller navigates only when the session is still live; a dead-on-arrival session (ended/expired
+  between list and tap) is retired and returns `{ live: false }`.
+- **`shell/MyBoards.tsx`** — the **"Resume session"** list, rendered only when signed-in with no
+  active session (the idle surface, above "Join a session"). Fetches on mount and self-heals on
+  foreground (`visibilitychange`) + reconnect (`online`); renders nothing while empty/in-flight
+  (R5). Tapping a row awaits `resumeSession`: on `{ live: true }` it lands in the board catalog; on
+  `{ live: false }` it drops the row and shows an inline "That session has ended" notice instead of
+  bouncing the user out of a catalog it just entered. No realtime, no presence, no per-candidate
+  roster fetch — on-demand pull only, matching Sessions v1.
+- **`sessions/sessionNav.ts`** — `navigateToSessionBoard(navigate, session)`, the single canonical
+  "session → board catalog" landing shared by `JoinSession` (post-join) and `MyBoards`
+  (post-resume) so the two can't drift. Resolves the board from the static catalog by layout id
+  (no board-add step needed) and falls back to `/boards` for a board this build doesn't ship —
+  never route a session tap through the fallback-less board-browse `onActivated`.
+
+Non-goals (v1): realtime "you have a new session" push, auto-resume on sign-in (explicit tap only),
+iOS, and rejoining an *ended* session (ended = gone).
 
 ## Session queue (playlist)
 
@@ -213,8 +251,8 @@ logbook is intended to read queue history, and the cascade would otherwise erase
 ## Security posture (read before changing)
 
 - **`invite_token` is a bearer capability.** Anyone holding the link/QR can join. v1 revokes
-  only by **ending the session** (`deleted = true`, which makes both live-gated RPCs refuse)
-  or the **owner removing a member**. Token **rotation** (invalidating a leaked link while
+  only by **ending the session** (`deleted = true`, which makes the live-gated RPCs refuse — a
+  dead session neither joins, projects, nor lists for resume) or the **owner removing a member**. Token **rotation** (invalidating a leaked link while
   keeping the session) is a deferred follow-up — removing a member does **not** stop them
   rejoining with the same link.
 - **Expiry only bumps on explicit intent**, so an active crew must Leave/end to stop sharing;

@@ -6,13 +6,17 @@
 // mirroring iOS, where board config lives behind a separate sheet. Also the
 // first-run surface (zero added boards).
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { ScanQrCode, Settings2 } from 'lucide-react'
-import { BOARDS, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
+import { BOARDS, boardByLayoutId, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { activeCsv, holdSetContext } from '../board/holdSetMembership'
 import { CatalogBoard } from '../board/CatalogBoard'
-import { useSessions } from '../sessions/sessionsStore'
+import { useAuth } from '../auth/AuthProvider'
+import { listMyLiveSessions, resumeSession, useSessions } from '../sessions/sessionsStore'
+import { navigateToSessionBoard } from '../sessions/sessionNav'
+import type { Session } from '../sessions/sessionsTypes'
 import { ScanToJoinButton } from '../sessions/ScanToJoin'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -39,6 +43,68 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   // (mirrors the catalog StartBar/ActiveBar swap). Signed-out users still see it — the join
   // route owns sign-in.
   const { activeSession } = useSessions()
+  const navigate = useNavigate()
+  const { status } = useAuth()
+  const signedIn = status !== 'signedOut'
+
+  // Cross-device resume: when signed in with no active session on THIS device, list the user's
+  // live sessions so they can re-adopt one created/joined elsewhere (the active-session pointer is
+  // otherwise device-local). On-demand pull — no realtime — that self-heals on foreground +
+  // reconnect, so a fetch that failed offline recovers without a remount. Renders nothing while
+  // in flight / empty / signed-out (R5); never persisted.
+  const [resumable, setResumable] = useState<Session[]>([])
+  const [resumingId, setResumingId] = useState<string | null>(null)
+  const [endedNotice, setEndedNotice] = useState(false)
+  // Mirror `resumable` so `load` can skip a no-op empty→empty dispatch entirely (not just bail on
+  // re-render) — an idle fetch that finds nothing must not touch state at all.
+  const resumableRef = useRef<Session[]>([])
+  const setResumableList = (next: Session[]) => {
+    resumableRef.current = next
+    setResumable(next)
+    // A repopulated list supersedes a stale "ended" notice — otherwise a later refetch that
+    // re-empties the list could resurface the notice for a session the user never tapped.
+    if (next.length > 0) setEndedNotice(false)
+  }
+
+  useEffect(() => {
+    if (!signedIn || activeSession) {
+      if (resumableRef.current.length > 0) setResumableList([])
+      return
+    }
+    let alive = true
+    const load = async () => {
+      const list = await listMyLiveSessions()
+      if (!alive) return
+      if (list.length === 0 && resumableRef.current.length === 0) return // idle: no state change
+      setResumableList(list)
+    }
+    void load()
+    const refetch = () => void load()
+    document.addEventListener('visibilitychange', refetch)
+    window.addEventListener('online', refetch)
+    return () => {
+      alive = false
+      document.removeEventListener('visibilitychange', refetch)
+      window.removeEventListener('online', refetch)
+    }
+  }, [signedIn, activeSession])
+
+  // Adopt a listed session; navigate only when the reconcile confirms it is still live. A
+  // dead-on-arrival session (ended/expired between list and tap) drops its row and shows a notice
+  // instead of bouncing the user out of a catalog we'd otherwise have entered.
+  const onResume = async (s: Session) => {
+    setEndedNotice(false)
+    setResumingId(s.id)
+    const { live } = await resumeSession(s)
+    if (live) {
+      navigateToSessionBoard(navigate, s)
+    } else {
+      setResumableList(resumableRef.current.filter((x) => x.id !== s.id))
+      setEndedNotice(true)
+      setResumingId(null)
+    }
+  }
+
   const addedIds = new Set(addedBoards.map((b) => b.layoutId))
   const addable = BOARDS.filter((b) => !addedIds.has(b.layoutId))
 
@@ -63,6 +129,40 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
 
   return (
     <div className="space-y-4">
+      {!activeSession && resumable.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Resume session
+          </h2>
+          {resumable.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              disabled={resumingId === s.id}
+              onClick={() => void onResume(s)}
+              className="flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition hover:bg-accent disabled:opacity-60"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{s.name || 'Session'}</span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {boardByLayoutId(s.boardLayoutId)?.name ?? 'Session'}
+                </span>
+              </span>
+              <span className="shrink-0 text-xs font-medium text-primary">
+                {resumingId === s.id ? 'Resuming…' : 'Resume'}
+              </span>
+            </button>
+          ))}
+        </section>
+      )}
+      {!activeSession && endedNotice && resumable.length === 0 && (
+        <p
+          role="status"
+          className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
+        >
+          That session has ended.
+        </p>
+      )}
       {!activeSession && (
         <ScanToJoinButton variant="outline" className="w-full">
           <ScanQrCode className="size-4" />

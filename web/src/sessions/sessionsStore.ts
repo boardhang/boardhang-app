@@ -321,6 +321,44 @@ export async function joinSession(token: string): Promise<Session> {
 }
 
 /**
+ * List the caller's LIVE sessions across devices (cross-device resume). Membership-scoped,
+ * live-only, pure read via the `list_my_live_sessions` RPC (0016) — the client otherwise never
+ * enumerates a user's sessions, so a second device signed into the same account has no way to
+ * find a session created/joined elsewhere. Returns `[]` when signed-out/unconfigured or on any
+ * error, so an offline failure just renders nothing (R5). The result is transient UI state — the
+ * caller holds it; it is never persisted (no active-session pointer is written here).
+ */
+export async function listMyLiveSessions(): Promise<Session[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase.rpc('list_my_live_sessions')
+  if (error || !data) return []
+  return (data as SessionRow[]).map(fromSessionRow)
+}
+
+/**
+ * Adopt an already-joined session (one returned by `listMyLiveSessions`) as this device's active
+ * session — cross-device resume. This is the tail of `joinSession` WITHOUT the join RPC: the caller
+ * is already a member, so there is no membership INSERT, no consent, and NO `expires_at` bump
+ * (R4 — resuming is a pure adopt; only explicit intent keeps the 24h backstop alive). Mirrors
+ * `initSessions`' adopt-a-row dance: activate optimistically, then reconcile with the server.
+ *
+ * Awaits the reconcile and returns its liveness so the caller navigates only when the session is
+ * still live; a dead-on-arrival session (ended/expired between list and tap) is retired here and
+ * returns `{ live: false }`, so the caller can stay put instead of bouncing the user out of a
+ * catalog it just entered. Guarded by `generation` (via the same guard inside `refreshActiveSession`)
+ * so a resume racing a sign-out cannot leave another identity's session active.
+ */
+export async function resumeSession(session: Session): Promise<{ live: boolean }> {
+  if (isLocallyExpired(session)) return { live: false }
+  setActiveSession(session)
+  setState({ memberStatus: readMemberStatus(session.id) })
+  void ensureSelfId()
+  // Reconcile with the server (loads the roster on success, retires a dead session). No `manual`
+  // flag → no touch_session, so resuming never bumps expiry (R4).
+  return refreshActiveSession()
+}
+
+/**
  * Retrieve the active session's invite token for sharing (KTD-7). Prefers the volatile
  * creator-held token; otherwise re-fetches via the membership-gated session_invite_token
  * RPC. The token is cached only in volatile memory, never persisted.

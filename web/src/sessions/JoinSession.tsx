@@ -12,11 +12,10 @@
 import { useEffect, useState } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
-import { boardByLayoutId } from '../board/boards'
-import { catalogNavTarget } from '../catalog/catalogNav'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInPanel } from '../auth/SignInPanel'
 import { joinSession } from './sessionsStore'
+import { navigateToSessionBoard } from './sessionNav'
 import { Button } from '@/components/ui/button'
 
 const routeApi = getRouteApi('/session/join/$token')
@@ -50,9 +49,7 @@ export function JoinSession() {
     setError(null)
     try {
       const session = await joinSession(token)
-      const board = boardByLayoutId(session.boardLayoutId)
-      if (board) void navigate(catalogNavTarget(board))
-      else void navigate({ to: '/boards' })
+      navigateToSessionBoard(navigate, session)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That session link is no longer valid.')
       setPhase('error')
