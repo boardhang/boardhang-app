@@ -132,6 +132,7 @@ function authValue(status: 'signedOut' | 'signedInWithProfile') {
     deleteAccount: vi.fn(),
     isHandleAvailable: vi.fn(),
     saveProfile: vi.fn(),
+    setPrivacyChoice: vi.fn(),
   }
 }
 

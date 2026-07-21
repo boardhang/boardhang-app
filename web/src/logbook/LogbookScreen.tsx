@@ -216,7 +216,7 @@ export function LogbookScreen() {
 
       {hasSends && (
         <section className="mb-4 rounded-lg border border-border p-3">
-          <GradePyramid ascents={boardAscents} />
+          <GradePyramid items={boardAscents} />
         </section>
       )}
 

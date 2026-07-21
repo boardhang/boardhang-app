@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Drawer,
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
 } from '../components/ui/drawer'
-import { Camera } from 'lucide-react'
+import { Bell, Camera, UserRound, Users } from 'lucide-react'
+import { badgeCount, loadNotifications, useNotifications } from '../social/notificationsStore'
 import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '../components/ui/avatar'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -37,6 +39,14 @@ const MAX_DISPLAY_NAME = 50
  */
 export function AccountMenu() {
   const { status, profile, isRestoring, signOut, deleteAccount, saveProfile } = useAuth()
+  const navigate = useNavigate()
+  const notifications = useNotifications()
+  const unread = badgeCount(notifications)
+
+  // Keep the header notification badge fresh: load once the user has a profile.
+  useEffect(() => {
+    if (status === 'signedInWithProfile') void loadNotifications()
+  }, [status])
 
   const [showSignIn, setShowSignIn] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
@@ -236,9 +246,13 @@ export function AccountMenu() {
         <Button
           variant="ghost"
           size="icon"
-          className="size-9 rounded-full" // ≥44px-friendly tap target around the sm avatar
+          className="relative size-9 rounded-full" // ≥44px-friendly tap target around the sm avatar
           aria-haspopup="menu"
-          aria-label={profile.displayName.trim() || `@${profile.handle}`}
+          aria-label={
+            unread > 0
+              ? `${profile.displayName.trim() || `@${profile.handle}`} (${unread} new)`
+              : profile.displayName.trim() || `@${profile.handle}`
+          }
           onClick={() => setShowMenu(true)}
         >
           <Avatar size="sm">
@@ -247,6 +261,11 @@ export function AccountMenu() {
               {initials}
             </AvatarFallback>
           </Avatar>
+          {unread > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.6rem] font-semibold text-primary-foreground">
+              {unread > 9 ? '9+' : unread}
+            </span>
+          )}
         </Button>
       )}
 
@@ -296,6 +315,49 @@ export function AccountMenu() {
                     <p className="truncate text-sm text-muted-foreground">@{profile.handle}</p>
                   </div>
                 </div>
+              )}
+
+              {/* Social surfaces — discovery, notifications, and your own profile. Each closes
+                  the drawer, then navigates. */}
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                role="menuitem"
+                onClick={() => {
+                  closeMenu()
+                  void navigate({ to: '/people' })
+                }}
+              >
+                <Users className="size-4" /> Find people
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                role="menuitem"
+                onClick={() => {
+                  closeMenu()
+                  void navigate({ to: '/notifications' })
+                }}
+              >
+                <Bell className="size-4" /> Notifications
+                {unread > 0 && (
+                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">
+                    {unread > 9 ? '9+' : unread}
+                  </span>
+                )}
+              </Button>
+              {profile && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  role="menuitem"
+                  onClick={() => {
+                    closeMenu()
+                    void navigate({ to: '/u/$handle', params: { handle: profile.handle } })
+                  }}
+                >
+                  <UserRound className="size-4" /> View profile
+                </Button>
               )}
 
               <Button

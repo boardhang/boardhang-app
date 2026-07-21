@@ -14,6 +14,12 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
+// The privacy card reads useAuth; in isolation there's no provider, so stub it signed-out
+// (the card then renders nothing, leaving the rest of the settings screen unchanged).
+vi.mock('../auth/AuthProvider', () => ({
+  useAuth: () => ({ status: 'signedOut', profile: null, setPrivacyChoice: vi.fn() }),
+}))
+
 beforeEach(() => {
   localStorage.clear()
   // Reset the previews snapshot (survives localStorage.clear()).

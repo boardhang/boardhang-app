@@ -13,6 +13,9 @@
 //   /lists/$listId           → ListDetailScreen
 //   /settings                → SettingsScreen (global; appearance/theme)
 //   /board/$layoutId/catalog → CatalogScreen  (search params: see catalogSearch.ts)
+//   /u/$handle               → ProfileScreen  (sends, grade breakdown, latest session)
+//   /people                  → DiscoverScreen (search + co-members + follow-back)
+//   /notifications           → NotificationsScreen (requests + activity)
 //
 // The tree is built by a factory so tests can spin up an isolated memory-history
 // router without reusing route objects already bound to the browser router.
@@ -36,6 +39,9 @@ import { ListsScreen } from './lists/ListsScreen'
 import { ListDetailScreen } from './lists/ListDetailScreen'
 import { CatalogScreen } from './catalog/CatalogScreen'
 import { JoinSession } from './sessions/JoinSession'
+import { ProfileScreen } from './social/ProfileScreen'
+import { DiscoverScreen } from './social/DiscoverScreen'
+import { NotificationsScreen } from './social/NotificationsScreen'
 import { boardByLayoutId } from './board/boards'
 import { getActiveBoardId, getAddedBoardIds } from './board/boardStore'
 import { catalogNavTarget } from './catalog/catalogNav'
@@ -141,6 +147,31 @@ function buildRouteTree() {
     component: JoinSession,
   })
 
+  // A user's public profile: /u/:handle (the follow-feed profile page).
+  const profileRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/u/$handle',
+    // Same one-bit drawer state as the logbook: ?problem=<id> opens a send's detail,
+    // history-integrated (Back closes it, stays on the profile).
+    validateSearch: validateLogbookSearch,
+    search: { middlewares: [stripSearchParams(LOGBOOK_SEARCH_DEFAULTS)] },
+    component: ProfileScreen,
+  })
+
+  // Discovery: search + co-member suggestions + follow-back (U4).
+  const peopleRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/people',
+    component: DiscoverScreen,
+  })
+
+  // Notifications inbox: requests + activity (U6).
+  const notificationsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/notifications',
+    component: NotificationsScreen,
+  })
+
   return rootRoute.addChildren([
     indexRoute,
     boardsRoute,
@@ -151,6 +182,9 @@ function buildRouteTree() {
     listDetailRoute,
     catalogRoute,
     joinSessionRoute,
+    profileRoute,
+    peopleRoute,
+    notificationsRoute,
   ])
 }
 

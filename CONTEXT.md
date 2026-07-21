@@ -102,6 +102,7 @@ needs a secure context — desktop Chrome/Edge, Android Chrome, or iPhone via Bl
 | SwiftData models, logging ascents, logbook & pyramid | [docs/data-model-and-logging.md](docs/data-model-and-logging.md) |
 | Tabs, navigation, Home board management, Settings | [docs/navigation-and-ui-flows.md](docs/navigation-and-ui-flows.md) |
 | Accounts, Supabase setup, Google/email auth, profiles | [docs/social-accounts-login-SETUP.md](docs/social-accounts-login-SETUP.md) |
+| Follow graph, profiles (sends, grade breakdown, latest session), blocking, account privacy (web) | [docs/social-graph.md](docs/social-graph.md) |
 | The web PWA + monorepo plan | [docs/pwa-monorepo-plan.md](docs/pwa-monorepo-plan.md) |
 
 ## Deferred / open

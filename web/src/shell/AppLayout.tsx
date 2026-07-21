@@ -27,6 +27,7 @@ import { BleBrowserBanner } from './BleBrowserBanner'
 import { InstallBanner } from './InstallBanner'
 import { FullscreenTipBanner } from './FullscreenTipBanner'
 import { SessionPill } from './SessionPill'
+import { PrivacyChoiceNotice } from '../social/PrivacyChoiceNotice'
 import { initSessions, useSessions } from '../sessions/sessionsStore'
 import { useSessionRealtime } from '../sessions/sessionRealtime'
 import { PENDING_JOIN_KEY } from '../sessions/JoinSession'
@@ -230,6 +231,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
           onNavigate={go}
         />
         <Toaster position="bottom-center" />
+        {/* One-time public/private notice for existing users (self-gates on privacyChoiceAt). */}
+        <PrivacyChoiceNotice />
       </div>
       </HeaderFilterSlotContext.Provider>
     </BottomSlotContext.Provider>

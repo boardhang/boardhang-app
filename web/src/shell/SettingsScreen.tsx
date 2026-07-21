@@ -2,8 +2,10 @@
 // nav's Settings tab (`/settings`). Holds Appearance (theme) and per-surface climb
 // preview toggles; laid out as labeled Card rows so more settings can slot in later.
 
+import { useState } from 'react'
 import { ChevronRight, Download, Monitor, Moon, Sun } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -12,6 +14,7 @@ import {
   useShowPreviews,
   type PreviewSurface,
 } from '../catalog/previewsStore'
+import { useAuth } from '../auth/AuthProvider'
 import { setTheme, useTheme, type Theme } from './themeStore'
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
@@ -48,12 +51,51 @@ function PreviewToggleRow({ surface, label, detail }: (typeof PREVIEW_OPTIONS)[n
   )
 }
 
+function PrivacyCard() {
+  const { status, profile, setPrivacyChoice } = useAuth()
+  const [saving, setSaving] = useState(false)
+  if (status !== 'signedInWithProfile' || !profile) return null
+  return (
+    <Card>
+      <CardContent className="space-y-3">
+        <div>
+          <h2 className="text-sm font-medium">Privacy</h2>
+          <p className="text-sm text-muted-foreground">
+            Control who can follow you and see your climbs.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">Private account</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              You approve each follower before they see your climbs.
+            </div>
+          </div>
+          <Switch
+            aria-label="Private account"
+            checked={profile.isPrivate}
+            disabled={saving}
+            onCheckedChange={(checked) => {
+              setSaving(true)
+              void setPrivacyChoice(checked)
+                .catch(() => toast.error("Couldn't update your privacy setting."))
+                .finally(() => setSaving(false))
+            }}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function SettingsScreen() {
   const theme = useTheme()
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+
+      <PrivacyCard />
 
       <Card>
         <CardContent className="space-y-3">

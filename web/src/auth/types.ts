@@ -15,6 +15,12 @@ export interface Profile {
   /** Public URL derived from {@link Profile.avatarPath}, or null — feeds `<AvatarImage>`. */
   avatarUrl: string | null
   createdAt: string | null
+  /** Account privacy (0016). Effective privacy also treats a null `privacyChoiceAt` as
+   *  private-until-chosen (KTD9a) — but this is the raw stored flag. */
+  isPrivate: boolean
+  /** When the user made the explicit public/private choice, or null if they never have
+   *  (drives the one-time existing-user notice — U7/KTD9). */
+  privacyChoiceAt: string | null
 }
 
 // The three-state machine the whole app keys off (mirrors iOS AuthManager.Status):
@@ -30,6 +36,8 @@ export interface ProfileRow {
   display_name: string
   avatar_url: string | null
   created_at: string | null
+  is_private?: boolean
+  privacy_choice_at?: string | null
 }
 
 export function profileFromRow(row: ProfileRow): Profile {
@@ -40,5 +48,7 @@ export function profileFromRow(row: ProfileRow): Profile {
     avatarPath: row.avatar_url,
     avatarUrl: avatarPublicUrl(row.avatar_url),
     createdAt: row.created_at,
+    isPrivate: row.is_private ?? false,
+    privacyChoiceAt: row.privacy_choice_at ?? null,
   }
 }

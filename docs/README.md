@@ -22,6 +22,7 @@ editing code in that area. Each doc is scoped to one subsystem.
 | SwiftData models, logging ascents/tries, the logbook & pyramid | [data-model-and-logging.md](data-model-and-logging.md) |
 | Tabs, navigation, Home board management, catalog filters, Settings | [navigation-and-ui-flows.md](navigation-and-ui-flows.md) |
 | Collaboration sessions, cross-member status filtering, the status-only projection RPC (web) | [collaboration-sessions.md](collaboration-sessions.md) |
+| Follow graph, profiles (sends, grade breakdown, latest session), blocking, account privacy (web) | [social-graph.md](social-graph.md) |
 
 ## Conventions used across these docs
 

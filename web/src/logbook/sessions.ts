@@ -69,14 +69,27 @@ export interface Pyramid {
   maxTotal: number
 }
 
+/** The minimal per-send shape the pyramid aggregates over — satisfied structurally by a full
+ *  `Ascent` (logbook) and by a mapped `SendItem` (another user's profile sends), so both surfaces
+ *  render the identical chart. */
+export interface PyramidInput {
+  sent: boolean
+  sourceCatalogId: string | null
+  problemName: string
+  problemGrade: string
+  /** ISO-8601 timestamp; ties broken by earliest to pick the send that counts. */
+  date: string
+  tries: number
+}
+
 /**
  * Grade pyramid = unique *sends* bucketed by grade and try-count. Mirrors iOS exactly:
  * one ascent per distinct problem (earliest send kept), attempts-only excluded, counts
  * split by try-bucket, x-domain = grades present in canonical order.
  */
-export function pyramid(ascents: Ascent[]): Pyramid {
+export function pyramid(ascents: PyramidInput[]): Pyramid {
   // One send per distinct problem — keep the earliest. Repeats and attempts don't count.
-  const earliest = new Map<string, Ascent>()
+  const earliest = new Map<string, PyramidInput>()
   for (const a of ascents) {
     if (!a.sent) continue
     const key = a.sourceCatalogId ?? `name:${a.problemName}`

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { useAuth } from './AuthProvider'
+import { PrivacyChoice } from '../social/PrivacyChoice'
 import {
   HANDLE_MAX_LENGTH,
   HANDLE_MIN_LENGTH,
@@ -25,6 +26,7 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
 
   const [handle, setHandle] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [privacy, setPrivacy] = useState<'public' | 'private' | null>(null)
   const [validation, setValidation] = useState<HandleValidation>('empty')
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -70,11 +72,11 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
   }, [handle, isHandleAvailable])
 
   async function handleSave() {
-    if (validation !== 'available' || isSaving) return
+    if (validation !== 'available' || privacy === null || isSaving) return
     setSaveError(null)
     setIsSaving(true)
     try {
-      await saveProfile(handle, displayName)
+      await saveProfile(handle, displayName, undefined, privacy === 'private')
       onDone()
     } catch {
       // Most likely a lost uniqueness race (unique-violation) — surface it and let
@@ -128,11 +130,16 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
         />
       </label>
 
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium">Who can follow you?</span>
+        <PrivacyChoice value={privacy} onChange={setPrivacy} />
+      </div>
+
       <div className="flex items-center justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={onDone}>
           Not now
         </Button>
-        <Button type="submit" disabled={validation !== 'available' || isSaving}>
+        <Button type="submit" disabled={validation !== 'available' || privacy === null || isSaving}>
           {isSaving ? 'Saving…' : 'Save'}
         </Button>
       </div>
