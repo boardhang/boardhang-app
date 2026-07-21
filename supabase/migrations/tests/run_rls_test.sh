@@ -37,6 +37,16 @@ run_case() {
   echo "→ loading Supabase schema stub…"
   "${psql_in[@]}" < "$HERE/stub_supabase.sql"
 
+  # Reproduce Supabase's default privileges: real projects GRANT EXECUTE on new public functions
+  # to anon/authenticated by default, so a function created by a migration is client-callable
+  # unless the migration explicitly REVOKEs from those roles (revoking only from PUBLIC does not
+  # remove an explicit role grant). Without this, a "function is not client-callable" assertion
+  # (e.g. 0018's _sends_for_actors gate) would pass even against an insufficient revoke. Applied
+  # before the migration chain so functions inherit the grant at CREATE time, exactly as in prod.
+  "${psql_in[@]}" <<'SQL'
+alter default privileges in schema public grant execute on functions to anon, authenticated;
+SQL
+
   local mig
   for mig in "${migrations[@]}"; do
     echo "→ applying $(basename "$mig")…"
@@ -66,6 +76,11 @@ begin
   -- 0015 chain: the queue RLS assertions insert/select/update session_queue as `authenticated`.
   if to_regclass('public.session_queue') is not null then
     execute 'grant select, insert, update, delete on public.session_queue to anon, authenticated';
+  end if;
+  -- 0017 chain: the social-graph RLS assertions read/write follows/blocks/notifications as
+  -- `authenticated` (RLS still gates rows; the negative INSERT cases assert denial).
+  if to_regclass('public.follows') is not null then
+    execute 'grant select, insert, update, delete on public.follows, public.blocks, public.notifications to anon, authenticated';
   end if;
 end $$;
 SQL
@@ -141,5 +156,25 @@ run_case "$HERE/0016_session_resume_rls.sql" \
   "$HERE/../0002_logbook_sync.sql" \
   "$HERE/../0007_collaboration_sessions.sql" \
   "$HERE/../0016_session_resume.sql"
+
+# 0017: social graph — follows/blocks/notifications tables + RLS, the is_blocked bidirectional
+# helper, and the ascents.first_sent_at server-stamped trigger. Needs ascents + set_updated_at
+# (0002); the stub provides profiles/auth.users. The trigger cases run as superuser, the RLS
+# cases as `authenticated`.
+run_case "$HERE/0017_social_graph_rls.sql" \
+  "$HERE/../0002_logbook_sync.sql" \
+  "$HERE/../0017_social_graph.sql"
+
+# 0018: social RPCs — follow lifecycle, block, search, discovery, and the block/effective-
+# private-gated feed/profile-sends projection core. Needs ascents (0002), list_members (0003)
+# and session_members (0007) for suggest_co_members, and the 0017 tables/helpers. The RPCs are
+# SECURITY DEFINER, so reads run as owner; the case asserts the projection core is NOT
+# executable by the `authenticated` client (gate cannot be bypassed).
+run_case "$HERE/0018_social_rpcs_rls.sql" \
+  "$HERE/../0002_logbook_sync.sql" \
+  "$HERE/../0003_collaborative_lists.sql" \
+  "$HERE/../0007_collaboration_sessions.sql" \
+  "$HERE/../0017_social_graph.sql" \
+  "$HERE/../0018_social_rpcs.sql"
 
 echo "✅ ALL RLS CASES PASSED"

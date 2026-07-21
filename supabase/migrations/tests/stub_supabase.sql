@@ -8,10 +8,13 @@
 -- (this catches a missing WITH CHECK, a wrong path index, or a cross-user leak). Final
 -- fidelity still requires applying to real Supabase — see the migration's manual step.
 
--- Roles Supabase provides. NOLOGIN; we reach them via `set role`.
+-- Roles Supabase provides. NOLOGIN; we reach them via `set role`. service_role is Supabase's
+-- trusted, RLS-bypassing admin role — modeled here so a migration that REVOKEs from it (e.g.
+-- 0018 locking down the sends projection core) applies against the same role set as production.
 do $$ begin
   if not exists (select from pg_roles where rolname = 'anon') then create role anon nologin; end if;
   if not exists (select from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
+  if not exists (select from pg_roles where rolname = 'service_role') then create role service_role nologin; end if;
 end $$;
 
 create schema if not exists auth;
@@ -60,12 +63,15 @@ create table if not exists storage.objects (
 alter table storage.objects enable row level security;
 
 -- Minimal public.profiles so 0009's `alter table ... add constraint avatar_url_...` and
--- its owner-scoped insert/update RLS can be exercised WITHOUT pulling in 0001 (which needs
--- the citext extension). Real 0001 has more columns; only `id` + `avatar_url` + the owner
--- RLS matter for the avatar_url CHECK test. `display_name` is included so a realistic
--- insert works. Owner policies mirror 0001 (self insert/update; world-readable select).
+-- its owner-scoped insert/update RLS can be exercised WITHOUT pulling in 0001. Real 0001 has
+-- more columns; `id` + `avatar_url` + the owner RLS matter for the avatar_url CHECK test.
+-- `display_name` is included so a realistic insert works. `handle citext` mirrors 0001 (real
+-- 0001 installs citext into the `extensions` schema; the throwaway PG has the contrib, so we
+-- enable it here) — 0017's search_profiles prefix-matches handles, so the stub must carry it.
+create extension if not exists citext;
 create table if not exists public.profiles (
     id           uuid primary key references auth.users (id) on delete cascade,
+    handle       citext unique,
     display_name text not null default '',
     avatar_url   text,
     created_at   timestamptz not null default now()
