@@ -31,7 +31,8 @@ Two safety behaviours from the ce-doc-review:
     won't infer a partial index as an ON CONFLICT arbiter; a stray collision is skipped
     per-row.) On a YouTube quota error (403/429) the run stops cleanly — resume tomorrow.
 
-Boards: seed the DEFAULT board (Mini 2025) first; 2019 Masters is a later run.
+Boards: seed the DEFAULT board (Mini 2025) first; 2024, 2019 Masters, 2017 Masters, and 2016
+are separate runs — pick via `--board`.
 
 Environment
 -----------
@@ -72,9 +73,14 @@ NAME_MIN_SPECIFIC = 6   # normalized-name length at/above which a match auto-app
 SHORT_MAX_SECS = 60     # <= this = a "Short"
 
 # Board slug (for the catalog-data filename) + the YouTube query suffix climbers actually type.
+# Suffix convention is "moonboard <year>" — the year is what disambiguates on YouTube; climbers
+# don't reliably type "masters" even for the Masters boards (matches the 2019 pattern).
 BOARDS = {
     "mini2025": ("minimoonboard2025", "moonboard mini 2025"),
+    "2024":     ("moonboard2024", "moonboard 2024"),
     "2019":     ("moonboardmasters2019", "moonboard 2019"),
+    "2017":     ("moonboardmasters2017", "moonboard 2017"),
+    "2016":     ("moonboard2016", "moonboard 2016"),
 }
 
 
