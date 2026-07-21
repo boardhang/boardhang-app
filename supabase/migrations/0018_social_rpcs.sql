@@ -426,8 +426,9 @@ grant execute on function public.get_follow_requests(int) to authenticated;
 -- single most load-bearing invariant of the feature, so it is granted to NO client role: a
 -- direct client call with an arbitrary actor set would read anyone's private/blocked sends.
 -- Only the two SECURITY-DEFINER wrappers below (same owner) invoke it, after applying the gate.
--- The projection deliberately omits comment/voted_grade/tries/stars/updated_at/sent/deleted —
--- a full ascents row is never returned.
+-- The projection deliberately omits comment/voted_grade/stars/updated_at/sent/deleted — a full
+-- ascents row is never returned. `tries` IS included: it drives the profile grade pyramid's
+-- try-bucket split (flash/2nd/3rd/4+), the same chart the owner sees on their own logbook.
 create or replace function public._sends_for_actors(
         p_actor_ids uuid[],
         p_limit int,
@@ -436,7 +437,7 @@ create or replace function public._sends_for_actors(
     returns table (ascent_id uuid, actor_id uuid, handle text, display_name text, avatar_url text,
                    source_catalog_id text, user_problem_id uuid, problem_name text,
                    problem_grade text, board_layout_id int, climbed_at timestamptz,
-                   first_sent_at timestamptz)
+                   first_sent_at timestamptz, tries int)
     language sql
     security definer
     set search_path = ''
@@ -444,7 +445,7 @@ create or replace function public._sends_for_actors(
 as $$
     select a.id, a.user_id, p.handle::text, p.display_name, p.avatar_url,
            a.source_catalog_id, a.user_problem_id, a.problem_name,
-           a.problem_grade, a.board_layout_id, a.date, a.first_sent_at
+           a.problem_grade, a.board_layout_id, a.date, a.first_sent_at, a.tries
     from public.ascents a
     join public.profiles p on p.id = a.user_id
     where a.user_id = any(p_actor_ids)
@@ -475,7 +476,7 @@ create or replace function public.get_user_sends(
     returns table (ascent_id uuid, actor_id uuid, handle text, display_name text, avatar_url text,
                    source_catalog_id text, user_problem_id uuid, problem_name text,
                    problem_grade text, board_layout_id int, climbed_at timestamptz,
-                   first_sent_at timestamptz)
+                   first_sent_at timestamptz, tries int)
     language plpgsql
     security definer
     set search_path = ''
