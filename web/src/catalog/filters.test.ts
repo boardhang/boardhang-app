@@ -97,15 +97,31 @@ describe('applyFilters — sort', () => {
 describe('applyFilters — filters', () => {
   it('grade range excludes out-of-range but keeps unknown grades (AE4)', () => {
     const list = [
-      p({ source_catalog_id: 'low', grade: '5+' }),
+      p({ source_catalog_id: 'low', grade: '6A+' }),
       p({ source_catalog_id: 'mid', grade: '6B' }),
       p({ source_catalog_id: 'unknown', grade: 'PROJECT' }),
     ]
-    // Range covering 6A..7C (indices 3..13); 5+ (index 0) excluded, unknown kept.
-    const out = ids(applyFilters(list, state({ gradeRange: [3, 13] }), ctx))
+    // Range covering 6B..7C (indices 5..13); 6A+ (index 4) excluded, unknown kept.
+    const out = ids(applyFilters(list, state({ gradeRange: [5, 13] }), ctx))
     expect(out).toContain('mid')
     expect(out).toContain('unknown')
     expect(out).not.toContain('low')
+  })
+
+  it('treats sub-floor grades as 6A+ in the range predicate (issue #96)', () => {
+    const list = [
+      p({ source_catalog_id: 'stray', grade: '5+' }),
+      p({ source_catalog_id: 'floor', grade: '6A+' }),
+      p({ source_catalog_id: 'high', grade: '7C' }),
+    ]
+    // Floor..6B (indices 4..5): a stray 5+ acts as 6A+, so capping the top keeps it.
+    const capped = ids(applyFilters(list, state({ gradeRange: [4, 5] }), ctx))
+    expect(capped).toContain('stray')
+    expect(capped).toContain('floor')
+    expect(capped).not.toContain('high')
+    // 6B and up (indices 5..): the stray 5+ (≙ 6A+) is now below the range's low end.
+    const raised = ids(applyFilters(list, state({ gradeRange: [5, 13] }), ctx))
+    expect(raised).not.toContain('stray')
   })
 
   it('benchmark, min rating, and method each narrow', () => {

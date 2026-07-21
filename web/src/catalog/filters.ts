@@ -4,7 +4,7 @@
 // hold-set filter (climbable) is applied on top via context. Two-level sort keys
 // off the canonical grade ordinal, never string compare.
 
-import { FONT_GRADES, gradeIndex } from '../board/grades'
+import { FONT_GRADES, GRADE_FILTER_FLOOR, gradeIndex } from '../board/grades'
 import type { CatalogProblem } from './catalogSync'
 
 export type SortKey = 'easiest' | 'hardest' | 'rated' | 'repeats'
@@ -221,7 +221,11 @@ export function applyFilters(
   const filtered = problems.filter((p) => {
     if (q && !(p.name.toLowerCase().includes(q) || p.setter.toLowerCase().includes(q))) return false
     if (s.gradeRange) {
-      const gi = gradeIndex(p.grade)
+      const raw = gradeIndex(p.grade)
+      // Sub-floor grades (stray 5+/6A catalog data) act as 6A+ (issue #96): the slider
+      // can't reach below the floor, so without the clamp capping the range's TOP would
+      // silently hide them.
+      const gi = raw < FONT_GRADES.length ? Math.max(raw, GRADE_FILTER_FLOOR) : raw
       // Unknown grades are never on the scale, so the range never hides them (AE4).
       if (gi < FONT_GRADES.length && (gi < s.gradeRange[0] || gi > s.gradeRange[1])) return false
     }

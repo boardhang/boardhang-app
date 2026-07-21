@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FONT_GRADES } from '../board/grades'
+import { FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
 import {
   CATALOG_SEARCH_DEFAULTS,
@@ -43,7 +43,7 @@ describe('catalogSearch round-trip', () => {
       search: 'crimp',
       sortPrimary: 'hardest',
       sortSecondary: 'repeats', // different dimension from primary — round-trips via sortThenBy
-      gradeRange: [3, 12],
+      gradeRange: [5, 12],
       benchmarkOnly: true,
       minStars: 4,
       methods: ['Feet follow hands', 'Footless'],
@@ -107,9 +107,18 @@ describe('grade ordinal encoding', () => {
   })
 
   it('decodes a partial range and clamps out-of-bounds ordinals', () => {
-    expect(decodeGrade('3-9')).toEqual([3, 9])
+    expect(decodeGrade('5-9')).toEqual([5, 9])
     expect(decodeGrade(`0-${GRADE_MAX + 50}`)).toBeNull() // clamps to full span → no filter
-    expect(decodeGrade('9-3')).toEqual([3, 9]) // normalizes reversed order
+    expect(decodeGrade('9-5')).toEqual([5, 9]) // normalizes reversed order
+  })
+
+  it('floors both bounds at 6A+ (issue #96)', () => {
+    // A stale/hand-edited URL below the floor clamps up — the filter never labels sub-6A+.
+    expect(decodeGrade('0-9')).toEqual([GRADE_FILTER_FLOOR, 9])
+    expect(decodeGrade('0-2')).toEqual([GRADE_FILTER_FLOOR, GRADE_FILTER_FLOOR])
+    // Floor-to-top is the full filterable span → no filter, and it encodes to ''.
+    expect(decodeGrade(`${GRADE_FILTER_FLOOR}-${GRADE_MAX}`)).toBeNull()
+    expect(encodeGrade([GRADE_FILTER_FLOOR, GRADE_MAX])).toBe('')
   })
 
   it('treats malformed grade strings as no filter', () => {

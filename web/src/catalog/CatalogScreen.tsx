@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getRouteApi } from '@tanstack/react-router'
-import { FONT_GRADES, gradeIndex } from '../board/grades'
+import { FONT_GRADES, GRADE_FILTER_FLOOR, gradeIndex } from '../board/grades'
 import { boardByLayoutId, defaultAngle } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, setAngle, useBoardStore } from '../board/boardStore'
 import { holdSetContext, isClimbable } from '../board/holdSetMembership'
@@ -172,11 +172,16 @@ export function CatalogScreen() {
   // the render before the self-heal effect rewrites the URL.
   const effectiveFilters = useMemo<FilterState>(() => ({ ...filters, listFilter }), [filters, listFilter])
 
-  // The slab's actual grade span (ordinal) for the slider. (The Method filter uses a
-  // fixed label list, not slab-derived — see FilterControls / METHOD_LABELS.)
+  // The slab's actual grade span (ordinal) for the slider, floored at 6A+ (issue #96) —
+  // stray sub-6A+ catalog grades must not become the slider's lowest stop. (The Method
+  // filter uses a fixed label list, not slab-derived — see FilterControls / METHOD_LABELS.)
   const gradeSpan = useMemo<[number, number]>(() => {
     const idx = problems.map((p) => gradeIndex(p.grade)).filter((i) => i < FONT_GRADES.length)
-    return idx.length ? [Math.min(...idx), Math.max(...idx)] : [0, FONT_GRADES.length - 1]
+    if (idx.length === 0) return [GRADE_FILTER_FLOOR, FONT_GRADES.length - 1]
+    return [
+      Math.max(Math.min(...idx), GRADE_FILTER_FLOOR),
+      Math.max(Math.max(...idx), GRADE_FILTER_FLOOR),
+    ]
   }, [problems])
 
   // Installed-hold-set climbable check. The raw string is read in render (boardStore

@@ -12,6 +12,15 @@ export const FONT_GRADES: readonly string[] = [
 
 export const DEFAULT_GRADE = '6A+'
 
+/**
+ * Ordinal floor of the grade FILTER (issue #96): 6A+ is the lowest grade the filter
+ * offers or labels. The scale keeps its sub-6A+ entries so stray catalog grades
+ * (5+, 6A…) still sort correctly, but every filter surface clamps to this floor and
+ * the range predicate treats sub-floor grades as 6A+ — so capping the top of the
+ * range never silently hides them.
+ */
+export const GRADE_FILTER_FLOOR = FONT_GRADES.indexOf(DEFAULT_GRADE)
+
 /** Position on the canonical scale; unknown/unmapped grades sort to the end. */
 export function gradeIndex(grade: string): number {
   const i = FONT_GRADES.indexOf(grade)

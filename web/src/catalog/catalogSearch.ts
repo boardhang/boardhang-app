@@ -15,7 +15,7 @@
 // no tiebreak), stripped at its default; a secondary that shares the primary's
 // dimension is dropped on read so URL state matches the "Then by" control.
 
-import { FONT_GRADES } from '../board/grades'
+import { FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
 import {
   DEFAULT_FILTERS,
   STATUS_KEYS,
@@ -126,24 +126,26 @@ export function decodeStatus(s: string): StatusKey[] {
 
 // ─── Grade ordinal <-> "min-max" ────────────────────────────────────────────
 
-/** Encode a grade range to `"min-max"`, or `''` when it spans the whole canonical
- *  scale (the sole "no grade filter" state, absent from the URL). */
+/** Encode a grade range to `"min-max"`, or `''` when it spans the whole filterable
+ *  scale — floor (6A+, issue #96) through top — (the sole "no grade filter" state,
+ *  absent from the URL). */
 export function encodeGrade(range: [number, number] | null): string {
   if (!range) return ''
   const [lo, hi] = range
-  if (lo <= 0 && hi >= GRADE_MAX) return '' // canonical full span = no filter
+  if (lo <= GRADE_FILTER_FLOOR && hi >= GRADE_MAX) return '' // full filterable span = no filter
   return `${lo}-${hi}`
 }
 
 /** Decode `"min-max"` into a clamped `[min, max]`, or `null` for no filter
- *  (malformed input or the full canonical span). */
+ *  (malformed input or the full filterable span). Both bounds are floored at 6A+
+ *  (issue #96), so a stale/hand-edited URL can never label the filter below it. */
 export function decodeGrade(s: string): [number, number] | null {
   const m = /^(\d+)-(\d+)$/.exec(s)
   if (!m) return null
-  let lo = Math.min(Math.max(Number(m[1]), 0), GRADE_MAX)
-  let hi = Math.min(Math.max(Number(m[2]), 0), GRADE_MAX)
+  let lo = Math.min(Math.max(Number(m[1]), GRADE_FILTER_FLOOR), GRADE_MAX)
+  let hi = Math.min(Math.max(Number(m[2]), GRADE_FILTER_FLOOR), GRADE_MAX)
   if (lo > hi) [lo, hi] = [hi, lo]
-  if (lo <= 0 && hi >= GRADE_MAX) return null
+  if (lo <= GRADE_FILTER_FLOOR && hi >= GRADE_MAX) return null
   return [lo, hi]
 }
 
