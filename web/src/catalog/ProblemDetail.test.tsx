@@ -120,6 +120,26 @@ describe('ProblemDetail', () => {
     expect(screen.getByText('Last')).toBeInTheDocument()
   })
 
+  it('pages with arrow keys (desktop), and no-ops at the ends', () => {
+    renderDetail('b')
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(screen.getByText('Last')).toBeInTheDocument()
+    // At the last, ArrowRight is a no-op (stays on Last).
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(screen.getByText('Last')).toBeInTheDocument()
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft' })
+    expect(screen.getByText('Middle')).toBeInTheDocument()
+  })
+
+  it('ignores arrow keys while typing in an input', () => {
+    renderDetail('b')
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    fireEvent.keyDown(input, { key: 'ArrowRight' })
+    expect(screen.getByText('Middle')).toBeInTheDocument()
+    input.remove()
+  })
+
   it('shows a deep-linked problem excluded from the filtered list with paging disabled', () => {
     // "Middle" is not in the displayed (filtered) list, but resolves from the slab.
     render(<Pager id="b" displayed={[list[0], list[2]]} />)
@@ -144,7 +164,7 @@ describe('ProblemDetail', () => {
     vi.mocked(ble.isConnected).mockReturnValue(false) // stays disconnected
     renderDetail('b')
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /connect & light up/i }))
+      fireEvent.click(screen.getByRole('button', { name: /light up/i }))
     })
     expect(ble.connectBoard).toHaveBeenCalled()
     expect(ble.bleClient.send).not.toHaveBeenCalled()

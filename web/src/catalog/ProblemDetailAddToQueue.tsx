@@ -1,8 +1,9 @@
 // The "Add to queue" action shown in the problem detail (U6 — the primary add entry
 // point for the Session Playlist Queue, R2/F1). It is visible ONLY while there is an
 // active collaboration session bound to the board being viewed; otherwise it renders
-// nothing (an off-board or session-less detail view has no queue to add to). Mirrors the
-// add-to-list ghost icon button placement in ProblemDetail's actions region.
+// nothing (an off-board or session-less detail view has no queue to add to). Mounted inside
+// a fixed-width cell of ProblemDetail's segmented action toolbar, whose wrapper strips the
+// button's own rounding/border so it flushes with its neighbor cells.
 //
 // Two-part so the queue hook is never driven with a null session (which would clear the
 // shared queue store out from under the drawer): the outer gate reads the active session
@@ -85,7 +86,7 @@ function AddToQueueButton({ sessionId, sourceCatalogId, boardLayoutId }: AddToQu
     return (
       <Button
         variant="ghost"
-        size="icon"
+        size="icon-lg"
         aria-label="Remove from queue"
         disabled={busy}
         onClick={() => void onRemove()}

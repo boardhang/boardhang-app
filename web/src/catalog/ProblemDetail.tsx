@@ -7,6 +7,10 @@
 // state. The pager domain is the `displayed` list (the filtered catalog, or a
 // recents snapshot when opened from the recents sheet) — a deep-linked problem the
 // active filters exclude is not in it, so prev/next disable and it shows standalone.
+//
+// Paging affordances: side-swipe on the board, chevrons in the segmented action
+// toolbar (disabled and dimmed at first/last so the toolbar geometry never shifts),
+// and desktop arrow keys.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, ListPlus, Repeat, Star } from 'lucide-react'
@@ -175,18 +179,33 @@ export function ProblemDetail({
   const isFav = favoriteIds.has(currentId)
   const isSent = sentIds.has(currentId)
 
+  // Connection is plumbing — tapping "Light up" always connect-then-sends. The filled
+  // bulb icon carries the "lit" state so the label doesn't need to.
   const lightLabel = light.busy === 'connecting'
     ? 'Connecting…'
     : light.busy === 'sending'
       ? 'Sending…'
-      : light.state === 'connected'
-        ? light.lit
-          ? 'Lit — send again'
-          : 'Light up'
-        : 'Connect & light up'
+      : 'Light up'
 
   const atFirst = pos <= 0
   const atLast = pos < 0 || pos >= displayed.length - 1
+
+  // Desktop arrow-key paging. Ignored while the user is typing in a field.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (e.key === 'ArrowLeft' && !atFirst) {
+        e.preventDefault()
+        onNavigate(displayed[pos - 1].source_catalog_id)
+      } else if (e.key === 'ArrowRight' && !atLast) {
+        e.preventDefault()
+        onNavigate(displayed[pos + 1].source_catalog_id)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [atFirst, atLast, pos, displayed, onNavigate])
 
   // The count shown in the stepper — session-local pending tries for THIS problem only
   // (starts at 0 each time a problem is shown; not hydrated from existing logs, per iOS).
@@ -256,7 +275,7 @@ export function ProblemDetail({
       style={{ maxHeight: '85dvh', height: detailsHeight ? detailsHeight + BETA_PEEK : undefined }}
     >
       <div ref={detailsRef} className="flex snap-start flex-col gap-4 py-4">
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1.5">
           <div className="flex items-center gap-1.5">
             <h1 className="min-w-0 break-words text-sm font-bold uppercase leading-tight tracking-tight">
@@ -289,32 +308,6 @@ export function ProblemDetail({
             {current.method && <span className="text-foreground/70">{current.method}</span>}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <ProblemDetailAddToQueue sourceCatalogId={currentId} boardLayoutId={board.layoutId} />
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Save to list"
-            onClick={addToList.saveToList}
-          >
-            <ListPlus className="size-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={isFav ? 'Unfavorite' : 'Favorite'}
-            aria-pressed={isFav}
-            onClick={() => toggleFavorite(currentId)}
-          >
-            <Heart className={isFav ? 'size-5 fill-favorite text-favorite' : 'size-5'} />
-          </Button>
-          <Button variant="ghost" size="icon" aria-label="Previous problem" disabled={atFirst} onClick={() => onNavigate(displayed[pos - 1].source_catalog_id)}>
-            <ChevronLeft className="size-5" />
-          </Button>
-          <Button variant="ghost" size="icon" aria-label="Next problem" disabled={atLast} onClick={() => onNavigate(displayed[pos + 1].source_catalog_id)}>
-            <ChevronRight className="size-5" />
-          </Button>
-        </div>
       </div>
 
       <div
@@ -325,16 +318,65 @@ export function ProblemDetail({
         <CatalogBoard board={board} holds={current.holds} visibleHoldSetIds={visible} showBeta highlightHolds={highlightHolds} />
       </div>
 
-      <Button
-        size="lg"
-        variant="secondary"
-        className="w-full"
-        onClick={() => void light.lightUp(current.holds)}
-        disabled={light.busy !== null}
+      {/* Segmented action toolbar: one bordered pill divided into cells. Ends dim (disabled)
+          rather than hide, so the toolbar geometry never shifts as you page. The queue cell
+          reserves a fixed 44px slot even when no session targets the board, so Save-to-list
+          stays under the same fingertip regardless of session state.
+          divide-x fights shadcn Button's built-in `border-transparent`, so we paint the
+          divider explicitly (border-l) on every cell except the first. */}
+      <div
+        role="toolbar"
+        aria-label="Problem actions"
+        className="flex h-11 w-full items-stretch overflow-hidden rounded-xl border border-border"
       >
-        <Lightbulb className={light.lit ? 'size-5 fill-current' : 'size-5'} />
-        {lightLabel}
-      </Button>
+        <Button
+          variant="ghost"
+          aria-label="Previous problem"
+          disabled={atFirst}
+          onClick={() => onNavigate(displayed[pos - 1].source_catalog_id)}
+          className="h-full w-11 shrink-0 rounded-none bg-transparent hover:bg-muted disabled:opacity-30"
+        >
+          <ChevronLeft className="size-5" />
+        </Button>
+        <div className="flex h-full w-11 shrink-0 items-center justify-center border-l border-l-border [&>button]:h-full [&>button]:w-full [&>button]:rounded-none [&>button]:border-0 [&>button]:bg-transparent [&>button]:hover:bg-muted">
+          <ProblemDetailAddToQueue sourceCatalogId={currentId} boardLayoutId={board.layoutId} />
+        </div>
+        <Button
+          variant="ghost"
+          aria-label="Save to list"
+          onClick={addToList.saveToList}
+          className="h-full w-11 shrink-0 rounded-none border-l border-l-border bg-transparent hover:bg-muted"
+        >
+          <ListPlus className="size-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => void light.lightUp(current.holds)}
+          disabled={light.busy !== null}
+          className="h-full min-w-0 flex-1 gap-2 rounded-none border-l border-l-border bg-transparent px-3 text-foreground hover:bg-muted aria-disabled:opacity-70 disabled:opacity-70"
+        >
+          <Lightbulb className={light.lit ? 'size-5 fill-current' : 'size-5'} />
+          <span className="truncate">{lightLabel}</span>
+        </Button>
+        <Button
+          variant="ghost"
+          aria-label={isFav ? 'Unfavorite' : 'Favorite'}
+          aria-pressed={isFav}
+          onClick={() => toggleFavorite(currentId)}
+          className="h-full w-11 shrink-0 rounded-none border-l border-l-border bg-transparent hover:bg-muted"
+        >
+          <Heart className={isFav ? 'size-5 fill-favorite text-favorite' : 'size-5'} />
+        </Button>
+        <Button
+          variant="ghost"
+          aria-label="Next problem"
+          disabled={atLast}
+          onClick={() => onNavigate(displayed[pos + 1].source_catalog_id)}
+          className="h-full w-11 shrink-0 rounded-none border-l border-l-border bg-transparent hover:bg-muted disabled:opacity-30"
+        >
+          <ChevronRight className="size-5" />
+        </Button>
+      </div>
 
       <div className="flex items-center gap-3">
         <TryStepper count={currentTries} onRemove={removeTry} onAdd={addTry} />
