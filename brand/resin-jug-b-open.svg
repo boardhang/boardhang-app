@@ -1,16 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
-  <!-- Boardhang final: "Resin Jug b" in brand blue — app-icon tile. The lowercase b is one
-       blobby resin jug: chunky asymmetric silhouette, flat wall-contact base, bolt-hole
-       punched through the bowl as the counter, lit LED glowing inside the hole.
-       Colors: #0E1116 tile, #3B82F6 hold, #34D97B LED (single subtle radial glow). -->
+  <!-- Boardhang final: "Resin Jug b" in brand blue — open mark, no tile. Same jug as the
+       app-icon version, scaled up to fill the frame; the bolt hole is punched transparent
+       so any background shows through, with the green LED seated in it.
+       Colors: #3B82F6 hold, #34D97B LED (single subtle radial glow). -->
   <defs>
-    <radialGradient id="bhLedGlow" cx="0.5" cy="0.5" r="0.5">
+    <radialGradient id="bhLedGlowOpen" cx="0.5" cy="0.5" r="0.5">
       <stop offset="0" stop-color="#34D97B" stop-opacity="0.55"/>
       <stop offset="1" stop-color="#34D97B" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <rect x="8" y="8" width="224" height="224" rx="52" fill="#0E1116"/>
-  <g transform="translate(-8 0)">
+  <g transform="translate(-32.4 -24.5) scale(1.187)">
     <path fill="#3B82F6" fill-rule="evenodd" d="
       M63 70
       C60 50 68 38 84 38
@@ -28,7 +27,7 @@
       C62 106 64 88 63 70
       Z
       M171 146 a25 25 0 1 0 -50 0 a25 25 0 1 0 50 0 Z"/>
-    <circle cx="146" cy="146" r="21" fill="url(#bhLedGlow)"/>
+    <circle cx="146" cy="146" r="21" fill="url(#bhLedGlowOpen)"/>
     <circle cx="146" cy="146" r="9" fill="#34D97B"/>
   </g>
 </svg>

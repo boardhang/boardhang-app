@@ -48,8 +48,8 @@ export default defineConfig({
         short_name: 'Boardhang',
         description:
           'Build a problem on the grid and light it on your DIY MoonBoard LEDs over Web Bluetooth.',
-        theme_color: '#111111',
-        background_color: '#111111',
+        theme_color: '#0E1116',
+        background_color: '#0E1116',
         display: 'standalone',
         icons: [
           { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
