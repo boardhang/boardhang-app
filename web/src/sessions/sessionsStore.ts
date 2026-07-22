@@ -539,10 +539,11 @@ export async function reportProblemLit(boardLayoutId: number, sourceCatalogId: s
 }
 
 /**
- * Narrow reconcile of the lit pointer — the 'lit-changed' realtime nudge's refetch (KTD-5:
+ * Narrow reconcile of the lit pointer — the 'lit-changed' realtime nudge's refetch, and the
+ * foreground + reconnect backstops for a nudge dropped while the PWA was backgrounded (KTD-5:
  * the broadcast payload is never trusted as data). Selects only LIT_COLUMNS so a co-member's
- * light-up doesn't reload the roster; the full SESSION_COLUMNS pulls (activation / foreground /
- * manual refresh) carry the same fields anyway. Best-effort: errors keep last-good state.
+ * light-up doesn't reload the roster; the full SESSION_COLUMNS pulls (activation / manual refresh)
+ * carry the same fields anyway. Best-effort: errors keep last-good state.
  */
 export async function refreshLitProblem(): Promise<void> {
   const gen = generation

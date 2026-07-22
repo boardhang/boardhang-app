@@ -137,11 +137,25 @@ function onSessionEnded(): void {
   toast('The session ended')
 }
 
+/**
+ * On foreground (tab becomes visible), reconcile the lit pointer. Broadcast has no replay, so a
+ * 'lit-changed' nudge fired while the PWA was backgrounded (socket suspended, e.g. the user
+ * switched apps) is lost — without this the bar strands a stale "now on the wall" after a co-member
+ * switched problems while we were away (#97 follow-up). Mirrors the queue/memberAscents foreground
+ * reconcile; narrow refetch, and roster/queue/ascents own their own foreground reconciles.
+ */
+function onForeground(): void {
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible' && currentSessionId) {
+    void refreshLitProblem()
+  }
+}
+
 function teardown(): void {
   if (debounceTimer) {
     clearTimeout(debounceTimer)
     debounceTimer = null
   }
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onForeground)
   if (channel && supabase) supabase.removeChannel(channel)
   channel = null
   selfId = null // don't let a previous account's id linger and cause a false self-skip
@@ -158,6 +172,10 @@ export function activateSessionRealtime(sessionId: string | null): void {
   currentSessionId = sessionId
   teardown()
   if (!sessionId || !supabase) return // deactivated, or unconfigured → pull model only (R6)
+
+  // Reconcile the lit pointer whenever the PWA foregrounds — a 'lit-changed' nudge dropped while
+  // backgrounded has no replay (see onForeground). Removed in teardown on the next switch/deactivate.
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onForeground)
 
   const client = supabase
   // Resolve the session first: a private channel's join must carry the JWT (setAuth) BEFORE
@@ -196,22 +214,29 @@ export function activateSessionRealtime(sessionId: string | null): void {
       })
       // "Now on the wall" (#97): a lit-pointer write broadcasts a data-free 'lit-changed' nudge;
       // refetch just the lit columns. No self-skip — our own write already updated optimistically
-      // and the narrow reconcile is cheap and confirms server truth. Dropped-nudge backstop: the
-      // full-row pulls (activation / foreground / manual refresh) carry the lit columns anyway.
+      // and the narrow reconcile is cheap and confirms server truth. Dropped-nudge backstops (a
+      // background PWA's socket suspends with no replay): the foreground reconcile (onForeground) and
+      // the reconnect reconcile below, plus the full-row activation / manual pulls.
       ch.on('broadcast', { event: LIT_CHANGED_EVENT }, () => {
         if (myToken !== activationToken) return
         void refreshLitProblem()
       })
-      // Broadcast is best-effort with no replay, so a 'queue-changed' nudge dropped while the socket
-      // was down would strand a stale queue. On reconnect (a second+ SUBSCRIBED after a drop — the
-      // first is the initial join, already covered by the store's activation fetch), reconcile it
-      // (KTD5). memberAscents reconciles on foreground/active-session change instead; the queue adds
-      // reconnect here because its nudge, not just its pull, can be missed mid-disconnect.
+      // Broadcast is best-effort with no replay, so a 'queue-changed' or 'lit-changed' nudge dropped
+      // while the socket was down would strand a stale queue / lit pointer. On reconnect (a second+
+      // SUBSCRIBED after a drop — the first is the initial join, already covered by the store's
+      // activation fetch), reconcile both (KTD5). memberAscents reconciles on foreground/active-session
+      // change instead; the queue and lit pointer add reconnect here because their nudge, not just
+      // their pull, can be missed mid-disconnect. The lit pointer also reconciles on foreground
+      // (onForeground) — the two backstops cover a background→foreground with no socket drop, and a
+      // socket drop with no foreground transition, respectively.
       let hasSubscribed = false
       ch.subscribe((status) => {
         if (myToken !== activationToken) return
         if (status !== 'SUBSCRIBED') return
-        if (hasSubscribed) refreshQueue()
+        if (hasSubscribed) {
+          refreshQueue()
+          void refreshLitProblem()
+        }
         hasSubscribed = true
       })
       channel = ch

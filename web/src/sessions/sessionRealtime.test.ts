@@ -372,4 +372,32 @@ describe('sessionRealtime', () => {
     fireStatus('SUBSCRIBED') // socket recovered — a queue-changed nudge may have been missed (KTD5)
     expect(h.queueRefreshCalls).toBe(1)
   })
+
+  it('reconciles the lit pointer on reconnect too (#97)', async () => {
+    activateSessionRealtime('S1')
+    await flush()
+    expect(h.litRefreshCalls).toBe(0) // initial join SUBSCRIBED is not a reconnect
+    fireStatus('SUBSCRIBED') // socket recovered — a lit-changed nudge may have been missed
+    expect(h.litRefreshCalls).toBe(1)
+  })
+
+  it('reconciles the lit pointer when the PWA foregrounds (dropped lit-changed backstop) (#97)', async () => {
+    activateSessionRealtime('S1')
+    await flush()
+    expect(h.litRefreshCalls).toBe(0)
+    // Backgrounded → mate switched the lit problem → foreground: the suspended socket had no replay,
+    // so the reconcile on visible is what un-strands the stale "now on the wall".
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(h.litRefreshCalls).toBe(1)
+  })
+
+  it('does not reconcile the lit pointer on foreground once deactivated (listener torn down)', async () => {
+    activateSessionRealtime('S1')
+    await flush()
+    activateSessionRealtime(null)
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(h.litRefreshCalls).toBe(0)
+  })
 })
