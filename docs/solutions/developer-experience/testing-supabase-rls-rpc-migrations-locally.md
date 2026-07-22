@@ -113,6 +113,28 @@ Gotchas learned the hard way:
 - **`set role authenticated` is required** to exercise RLS at all — the superuser (the psql login role) bypasses RLS entirely, so setup done as superuser silently ignores policies.
 - **`RETURNS TABLE` + `SECURITY DEFINER` plpgsql**: qualify every column reference (`m.user_id`, not `user_id`) and/or add `#variable_conflict use_column` to avoid OUT-parameter/column ambiguity errors.
 - **Recreate the container per run** — `ON_ERROR_STOP=1` aborts mid-file on the first error, leaving seeded rows that break the next run's inserts.
+- **Grants must mirror Supabase's defaults for the statement under test** (learned on 0017): real
+  Supabase grants `authenticated` full table-level DML on `public` tables and lets **RLS** filter
+  rows. If the harness only grants SELECT, a "non-owner member cannot UPDATE directly" assertion
+  passes for the wrong reason (`insufficient_privilege` from the missing grant), never exercising
+  the policy. Grant the verb the negative test needs, then assert the row *didn't change*.
+
+### No Docker? Fallback: a scratch cluster on any local Postgres (verified on PG14)
+
+On WSL, Docker Desktop may simply not be running and can't be started headlessly. The same
+chain runs on a vanilla local Postgres with zero superuser access to any existing cluster —
+`initdb` your own throwaway one (verified: the 0002→0007→stub_realtime→0017 chain + assertions
+behave identically on Postgres 14 and 16):
+
+```bash
+PGBIN=/usr/lib/postgresql/14/bin
+$PGBIN/initdb -D /tmp/scratch/data -U postgres --auth=trust
+# Unix sockets cap the path at ~107 bytes — deep scratch dirs exceed it; use a short -k dir.
+SOCK=$(mktemp -d /tmp/pgs.XXXX)
+$PGBIN/pg_ctl -D /tmp/scratch/data -o "-p 55432 -k $SOCK -c listen_addresses=''" start
+$PGBIN/psql -h "$SOCK" -p 55432 -U postgres -d app ...   # stub → chain → grants → assertions
+$PGBIN/pg_ctl -D /tmp/scratch/data stop && rm -rf /tmp/scratch "$SOCK"
+```
 
 ## Related
 

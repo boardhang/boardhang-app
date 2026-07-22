@@ -8,10 +8,10 @@
 // screen portals the bar into the shell's sticky header slot (headerSessionSlot, issue
 // #98) so it stays visible as the list scrolls; the start/resume states stay in-flow.
 
-import { useCallback, useRef, useState } from 'react'
-import { MoreHorizontal, Plus, Share2, Users, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Lightbulb, MoreHorizontal, Plus, Share2, Users, X } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
-import type { CatalogProblem } from './catalogSync'
+import { getCatalogProblemsByIds, type CatalogProblem } from './catalogSync'
 import { QueueDrawer } from '../sessions/QueueDrawer'
 import { boardShortLabel } from '../lists/listsTypes'
 import { useAuth } from '../auth/AuthProvider'
@@ -25,7 +25,13 @@ import {
 } from '../sessions/sessionsStore'
 import { useResumableSessions } from '../sessions/useResumableSessions'
 import { ResumableSessionRow } from '../sessions/ResumableSessionRow'
-import { defaultSessionName, MAX_SESSION_NAME, memberInitials, memberLabel } from '../sessions/sessionsTypes'
+import {
+  defaultSessionName,
+  MAX_SESSION_NAME,
+  memberInitials,
+  memberLabel,
+  type SessionMember,
+} from '../sessions/sessionsTypes'
 import { MemberAvatar } from '../sessions/MemberAvatar'
 import { ShareSession } from '../sessions/ShareSession'
 import { ScanToJoin } from '../sessions/ScanToJoin'
@@ -40,8 +46,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 // snapshots the queue as the paging domain so the detail view pages in queue order (KTD9).
 export interface SessionBarProps {
   board: CatalogBoardDef
-  /** Open the ?problem detail pager on `id`, paging over `stack` (the queue's order). */
-  onOpenProblem: (id: string, stack: CatalogProblem[]) => void
+  /** Open the ?problem detail pager on `id`, paging over `stack` (the queue's order) —
+   *  or over the default filtered-list domain when `stack` is omitted (the lit row). */
+  onOpenProblem: (id: string, stack?: CatalogProblem[]) => void
 }
 
 export function SessionBar({ board, onOpenProblem }: SessionBarProps) {
@@ -178,7 +185,7 @@ function ActiveBar({
 }: {
   board: CatalogBoardDef
   onShare: () => void
-  onOpenProblem: (id: string, stack: CatalogProblem[]) => void
+  onOpenProblem: (id: string, stack?: CatalogProblem[]) => void
 }) {
   const { activeSession, roster, selfId } = useSessions()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -193,6 +200,7 @@ function ActiveBar({
   const alone = roster.length === 1
 
   return (
+    <>
     <div className="flex items-center gap-2 border-b border-border bg-muted/60 px-3 py-2 text-sm">
       <SessionName board={board} name={activeSession.name} />
 
@@ -278,6 +286,74 @@ function ActiveBar({
         </Popover>
       </div>
     </div>
+    {/* "Now on the wall" (#97): the problem last lit during this session — the answer to
+        "which one is active?". Stored on the session row (0017) and pushed via the
+        lit-changed nudge, so every member's bar agrees. */}
+    {activeSession.litProblemId && (
+      <LitProblemRow
+        problemId={activeSession.litProblemId}
+        litBy={activeSession.litBy ?? null}
+        roster={roster}
+        selfId={selfId}
+        onOpenProblem={onOpenProblem}
+      />
+    )}
+    </>
+  )
+}
+
+/** The slim "on the wall" row under ActiveBar: lightbulb + problem name/grade (resolved from
+ *  the local catalog cache, like the queue strip) + who lit it (roster lookup; "you" for self).
+ *  Tap opens the problem detail over the default pager domain — it never re-lights the board. */
+function LitProblemRow({
+  problemId,
+  litBy,
+  roster,
+  selfId,
+  onOpenProblem,
+}: {
+  problemId: string
+  litBy: string | null
+  roster: SessionMember[]
+  selfId: string | null
+  onOpenProblem: (id: string) => void
+}) {
+  // Resolve id → problem from the offline catalog cache (mirrors useActiveQueueProblems).
+  // Null while unresolved (a co-member may have lit a climb this device hasn't synced yet).
+  const [problem, setProblem] = useState<CatalogProblem | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    setProblem(null)
+    void getCatalogProblemsByIds([problemId]).then((m) => {
+      if (!cancelled) setProblem(m.get(problemId) ?? null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [problemId])
+
+  const lighter = litBy ? roster.find((m) => m.userId === litBy) : undefined
+  const byLabel = litBy && litBy === selfId ? 'you' : lighter ? memberLabel(lighter) : null
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenProblem(problemId)}
+      className="flex w-full items-center gap-2 border-b border-border bg-muted/60 px-3 py-1.5 text-left text-sm hover:bg-muted"
+      title="Open the problem that’s on the wall"
+    >
+      <Lightbulb className="size-4 shrink-0 fill-current text-benchmark" aria-hidden />
+      <span className="min-w-0 flex-1 truncate">
+        <span className="text-muted-foreground">On the wall: </span>
+        <span className="font-medium">{problem ? problem.name : 'a climb'}</span>
+        {problem && (
+          <span className="ml-1 text-xs font-semibold tabular-nums text-muted-foreground">
+            {problem.grade}
+          </span>
+        )}
+      </span>
+      {byLabel && <span className="shrink-0 text-xs text-muted-foreground">lit by {byLabel}</span>}
+    </button>
   )
 }
 

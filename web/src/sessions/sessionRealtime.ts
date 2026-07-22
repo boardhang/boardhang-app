@@ -24,6 +24,7 @@ import { refreshQueue } from './queueStore'
 import {
   endActiveSessionLocally,
   getSessionsSnapshot,
+  refreshLitProblem,
   reloadActiveRoster,
   removeMemberFromRoster,
 } from './sessionsStore'
@@ -40,6 +41,9 @@ const SESSION_ENDED_EVENT = 'session-ended'
 // Must match 0015's session_queue trigger: realtime.send(... event => 'queue-changed'). A data-free
 // doorbell — the queue itself still arrives only through queueStore's direct RLS select (KTD5).
 const QUEUE_CHANGED_EVENT = 'queue-changed'
+// Must match 0017's sessions lit trigger: realtime.send(... event => 'lit-changed'). Same doorbell
+// pattern — the lit pointer itself arrives only through refreshLitProblem's RLS select.
+const LIT_CHANGED_EVENT = 'lit-changed'
 
 interface NudgePayload {
   author?: string
@@ -189,6 +193,14 @@ export function activateSessionRealtime(sessionId: string | null): void {
       ch.on('broadcast', { event: QUEUE_CHANGED_EVENT }, () => {
         if (myToken !== activationToken) return
         refreshQueue()
+      })
+      // "Now on the wall" (#97): a lit-pointer write broadcasts a data-free 'lit-changed' nudge;
+      // refetch just the lit columns. No self-skip — our own write already updated optimistically
+      // and the narrow reconcile is cheap and confirms server truth. Dropped-nudge backstop: the
+      // full-row pulls (activation / foreground / manual refresh) carry the lit columns anyway.
+      ch.on('broadcast', { event: LIT_CHANGED_EVENT }, () => {
+        if (myToken !== activationToken) return
+        void refreshLitProblem()
       })
       // Broadcast is best-effort with no replay, so a 'queue-changed' nudge dropped while the socket
       // was down would strand a stale queue. On reconnect (a second+ SUBSCRIBED after a drop — the

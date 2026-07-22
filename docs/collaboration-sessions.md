@@ -12,7 +12,8 @@ Client: [`web/src/sessions/`](../web/src/sessions/) plus the catalog + shell tou
 ## Session model
 
 - **`sessions`** — one row per session: `owner_id`, `name` (≤60 chars), `board_layout_id`,
-  `invite_token` (unguessable share secret), `expires_at`, soft-delete `deleted`.
+  `invite_token` (unguessable share secret), `expires_at`, soft-delete `deleted`, plus the
+  "now on the wall" pointer `lit_problem_id` / `lit_by` / `lit_at` (0017 — see below).
 - **`session_members`** — composite PK `(session_id, user_id)`; membership is the unit of
   sharing. Joining consents to sharing your sent/tried status for that board; leaving (row
   delete) revokes it.
@@ -50,6 +51,7 @@ resume (see below).
 | `touch_session(p_session_id)` | member **and** live | Bumps `expires_at` for manual refresh + rename. Members can't `UPDATE` `sessions` directly (owner-only), so this is their sanctioned expiry-bump path. |
 | `session_invite_token(p_session_id)` | member (**no** liveness check) | Re-fetch the share secret on demand — so the token never enters the client cache/pointer. Membership-only so a still-member can retrieve it even for an ended session; harmless because `join_session_by_token` refuses the ended token. |
 | `list_my_live_sessions()` (0016) | caller is a member | Enumerate the caller's **live** sessions (`deleted = false AND expires_at > now()`) for cross-device resume. Returns the `SESSION_COLUMNS` shape **without** `invite_token`. **Pure read** — never bumps `expires_at`, so listing on an idle second device can't revive a dying crew. |
+| `set_session_lit_problem(p_session_id, p_problem_id)` (0017) | member **and** live | Set (or clear, on `null`) the session's "now on the wall" pointer; pins `lit_by = auth.uid()` / `lit_at = now()` server-side. **Never bumps `expires_at`** — see the lit-problem section below. |
 
 RLS: `session_members` has **no member-facing INSERT policy** (joins go only through the RPC);
 the creator is seated by an owner-seat trigger. DELETE is self-leave **or** owner-removes-member.
@@ -261,6 +263,36 @@ flowchart TD
 which never fires today (sessions are only soft-deleted). If the deferred hard-delete sweep of
 expired sessions ever ships, it must preserve or relocate queue rows first — a future sessions
 logbook is intended to read queue history, and the cascade would otherwise erase it.
+
+## "Now on the wall" (lit problem)
+
+The answer to the between-burns question *"which one is active?"* (issue #97): a successful BLE
+light-up of a catalog problem, while a session for that board is active, records it **on the
+session row**, and every member's `SessionBar` shows a slim tappable row — problem name/grade +
+who lit it. The next light-up overwrites it (one physical board, one lit problem — no history).
+
+Backend: [`supabase/migrations/0017_session_lit_problem.sql`](../supabase/migrations/0017_session_lit_problem.sql).
+
+- **Three columns on `sessions`** — `lit_problem_id` (≤64 chars, server-checked), `lit_by`
+  (SET NULL on user delete), `lit_at`. Not a table: cardinality is one per session.
+- **Write path is one member-gated `SECURITY DEFINER` RPC** —
+  `set_session_lit_problem(p_session_id, p_problem_id)`. `sessions` UPDATE RLS stays
+  **owner-only**; the RPC (like `touch_session`) is the member path. It pins
+  `lit_by = auth.uid()` / `lit_at = now()` server-side (not spoofable), refuses a dead session,
+  clears all three columns on `null`, and — deliberately — **never bumps `expires_at`** (an
+  evening of light-ups must not keep the 24h privacy backstop from firing).
+- **Realtime** — an `AFTER UPDATE` trigger on `sessions`, `WHEN` the lit columns actually
+  changed, emits a data-free `lit-changed` broadcast on `session:<id>` (reuses 0012's receive
+  policy). Renames / expiry bumps / soft-delete ends stay silent on this event.
+- **Client** — `useLightUp` fire-and-forgets `reportProblemLit(boardLayoutId, id)` after a
+  **confirmed** send (never blocks/fails the BLE path; a stale or failed send never reports).
+  `sessionsStore.reportProblemLit` no-ops unless the active session targets that board, sets
+  optimistically, then calls the RPC; `refreshLitProblem` is the narrow reconcile (lit columns
+  only — no roster reload) used by the `lit-changed` nudge and after a join (the 0007 join RPC's
+  return shape predates the columns). `SESSION_COLUMNS` carries the fields, so the full-row
+  pulls (activation / foreground / manual refresh) reconcile them for free. The bar row resolves
+  id → problem from the offline catalog cache (like the queue strip) and its tap opens problem
+  detail — it never re-lights the board.
 
 ## Security posture (read before changing)
 

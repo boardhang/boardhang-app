@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { bleClient, connectBoard, isConnected, setBleError, useBle } from './useBle'
 import { describeBleError } from './moonboard'
 import { getFlipped } from '../board/boardStore'
+import { reportProblemLit } from '../sessions/sessionsStore'
 import type { CatalogBoardDef } from '../board/boards'
 import type { CatalogHold } from '../catalog/catalogSync'
 import type { HoldAssignment } from '../types'
@@ -70,7 +71,14 @@ export function useLightUp(board: CatalogBoardDef, resetKey: string): UseLightUp
         flipped: getFlipped(board.layoutId),
         showBeta: true,
       })
-      if (targetRef.current === target) setLit(true)
+      if (targetRef.current === target) {
+        setLit(true)
+        // Session "now on the wall" (#97): a CONFIRMED send records the lit problem on the
+        // active session for this board (resetKey IS the catalog problem id in both
+        // consumers). Fire-and-forget and fully guarded inside the store — it must never
+        // block, delay, or fail the BLE path (a failed/cancelled send never reaches here).
+        if (target) void reportProblemLit(board.layoutId, target)
+      }
     } catch (err) {
       if (targetRef.current === target) toast.error(describeBleError(err))
     } finally {

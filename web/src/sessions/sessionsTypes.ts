@@ -20,6 +20,12 @@ export interface SessionRow {
   created_at: string
   updated_at: string
   deleted: boolean
+  /** "Now on the wall" (0017, issue #97): the problem last lit during this session, or null. */
+  lit_problem_id: string | null
+  /** Who lit it (server-pinned attribution), or null. */
+  lit_by: string | null
+  /** When it was lit, or null. */
+  lit_at: string | null
 }
 
 /**
@@ -29,7 +35,7 @@ export interface SessionRow {
  * one transient RETURNING read, then drops it into volatile-only memory.
  */
 export const SESSION_COLUMNS =
-  'id, owner_id, name, board_layout_id, expires_at, created_at, updated_at, deleted'
+  'id, owner_id, name, board_layout_id, expires_at, created_at, updated_at, deleted, lit_problem_id, lit_by, lit_at'
 
 /** A `session_members` row. */
 export interface SessionMemberRow {
@@ -48,6 +54,11 @@ export interface Session {
   createdAt: string
   updatedAt: string
   deleted: boolean
+  /** "Now on the wall" (issue #97): problem last lit during this session, or null. A pointer
+   *  persisted before 0017 may lack these fields — read them as nullish, never assume. */
+  litProblemId: string | null
+  litBy: string | null
+  litAt: string | null
 }
 
 /**
@@ -78,6 +89,9 @@ export function fromSessionRow(r: SessionRow): Session {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     deleted: r.deleted,
+    litProblemId: r.lit_problem_id ?? null,
+    litBy: r.lit_by ?? null,
+    litAt: r.lit_at ?? null,
   }
 }
 

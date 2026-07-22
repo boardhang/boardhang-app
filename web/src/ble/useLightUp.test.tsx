@@ -15,6 +15,11 @@ vi.mock('./useBle', () => ({
   bleClient: { send: vi.fn(), state: 'disconnected' },
 }))
 
+// The session "now on the wall" report (#97) — a fire-and-forget seam; the hook must call it
+// only after a CONFIRMED send for a still-current target.
+vi.mock('../sessions/sessionsStore', () => ({ reportProblemLit: vi.fn().mockResolvedValue(undefined) }))
+import { reportProblemLit } from '../sessions/sessionsStore'
+
 const board = boardByLayoutId(7)!
 const holds = [{ c: 0, r: 1, t: 'start' as const }]
 
@@ -48,6 +53,8 @@ describe('useLightUp', () => {
       expect.objectContaining({ rows: board.geometry.numRows, showBeta: true }),
     )
     await waitFor(() => expect(result.current.lit).toBe(true))
+    // The confirmed send reports the lit problem to the active session (#97) — board + target id.
+    expect(reportProblemLit).toHaveBeenCalledWith(board.layoutId, 'a')
   })
 
   it('surfaces a send failure as a toast and stays un-lit', async () => {
@@ -60,6 +67,8 @@ describe('useLightUp', () => {
     })
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('write failed'))
     expect(result.current.lit).toBe(false)
+    // A failed send never reports a lit problem (#97 R2/AE4).
+    expect(reportProblemLit).not.toHaveBeenCalled()
   })
 
   it('reports an unreadable rejection (a bare code) as a friendly message', async () => {
@@ -98,6 +107,8 @@ describe('useLightUp', () => {
       await pending
     })
     expect(result.current.lit).toBe(false)
+    // A stale send must not report either — it would record the WRONG problem as lit (#97).
+    expect(reportProblemLit).not.toHaveBeenCalled()
   })
 
   it('does not toast a stale send failure after the target changed', async () => {

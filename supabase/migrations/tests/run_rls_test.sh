@@ -67,6 +67,14 @@ begin
   if to_regclass('public.session_queue') is not null then
     execute 'grant select, insert, update, delete on public.session_queue to anon, authenticated';
   end if;
+  -- 0017 chain (keyed on its column, so earlier session chains keep their narrower grants):
+  -- the direct-UPDATE assertion needs the table-level UPDATE grant real Supabase gives
+  -- `authenticated`, so the owner-only RLS policy — not a missing grant — is what denies it.
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'sessions'
+               and column_name = 'lit_problem_id') then
+    execute 'grant update on public.sessions to authenticated';
+  end if;
 end $$;
 SQL
 
@@ -141,5 +149,14 @@ run_case "$HERE/0016_session_resume_rls.sql" \
   "$HERE/../0002_logbook_sync.sql" \
   "$HERE/../0007_collaboration_sessions.sql" \
   "$HERE/../0016_session_resume.sql"
+
+# 0017: session lit problem ("now on the wall") — the three sessions columns, the member-gated
+# setter RPC (attribution pinning, no expiry bump, liveness guard), and the lit-changed broadcast
+# trigger. Needs sessions / session_members / is_session_member (0007) + the realtime stub.
+run_case "$HERE/0017_session_lit_problem_rls.sql" \
+  "$HERE/../0002_logbook_sync.sql" \
+  "$HERE/../0007_collaboration_sessions.sql" \
+  "$HERE/stub_realtime.sql" \
+  "$HERE/../0017_session_lit_problem.sql"
 
 echo "✅ ALL RLS CASES PASSED"

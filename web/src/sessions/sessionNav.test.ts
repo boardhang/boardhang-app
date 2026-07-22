@@ -20,6 +20,9 @@ const sessionOn = (layoutId: number): Session => ({
   updatedAt: '2026-07-20T00:00:00Z',
   expiresAt: '2026-07-21T00:00:00Z',
   deleted: false,
+  litProblemId: null,
+  litBy: null,
+  litAt: null,
 })
 
 describe('navigateToSessionBoard', () => {

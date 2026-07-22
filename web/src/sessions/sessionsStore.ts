@@ -317,6 +317,10 @@ export async function joinSession(token: string): Promise<Session> {
   setState({ memberStatus: readMemberStatus(session.id) })
   void ensureSelfId()
   void loadRoster(session, gen)
+  // The join RPC's return shape (0007) predates the lit columns (0017), so it carries no
+  // "now on the wall" pointer — pull it narrowly so a joiner sees the currently-lit problem
+  // immediately, not only after the next lit-changed nudge.
+  void refreshLitProblem()
   return session
 }
 
@@ -498,6 +502,68 @@ export async function refreshActiveSession(opts: { manual?: boolean } = {}): Pro
   setActiveSession(session)
   await loadRoster(session, gen)
   return { live: true }
+}
+
+// ─── "Now on the wall" — the session's lit problem (0017, issue #97) ──────────
+
+/** The lit-pointer columns — the narrow refetch refreshLitProblem pulls (never `*`). */
+const LIT_COLUMNS = 'lit_problem_id, lit_by, lit_at'
+
+/**
+ * Record a successful light-up on the active session ("now on the wall"). No-op unless the
+ * active session targets `boardLayoutId` (a session is board-scoped; lighting another board's
+ * catalog records nothing). Optimistic — the local bar flips immediately, mirroring what the
+ * server pins (`lit_by = auth.uid()`, `lit_at = now()`); the write goes through the
+ * member-gated set_session_lit_problem RPC (sessions UPDATE RLS is owner-only). BEST-EFFORT:
+ * callers fire-and-forget from the BLE path, so a cloud error never throws — it reconciles
+ * back to server truth instead.
+ */
+export async function reportProblemLit(boardLayoutId: number, sourceCatalogId: string): Promise<void> {
+  const gen = generation
+  const active = state.activeSession
+  if (!active || active.boardLayoutId !== boardLayoutId) return
+  setActiveSession({
+    ...active,
+    litProblemId: sourceCatalogId,
+    litBy: state.selfId,
+    litAt: new Date().toISOString(),
+  })
+  if (!supabase) return // offline/unconfigured: keep the local echo (device-local hint)
+  const { error } = await supabase.rpc('set_session_lit_problem', {
+    p_session_id: active.id,
+    p_problem_id: sourceCatalogId,
+  })
+  if (error && gen === generation && state.activeSession?.id === active.id) {
+    void refreshLitProblem() // roll back to server truth (e.g. the session just ended)
+  }
+}
+
+/**
+ * Narrow reconcile of the lit pointer — the 'lit-changed' realtime nudge's refetch (KTD-5:
+ * the broadcast payload is never trusted as data). Selects only LIT_COLUMNS so a co-member's
+ * light-up doesn't reload the roster; the full SESSION_COLUMNS pulls (activation / foreground /
+ * manual refresh) carry the same fields anyway. Best-effort: errors keep last-good state.
+ */
+export async function refreshLitProblem(): Promise<void> {
+  const gen = generation
+  const active = state.activeSession
+  if (!active || !supabase) return
+  const { data, error } = await supabase
+    .from('sessions')
+    .select(LIT_COLUMNS)
+    .eq('id', active.id)
+    .limit(1)
+  const current = state.activeSession
+  if (gen !== generation || current?.id !== active.id) return
+  if (error) return
+  const row = (data as Pick<SessionRow, 'lit_problem_id' | 'lit_by' | 'lit_at'>[] | null)?.[0]
+  if (!row) return
+  setActiveSession({
+    ...current,
+    litProblemId: row.lit_problem_id ?? null,
+    litBy: row.lit_by ?? null,
+    litAt: row.lit_at ?? null,
+  })
 }
 
 /** Set a member's chip selections (R3/R14) and persist them for the active session. */

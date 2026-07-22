@@ -36,6 +36,7 @@ const h = vi.hoisted(() => ({
   selfId: 'self' as string | null,
   toasts: [] as string[],
   queueRefreshCalls: 0,
+  litRefreshCalls: 0,
 }))
 
 vi.mock('./memberAscentsStore', () => ({
@@ -59,6 +60,10 @@ vi.mock('./sessionsStore', () => ({
   },
   endActiveSessionLocally: () => {
     h.endedLocally = true
+  },
+  refreshLitProblem: () => {
+    h.litRefreshCalls += 1
+    return Promise.resolve()
   },
 }))
 
@@ -147,6 +152,7 @@ beforeEach(() => {
   h.selfId = 'self'
   h.toasts = []
   h.queueRefreshCalls = 0
+  h.litRefreshCalls = 0
 })
 
 afterEach(() => {
@@ -347,6 +353,15 @@ describe('sessionRealtime', () => {
     // refreshQueue is the store's own (internally-debounced) refetch; the module calls it directly
     // with no debounce of its own, so the nudge invokes it right away.
     expect(h.queueRefreshCalls).toBe(1)
+  })
+
+  it('refetches the lit pointer on a lit-changed nudge (#97)', async () => {
+    activateSessionRealtime('S1')
+    await flush()
+    fire('lit-changed')
+    // A narrow refetch (lit columns only) — no roster reload, no ascents refetch.
+    expect(h.litRefreshCalls).toBe(1)
+    expect(h.rosterReloads).toBe(0)
   })
 
   it('reconciles the queue on reconnect (a second SUBSCRIBED after a drop)', async () => {

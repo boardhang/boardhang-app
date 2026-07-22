@@ -32,6 +32,9 @@ function session(overrides: Partial<Session> = {}): Session {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     deleted: false,
+    litProblemId: null,
+    litBy: null,
+    litAt: null,
     ...overrides,
   }
 }

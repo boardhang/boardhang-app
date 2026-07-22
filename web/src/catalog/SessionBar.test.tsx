@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   endedNotice: false,
   onResume: vi.fn(),
   lastResumeOpts: undefined as { boardLayoutId?: number } | undefined,
+  // The lit-row resolver (#97): ids the fake catalog cache can resolve, mapped to problems.
+  litCache: new Map<string, unknown>(),
 }))
 
 vi.mock('../sessions/sessionsStore', () => ({
@@ -37,6 +39,11 @@ vi.mock('../sessions/useResumableSessions', () => ({
   },
 }))
 vi.mock('../auth/AuthProvider', () => ({ useAuth: () => ({ status: h.authStatus }) }))
+// The lit row resolves its problem from the offline catalog cache — stub it (#97).
+vi.mock('./catalogSync', () => ({
+  getCatalogProblemsByIds: (ids: string[]) =>
+    Promise.resolve(new Map(ids.filter((id) => h.litCache.has(id)).map((id) => [id, h.litCache.get(id)]))),
+}))
 vi.mock('../sessions/ShareSession', () => ({ ShareSession: () => <div>share-surface</div> }))
 // QueueDrawer is ActiveBar's own unit's concern — stub it so the SessionBar test stays isolated.
 vi.mock('../sessions/QueueDrawer', () => ({ QueueDrawer: () => null }))
@@ -82,6 +89,7 @@ beforeEach(() => {
   h.endedNotice = false
   h.onResume.mockClear()
   h.lastResumeOpts = undefined
+  h.litCache = new Map()
 })
 
 afterEach(() => vi.restoreAllMocks())
@@ -218,5 +226,40 @@ describe('SessionBar', () => {
     render(<SessionBar board={board} onOpenProblem={() => {}} />)
     expect(screen.queryByText('Tuesday crew')).not.toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+})
+
+describe('SessionBar — "now on the wall" (#97)', () => {
+  it('shows the lit row with the resolved problem + lighter, and opens it on tap', async () => {
+    h.litCache = new Map([['p-lit', { source_catalog_id: 'p-lit', name: 'Mega Crimp', grade: '7A' }]])
+    h.sessions = {
+      activeSession: { id: 'S1', name: 'Crew', boardLayoutId: 7, litProblemId: 'p-lit', litBy: 'friend-1' },
+      roster: [{ userId: 'friend-1', joinedAt: '', handle: 'ida', displayName: 'Ida', avatarUrl: null }],
+      selfId: null,
+    }
+    const onOpen = vi.fn()
+    render(<SessionBar board={board} onOpenProblem={onOpen} />)
+    expect(await screen.findByText('Mega Crimp')).toBeInTheDocument()
+    expect(screen.getByText('lit by Ida')).toBeInTheDocument()
+    fireEvent.click(screen.getByTitle('Open the problem that’s on the wall'))
+    // Opens over the default pager domain (no stack) — and never re-lights the board.
+    expect(onOpen).toHaveBeenCalledWith('p-lit')
+  })
+
+  it('falls back to a neutral label when unresolved, and says "you" for a self light-up', async () => {
+    h.sessions = {
+      activeSession: { id: 'S1', name: 'Crew', boardLayoutId: 7, litProblemId: 'p-unknown', litBy: 'me' },
+      roster: [{ userId: 'me', joinedAt: '', handle: 'me', displayName: 'Me', avatarUrl: null }],
+      selfId: 'me',
+    }
+    render(<SessionBar board={board} onOpenProblem={() => {}} />)
+    expect(await screen.findByText('a climb')).toBeInTheDocument()
+    expect(screen.getByText('lit by you')).toBeInTheDocument()
+  })
+
+  it('renders no lit row while the session has no lit problem', () => {
+    h.sessions = { activeSession: { id: 'S1', name: 'Crew', boardLayoutId: 7 }, roster: [], selfId: null }
+    render(<SessionBar board={board} onOpenProblem={() => {}} />)
+    expect(screen.queryByText(/On the wall:/)).not.toBeInTheDocument()
   })
 })

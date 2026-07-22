@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   selectCount: 0,
   clientNull: false,
   rpcError: false,
+  litCalls: [] as { session: string; problem: string | null }[],
 }))
 
 function dayFromNow(days: number): string {
@@ -115,6 +116,18 @@ vi.mock('../supabase/client', () => {
         if (s) s.expires_at = dayFromNow(1)
         return { data: null, error: null }
       }
+      if (name === 'set_session_lit_problem') {
+        // Mirrors 0017: pins attribution server-side; null clears all three columns.
+        h.litCalls.push({ session: args.p_session_id as string, problem: args.p_problem_id as string | null })
+        const s = h.sessions.find((x) => x.id === args.p_session_id)
+        if (s) {
+          const clear = args.p_problem_id == null
+          s.lit_problem_id = clear ? null : args.p_problem_id
+          s.lit_by = clear ? null : h.userId
+          s.lit_at = clear ? null : new Date().toISOString()
+        }
+        return { data: null, error: null }
+      }
       if (name === 'list_my_live_sessions') {
         if (h.rpcError) return { data: null, error: { message: 'boom' } }
         const now = Date.now()
@@ -160,6 +173,8 @@ import {
   joinSession,
   leaveSession,
   listMyLiveSessions,
+  reportProblemLit,
+  refreshLitProblem,
   resumeSession,
   refreshActiveSession,
   reloadActiveRoster,
@@ -183,6 +198,7 @@ beforeEach(() => {
   h.selectCount = 0
   h.clientNull = false
   h.rpcError = false
+  h.litCalls = []
   clearSessionsCache() // reset in-memory module state
   localStorage.clear() // clearSessionsCache may have re-touched keys
 })
@@ -436,5 +452,64 @@ describe('sessionsStore', () => {
     expect(res).toEqual({ live: false })
     expect(getSessionsSnapshot().activeSession).toBeNull()
     expect(h.selectCount).toBe(0) // short-circuited before any server reconcile
+  })
+})
+
+describe('sessionsStore — "now on the wall" (issue #97)', () => {
+  it('reportProblemLit no-ops without an active session or on a board mismatch', async () => {
+    await reportProblemLit(7, 'p1') // no active session
+    expect(h.litCalls).toEqual([])
+
+    await createSession(7)
+    await reportProblemLit(99, 'p1') // active session targets board 7, not 99
+    expect(h.litCalls).toEqual([])
+    expect(getSessionsSnapshot().activeSession?.litProblemId ?? null).toBeNull()
+  })
+
+  it('reportProblemLit sets optimistically, calls the RPC, and persists the pointer', async () => {
+    const s = await createSession(7)
+    await reportProblemLit(7, 'prob-9')
+    const active = getSessionsSnapshot().activeSession!
+    expect(active.litProblemId).toBe('prob-9')
+    expect(active.litBy).toBe('user-A') // optimistic echo of the server pin
+    expect(h.litCalls).toEqual([{ session: s.id, problem: 'prob-9' }])
+    // Survives reload: the persisted pointer carries the lit fields.
+    const persisted = JSON.parse(localStorage.getItem(ACTIVE_KEY)!)
+    expect(persisted.litProblemId).toBe('prob-9')
+  })
+
+  it('refreshLitProblem merges the server pointer (a co-member lit something)', async () => {
+    const s = await createSession(7)
+    const row = h.sessions.find((r) => r.id === s.id)!
+    row.lit_problem_id = 'from-server'
+    row.lit_by = 'user-B'
+    row.lit_at = new Date().toISOString()
+    await refreshLitProblem()
+    const active = getSessionsSnapshot().activeSession!
+    expect(active.litProblemId).toBe('from-server')
+    expect(active.litBy).toBe('user-B')
+  })
+
+  it('joinSession pulls the current lit pointer (join RPC shape predates 0017)', async () => {
+    // A session created by another user with a lit problem already recorded server-side.
+    const now = new Date().toISOString()
+    h.sessions.push({
+      id: 'S-lit',
+      owner_id: 'user-B',
+      name: 'crew',
+      board_layout_id: 7,
+      invite_token: 'tok-lit',
+      expires_at: dayFromNow(1),
+      created_at: now,
+      updated_at: now,
+      deleted: false,
+      lit_problem_id: 'already-lit',
+      lit_by: 'user-B',
+      lit_at: now,
+    })
+    await joinSession('tok-lit')
+    // joinSession fires refreshLitProblem without awaiting it; let it settle.
+    await new Promise((r) => setTimeout(r, 0))
+    expect(getSessionsSnapshot().activeSession?.litProblemId).toBe('already-lit')
   })
 })
