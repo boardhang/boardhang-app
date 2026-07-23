@@ -103,7 +103,7 @@ export function SettingsScreen() {
 
       <LogbookExportSection />
 
-      <Card>
+      <Card className="py-0">
         <CardContent className="p-0">
           <Link
             to="/logbook/import"

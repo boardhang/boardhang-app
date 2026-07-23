@@ -4,7 +4,7 @@
 // time. Serialization is ./logbookExport (pure); the download side effect is ./downloadFile.
 
 import { useState } from 'react'
-import { ChevronRight, Download } from 'lucide-react'
+import { ChevronRight, FileDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuth } from '../auth/AuthProvider'
@@ -55,14 +55,14 @@ export function LogbookExportSection() {
   // Signed out: a single sign-in row, mirroring the "Import from MoonBoard" row below it.
   if (signedOut) {
     return (
-      <Card>
+      <Card className="py-0">
         <CardContent className="p-0">
           <button
             type="button"
             onClick={() => setShowSignIn(true)}
             className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
           >
-            <Download className="size-5 shrink-0 text-muted-foreground" />
+            <FileDown className="size-5 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium">Export your logbook</div>
               <div className="mt-0.5 text-xs text-muted-foreground">
