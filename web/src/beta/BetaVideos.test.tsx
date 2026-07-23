@@ -27,10 +27,10 @@ vi.mock('./BetaSubmitDialog', () => ({
 
 import { BetaVideos } from './BetaVideos'
 
-function vid(id: string): BetaVideo {
+function vid(id: string, isMine = false): BetaVideo {
   return {
     id, source_catalog_id: 'p', provider: 'youtube', video_id: id,
-    title: id, channel: `Chan ${id}`, duration_s: 30, is_short: true, views: 1,
+    title: id, channel: `Chan ${id}`, duration_s: 30, is_short: true, views: 1, isMine,
   }
 }
 
@@ -60,6 +60,31 @@ describe('BetaVideos display states', () => {
     render(<BetaVideos sourceCatalogId="p" />)
     fireEvent.click(screen.getByRole('button', { name: /try again/i }))
     expect(refetch).toHaveBeenCalledWith('p')
+  })
+})
+
+describe('BetaVideos "Added by you" badge', () => {
+  it('badges the viewer\'s own clip and reflects it in the card label', () => {
+    entry = { status: 'ready', videos: [vid('mine', true)], error: null }
+    render(<BetaVideos sourceCatalogId="p" />)
+    expect(screen.getByText('Added by you')).toBeTruthy()
+    expect(screen.getByLabelText(/added by you/i)).toBeTruthy()
+  })
+
+  it('shows no badge on a clip the viewer does not own', () => {
+    entry = { status: 'ready', videos: [vid('other', false)], error: null }
+    render(<BetaVideos sourceCatalogId="p" />)
+    expect(screen.queryByText('Added by you')).toBeNull()
+    expect(screen.getByLabelText('Beta by Chan other, 0:30')).toBeTruthy() // label unmodified
+  })
+
+  it('renders the store order as-is (own-first comes from the store, not the component)', () => {
+    // The store already returns mine-first; the strip must not re-order.
+    entry = { status: 'ready', videos: [vid('mine', true), vid('other', false)], error: null }
+    render(<BetaVideos sourceCatalogId="p" />)
+    const labels = screen.getAllByLabelText(/Beta by/).map((el) => el.getAttribute('aria-label'))
+    expect(labels[0]).toMatch(/Chan mine.*added by you/)
+    expect(labels[1]).toMatch(/Chan other/)
   })
 })
 
