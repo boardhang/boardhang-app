@@ -11,4 +11,10 @@ export interface BetaVideo {
   duration_s: number | null
   is_short: boolean
   views: number
+  /**
+   * Per-viewer derived flag — NOT a problem_beta_videos column. Set at fetch time from the
+   * signed-in identity (via an owner-scoped lookup in betaStore); true when the current user
+   * submitted this clip. Defaults false for anon viewers, other users, and lookup failures.
+   */
+  isMine: boolean
 }

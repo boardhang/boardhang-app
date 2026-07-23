@@ -12,6 +12,7 @@ import type { Session } from '@supabase/supabase-js'
 import { isConfigured, supabase } from '../supabase/client'
 import { syncListsIdentity } from '../lists/listsStore'
 import { syncSessionsIdentity } from '../sessions/sessionsStore'
+import { syncBetaIdentity } from '../beta/betaStore'
 import { normalizeHandle } from './handle'
 import { profileFromRow, type AuthStatus, type Profile, type ProfileRow } from './types'
 import { isAvatarPath } from './avatarStorage'
@@ -124,6 +125,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // pointer + per-member chip selections): drop them when the identity changes so a
       // shared device never inherits the previous user's session. Sync + localStorage-only.
       syncSessionsIdentity(session?.user.id ?? null)
+      // Beta clips carry a per-viewer "isMine" flag, so drop the beta cache on an identity change
+      // to force ownership re-resolution on the next problem open. Sync + in-memory only.
+      syncBetaIdentity(session?.user.id ?? null)
       if (!session) {
         applyProfile(null)
         setStatus('signedOut')
