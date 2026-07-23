@@ -91,6 +91,37 @@ describe('toCsv', () => {
     expect(columnCount).toBeGreaterThan(1)
   })
 
+  it('neutralizes spreadsheet formula-injection payloads in text fields', () => {
+    const rows = [
+      ascent({ id: 'a1', comment: '=HYPERLINK("http://evil","x")' }),
+      ascent({ id: 'a2', problemName: '+1', comment: 'ok' }),
+      ascent({ id: 'a3', problemName: '@SUM(A1)', comment: 'ok' }),
+      ascent({ id: 'a4', comment: '-2+3' }),
+    ]
+    const csv = toCsv(rows, new Map())
+    const [, r1, r2, r3, r4] = csv.trimEnd().split('\n')
+    // Leading trigger chars are prefixed with a single quote (then RFC-4180 quoted if needed).
+    expect(r1).toContain(`"'=HYPERLINK`)
+    expect(r2).toContain(`'+1`)
+    expect(r3).toContain(`'@SUM(A1)`)
+    expect(r4).toContain(`'-2+3`)
+  })
+
+  it('does not prefix a numeric column that would look like a negative number', () => {
+    // tries/stars/angle go through String(number); a legitimately negative value must not
+    // be double-guarded into a text formula. (Guard only triggers on the raw string.)
+    const csv = toCsv([ascent({ tries: 3, stars: 0 })], new Map())
+    const dataRow = csv.trimEnd().split('\n')[1]
+    expect(dataRow).not.toContain(`'3`)
+    expect(dataRow).not.toContain(`'0`)
+  })
+
+  it('quotes and preserves a CRLF inside a field', () => {
+    const csv = toCsv([ascent({ comment: 'line1\r\nline2' })], new Map())
+    // The embedded CRLF stays verbatim inside the quoted field (RFC-4180), not stripped.
+    expect(csv).toContain('"line1\r\nline2"')
+  })
+
   it('renders sent as "send" and unsent as "attempt"', () => {
     const csv = toCsv([ascent({ sent: true }), ascent({ id: 'a2', sent: false })], new Map())
     const [, send, attempt] = csv.trimEnd().split('\n')

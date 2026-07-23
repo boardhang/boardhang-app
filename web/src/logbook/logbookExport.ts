@@ -71,10 +71,15 @@ const CSV_HEADER = [
   'angle',
 ] as const
 
-/** RFC-4180 escaping: wrap in double quotes and double any embedded quote when the field
- *  contains a comma, quote, CR, or LF; otherwise pass through unchanged. */
+/** RFC-4180 escaping plus formula-injection neutralization. A cell beginning with `=`,
+ *  `+`, `-`, `@`, or a leading tab/CR is interpreted as a formula by Excel / Sheets /
+ *  LibreOffice; `setter` and `problemName` come from the shared catalog (other users'
+ *  content), so a crafted value could execute in a victim's spreadsheet. Prefix such a
+ *  value with a `'` to force it to text, then apply the RFC-4180 quote rule. Numeric
+ *  columns are `String(number)` and never match the trigger. */
 function csvField(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+  return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded
 }
 
 function csvRow(ascent: Ascent, catalogById: Map<string, CatalogProblem>): string {

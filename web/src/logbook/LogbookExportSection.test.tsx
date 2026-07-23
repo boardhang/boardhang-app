@@ -8,12 +8,14 @@ vi.mock('../catalog/catalogSync', () => ({
 }))
 vi.mock('./downloadFile', () => ({ downloadFile: vi.fn() }))
 
+import { getCatalogProblemsByIds } from '../catalog/catalogSync'
 import { useEnsureAscentsLoaded } from './ascents'
 import { downloadFile } from './downloadFile'
 import { LogbookExportSection } from './LogbookExportSection'
 
 const mockedUse = vi.mocked(useEnsureAscentsLoaded)
 const mockedDownload = vi.mocked(downloadFile)
+const mockedGetCatalog = vi.mocked(getCatalogProblemsByIds)
 
 function ascent(id: string, boardLayoutId: number, sourceCatalogId: string | null): AscentsState['ascents'][number] {
   return {
@@ -77,6 +79,18 @@ describe('LogbookExportSection', () => {
     await waitFor(() => expect(mockedDownload).toHaveBeenCalledTimes(1))
     const [, content] = mockedDownload.mock.calls[0]
     expect(content.trimEnd().split('\n')).toHaveLength(1) // header only
+  })
+
+  it('still exports (unenriched) and recovers when catalog enrichment rejects', async () => {
+    mockedGetCatalog.mockRejectedValueOnce(new Error('idb unavailable'))
+    mockedUse.mockReturnValue(loaded([ascent('a1', 7, 'c1')]))
+    render(<LogbookExportSection />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
+
+    await waitFor(() => expect(mockedDownload).toHaveBeenCalledTimes(1))
+    // No unhandled rejection; the button returns to its enabled, non-busy state.
+    expect(screen.getByRole('button', { name: 'Export CSV' })).not.toBeDisabled()
   })
 
   it('disables the export actions while ascents are loading', () => {

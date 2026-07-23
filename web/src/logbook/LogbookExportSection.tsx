@@ -23,7 +23,10 @@ export function LogbookExportSection() {
     try {
       const ids = ascents.map((a) => a.sourceCatalogId).filter((x): x is string => x !== null)
       const catalogById: Map<string, CatalogProblem> = ids.length
-        ? await getCatalogProblemsByIds(ids).catch(() => new Map<string, CatalogProblem>())
+        ? await getCatalogProblemsByIds(ids).catch((err) => {
+            console.warn('logbook export: catalog enrichment failed', err)
+            return new Map<string, CatalogProblem>()
+          })
         : new Map()
       const now = new Date()
       if (format === 'csv') {
@@ -32,6 +35,10 @@ export function LogbookExportSection() {
         const json = JSON.stringify(toJson(ascents, catalogById, now.toISOString()), null, 2)
         downloadFile(exportFilename('json', now), json, 'application/json')
       }
+    } catch (err) {
+      // Keep a download failure (Blob/createObjectURL unsupported, quota) from surfacing as
+      // an unhandled rejection; the finally re-enables the buttons so the user can retry.
+      console.error('logbook export failed', err)
     } finally {
       setBusy(null)
     }
