@@ -11,12 +11,15 @@ interface SignInDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   title?: string
+  /** Hide SignInPanel's intro blurb — useful when the dialog title already states the intent. */
+  hideIntro?: boolean
 }
 
 export function SignInDialog({
   open,
   onOpenChange,
   title = 'Sign in',
+  hideIntro = false,
 }: SignInDialogProps) {
   const { status } = useAuth()
 
@@ -31,7 +34,7 @@ export function SignInDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <SignInPanel />
+        <SignInPanel hideIntro={hideIntro} />
       </DialogContent>
     </Dialog>
   )

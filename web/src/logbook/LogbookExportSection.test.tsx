@@ -1,18 +1,24 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AscentsState } from './ascents'
 
+vi.mock('../auth/AuthProvider', () => ({ useAuth: vi.fn() }))
+vi.mock('../auth/SignInDialog', () => ({
+  SignInDialog: ({ open }: { open: boolean }) => (open ? <div>sign-in dialog</div> : null),
+}))
 vi.mock('./ascents', () => ({ useEnsureAscentsLoaded: vi.fn(), loadAscents: vi.fn() }))
 vi.mock('../catalog/catalogSync', () => ({
   getCatalogProblemsByIds: vi.fn(async () => new Map()),
 }))
 vi.mock('./downloadFile', () => ({ downloadFile: vi.fn() }))
 
+import { useAuth } from '../auth/AuthProvider'
 import { getCatalogProblemsByIds } from '../catalog/catalogSync'
 import { loadAscents, useEnsureAscentsLoaded } from './ascents'
 import { downloadFile } from './downloadFile'
 import { LogbookExportSection } from './LogbookExportSection'
 
+const mockedAuth = vi.mocked(useAuth)
 const mockedUse = vi.mocked(useEnsureAscentsLoaded)
 const mockedDownload = vi.mocked(downloadFile)
 const mockedGetCatalog = vi.mocked(getCatalogProblemsByIds)
@@ -38,6 +44,14 @@ function ascent(id: string, boardLayoutId: number, sourceCatalogId: string | nul
 function loaded(ascents: AscentsState['ascents']): AscentsState {
   return { status: 'loaded', ascents, error: null }
 }
+
+beforeEach(() => {
+  // Default: signed in with a settled session. Individual tests override for signed-out.
+  mockedAuth.mockReturnValue({
+    status: 'signedInWithProfile',
+    isRestoring: false,
+  } as ReturnType<typeof useAuth>)
+})
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -104,6 +118,24 @@ describe('LogbookExportSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(mockedLoad).toHaveBeenCalledTimes(1)
+  })
+
+  it('prompts to sign in (no export buttons) when signed out, and the CTA opens the sign-in flow', () => {
+    mockedAuth.mockReturnValue({
+      status: 'signedOut',
+      isRestoring: false,
+    } as ReturnType<typeof useAuth>)
+    mockedUse.mockReturnValue({ status: 'idle', ascents: [], error: null })
+    render(<LogbookExportSection />)
+
+    expect(screen.getByText(/sign in to export your logbook/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Export JSON' })).toBeNull()
+
+    // The dialog is closed until the CTA is clicked.
+    expect(screen.queryByText('sign-in dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(screen.getByText('sign-in dialog')).toBeInTheDocument()
   })
 
   it('disables the export actions while ascents are loading', () => {
