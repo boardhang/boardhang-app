@@ -12,6 +12,7 @@ import {
   useShowPreviews,
   type PreviewSurface,
 } from '../catalog/previewsStore'
+import { LogbookExportSection } from '../logbook/LogbookExportSection'
 import { setTheme, useTheme, type Theme } from './themeStore'
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
@@ -99,6 +100,8 @@ export function SettingsScreen() {
           ))}
         </CardContent>
       </Card>
+
+      <LogbookExportSection />
 
       <Card>
         <CardContent className="p-0">

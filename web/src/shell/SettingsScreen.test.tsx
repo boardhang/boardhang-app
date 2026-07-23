@@ -14,6 +14,11 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
+// The logbook export section pulls in the ascents store (auth-gated) and catalog cache; it
+// has its own test file. Stub it so these Settings tests stay focused on theme/previews/import
+// without needing an AuthProvider.
+vi.mock('../logbook/LogbookExportSection', () => ({ LogbookExportSection: () => null }))
+
 beforeEach(() => {
   localStorage.clear()
   // Reset the previews snapshot (survives localStorage.clear()).
