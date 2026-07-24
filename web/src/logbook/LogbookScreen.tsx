@@ -263,14 +263,12 @@ export function LogbookScreen() {
         </section>
       )}
 
-      {/* Compact filter row, mirroring the catalog's pill bar: a small "Filters" opener
-          plus one removable tag per active filter. The controls live in a bottom sheet
-          and narrow only the session list below — the pyramid stays the full history. */}
-      <div
-        role="group"
-        aria-label="Logbook filters"
-        className="mb-3 flex flex-nowrap items-center gap-1.5 overflow-x-auto py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
+      {/* The session list's own header — "History" with the Filters opener ON the header
+          line — anchors the filters to the list below; the pyramid above is deliberately
+          outside their scope. Active filters show as removable tags under the header
+          (catalog pill-bar idiom: tap to remove, ✕ as the cue). */}
+      <div className="mb-1 flex items-center justify-between px-1">
+        <h2 className="text-sm font-semibold tracking-tight">History</h2>
         <Button
           variant="outline"
           size="sm"
@@ -280,9 +278,14 @@ export function LogbookScreen() {
           <SlidersHorizontal aria-hidden className="size-3.5" />
           Filters
         </Button>
+      </div>
 
-        {filtersActive && <div aria-hidden className="h-4 w-px shrink-0 bg-border" />}
-
+      {filtersActive && (
+        <div
+          role="group"
+          aria-label="Active logbook filters"
+          className="mb-2 flex flex-nowrap items-center gap-1.5 overflow-x-auto px-1 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
         {dateLabel && (
           <button
             type="button"
@@ -305,7 +308,8 @@ export function LogbookScreen() {
             <X aria-hidden className="size-3 text-muted-foreground" />
           </button>
         )}
-      </div>
+        </div>
+      )}
 
       <Drawer open={filterSheetOpen} onOpenChange={setFilterSheetOpen} showSwipeHandle>
         <DrawerContent>

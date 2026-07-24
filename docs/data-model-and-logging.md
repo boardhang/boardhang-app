@@ -124,10 +124,10 @@ in the flash bucket.
 
 - **Logbook** (`LogbookView`) filters ascents by `effectiveBoardLayoutId` (not the raw
   `boardLayoutId`) against the `BoardFilter` CSV — see [multi-board-model.md](multi-board-model.md).
-  The web logbook adds a compact filter row below the pyramid, mirroring the catalog's
-  pill-bar idiom: a "Filters" opener → bottom sheet (inline range calendar over local days,
+  The web logbook's session list sits under its own "History" header whose right edge
+  holds a "Filters" opener → bottom sheet (inline range calendar over local days,
   inclusive; grade-range slider spanning the grades actually logged), with one removable
-  chip per active filter. Filters narrow only the session list — the pyramid always shows
+  chip per active filter under the header (catalog pill-bar idiom). Filters narrow only the session list — the pyramid always shows
   the full board history (`LogbookScreen.tsx`; `filterByDayRange`, `filterByGradeRange`,
   `loggedGradeSpan` in `sessions.ts`). Session-flash badges likewise derive from the full
   history, not the filtered view.

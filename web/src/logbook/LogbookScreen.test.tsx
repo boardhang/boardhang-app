@@ -475,7 +475,7 @@ describe('LogbookScreen — filters', () => {
     ]
     render(<LogbookScreen />)
 
-    expect(screen.getByRole('group', { name: 'Logbook filters' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'History' })).toBeInTheDocument()
     openFilterSheet()
     expect(screen.getByText('Grade · 6A – 7A')).toBeInTheDocument()
   })
