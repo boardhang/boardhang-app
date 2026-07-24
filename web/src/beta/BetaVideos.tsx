@@ -75,7 +75,7 @@ function BetaCard({ video, onOpen }: { video: BetaVideo; onOpen: (v: BetaVideo) 
     <button
       type="button"
       onClick={() => onOpen(video)}
-      aria-label={`Beta by ${video.channel}${dur ? `, ${dur}` : ''}`}
+      aria-label={`Beta by ${video.channel}${dur ? `, ${dur}` : ''}${video.isMine ? ', added by you' : ''}`}
       className="group relative aspect-[9/16] w-28 shrink-0 snap-start overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/10"
     >
       <img
@@ -86,6 +86,11 @@ function BetaCard({ video, onOpen }: { video: BetaVideo; onOpen: (v: BetaVideo) 
         className="absolute inset-0 size-full object-cover"
       />
       <span className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+      {video.isMine && (
+        <span className="absolute left-1.5 top-1.5 rounded bg-primary px-1 text-[9px] font-semibold leading-4 text-primary-foreground">
+          Added by you
+        </span>
+      )}
       <Play className="absolute left-1/2 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 fill-white/90 text-white/90" />
       <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1 text-[9px] font-semibold uppercase leading-4 text-white/90">
         {providerTag}

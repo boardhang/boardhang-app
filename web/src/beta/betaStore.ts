@@ -24,6 +24,10 @@ const cache = new Map<string, BetaEntry>()
 const listeners = new Set<() => void>()
 const inflight = new Set<string>()
 
+// The identity the cache was populated under (''=signed out). ownership (isMine) is per-viewer,
+// so a change here must invalidate the cache — see syncBetaIdentity.
+let lastIdentity = ''
+
 function notify(): void {
   for (const l of listeners) l()
 }
@@ -33,9 +37,45 @@ function set(id: string, entry: BetaEntry): void {
   notify()
 }
 
+/**
+ * Mark the caller's own approved clips and float them to the front (per-viewer, R2/R3). Runs one
+ * small owner-scoped query for just THIS user's approved row ids on this problem — `added_by` is
+ * never added to the public read (COLS), so anon viewers get nothing extra (KTD1). Fully guarded:
+ * any failure (no session, query error, thrown) degrades to the plain views-desc strip — the
+ * badge/pin is an enhancement, never a reason to fail the section (R4).
+ */
+async function withOwnership(id: string, videos: BetaVideo[]): Promise<BetaVideo[]> {
+  if (!supabase || videos.length === 0) return videos
+  try {
+    const { data } = await supabase.auth.getSession()
+    const userId = data.session?.user.id
+    if (!userId) return videos
+    const { data: ownRows, error } = await supabase
+      .from('problem_beta_videos')
+      .select('id')
+      .eq('source_catalog_id', id)
+      .eq('added_by', userId)
+      .eq('status', 'approved')
+      .eq('deleted', false)
+    if (error || !ownRows) return videos
+    const ownIds = new Set((ownRows as { id: string }[]).map((r) => r.id))
+    if (ownIds.size === 0) return videos
+    const marked = videos.map((v) => (ownIds.has(v.id) ? { ...v, isMine: true } : v))
+    // Partition (not .sort()) so each group keeps the DB's views-desc order exactly and the result
+    // is deterministic regardless of engine sort stability (KTD3).
+    return [...marked.filter((v) => v.isMine), ...marked.filter((v) => !v.isMine)]
+  } catch {
+    return videos
+  }
+}
+
 async function fetchBeta(id: string): Promise<void> {
   if (inflight.has(id)) return
   inflight.add(id)
+  // The identity this fetch resolves ownership under. If it changes mid-flight (an owner-scoped
+  // query is two awaits deep), syncBetaIdentity has invalidated us — drop the result rather than
+  // writing stale isMine back into the freshly-cleared cache (the re-prime fetch owns the entry).
+  const fetchedUnder = lastIdentity
   if (!cache.has(id)) set(id, LOADING)
   try {
     if (!supabase) {
@@ -50,12 +90,17 @@ async function fetchBeta(id: string): Promise<void> {
       .eq('status', 'approved')
       .eq('deleted', false)
       .order('views', { ascending: false })
+    if (lastIdentity !== fetchedUnder) return
     if (error) {
       set(id, { status: 'error', videos: [], error: error.message })
       return
     }
-    set(id, { status: 'ready', videos: (data ?? []) as BetaVideo[], error: null })
+    const rows = ((data ?? []) as Omit<BetaVideo, 'isMine'>[]).map((v) => ({ ...v, isMine: false }))
+    const videos = await withOwnership(id, rows)
+    if (lastIdentity !== fetchedUnder) return
+    set(id, { status: 'ready', videos, error: null })
   } catch (e) {
+    if (lastIdentity !== fetchedUnder) return
     set(id, { status: 'error', videos: [], error: e instanceof Error ? e.message : 'load failed' })
   } finally {
     inflight.delete(id)
@@ -98,10 +143,33 @@ export async function submitBeta(sourceCatalogId: string, videoId: string): Prom
   }
 }
 
+/**
+ * Reconcile the per-session beta cache with the signed-in identity (called from AuthProvider's
+ * onAuthStateChange). `isMine` is per-viewer, so a change here — sign-in, sign-out, or a user
+ * switch — must drop the cache so the next open re-resolves ownership (R5). A same-identity restore
+ * is a no-op, keeping the warm cache. Beta data is public (approved-only), so this is correctness
+ * on auth change, not the cross-account cache SAFETY syncListsIdentity provides. In-memory only.
+ */
+export function syncBetaIdentity(userId: string | null): void {
+  const next = userId ?? ''
+  if (next === lastIdentity) return
+  lastIdentity = next
+  // Re-prime, don't just clear: useBetaVideos only fetches from a mount effect keyed on the
+  // problem id, so a bare clear() would strand a still-mounted strip (e.g. the sign-in-to-add-a-beta
+  // flow, where BetaVideos never unmounts) on the loading skeleton — nothing would re-fetch it.
+  // Capture the open problems, clear, then re-fetch each so mounted strips re-resolve ownership.
+  const ids = [...cache.keys()]
+  cache.clear()
+  inflight.clear()
+  notify()
+  for (const id of ids) void fetchBeta(id)
+}
+
 /** Test hook: clear the module-level singleton between cases. */
 export function _resetBetaCache(): void {
   cache.clear()
   inflight.clear()
+  lastIdentity = ''
 }
 
 function subscribe(l: () => void): () => void {
