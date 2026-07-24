@@ -7,7 +7,7 @@
 // use all selected holds).
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronRight, RefreshCw } from 'lucide-react'
+import { ChevronRight, Pin, RefreshCw } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import type { SavedList } from '../lists/listsTypes'
 import { FONT_GRADES } from '../board/grades'
@@ -34,6 +34,8 @@ import {
 import { Slider } from '@/components/ui/slider'
 import { Toggle } from '@/components/ui/toggle'
 import { cn } from '@/lib/utils'
+import type { PinnableFacetId } from './pinnableFacets'
+import { togglePinned, usePinnedFacets } from './pinnedFiltersStore'
 
 const SORT_KEYS: SortKey[] = ['easiest', 'hardest', 'rated', 'repeats']
 const RATING_LABELS: Record<string, string> = {
@@ -66,16 +68,50 @@ function Field({
   label,
   className,
   children,
+  pin,
 }: {
   label: string
   className?: string
   children: React.ReactNode
+  /** Optional pin toggle rendered at the right of the label row (the facet's pin control). */
+  pin?: React.ReactNode
 }) {
   return (
     <div className={cn('space-y-1.5', className)}>
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-medium text-muted-foreground">{label}</div>
+        {pin}
+      </div>
       {children}
     </div>
+  )
+}
+
+/** Pin/unpin a facet to the header filter bar. Filled when pinned, muted outline when not;
+ *  pinning updates the nav live (no save step). */
+function PinToggle({
+  layoutId,
+  facetId,
+  pinned,
+}: {
+  layoutId: number
+  facetId: PinnableFacetId
+  pinned: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => togglePinned(layoutId, facetId)}
+      aria-pressed={pinned}
+      aria-label={pinned ? 'Unpin from filter bar' : 'Pin to filter bar'}
+      title={pinned ? 'Unpin from filter bar' : 'Pin to filter bar'}
+      className={cn(
+        'shrink-0 rounded-md p-1 transition-colors',
+        pinned ? 'text-primary' : 'text-muted-foreground/40 hover:text-foreground',
+      )}
+    >
+      <Pin className={cn('size-3.5', pinned && 'fill-current')} aria-hidden />
+    </button>
   )
 }
 
@@ -92,6 +128,11 @@ export function FilterControls({
   // SessionBar/SessionPill read session state.
   const session = useSessionFilterRows(board)
   const set = (patch: Partial<FilterState>) => onChange({ ...state, ...patch })
+  // Pinned-set for this board's layout — drives the per-row pin icons; live-updates the nav.
+  const pinned = usePinnedFacets(board.layoutId)
+  const pin = (facetId: PinnableFacetId) => (
+    <PinToggle layoutId={board.layoutId} facetId={facetId} pinned={pinned.includes(facetId)} />
+  )
   const [holdPickerOpen, setHoldPickerOpen] = useState(false)
   const statusHintId = useId()
   const toggleStatus = (k: StatusKey, active: boolean) =>
@@ -134,7 +175,7 @@ export function FilterControls({
   return (
     <div className="space-y-5">
       <div className="flex gap-2">
-        <Field label="Sort" className="flex-1">
+        <Field label="Sort" className="flex-1" pin={pin('sort')}>
           <Select items={SORT_LABELS} value={state.sortPrimary} onValueChange={(v) => changePrimary(v as SortKey)}>
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -169,7 +210,7 @@ export function FilterControls({
         </Field>
       </div>
 
-      <Field label={`Grade · ${FONT_GRADES[gradeValue[0]]} – ${FONT_GRADES[gradeValue[1]]}`}>
+      <Field label={`Grade · ${FONT_GRADES[gradeValue[0]]} – ${FONT_GRADES[gradeValue[1]]}`} pin={pin('grade')}>
         {/* onPointerCancel catches OS-cancelled drags (system gesture, notification): Base UI has
             no pointercancel listener, so onValueCommitted never fires and gradeDrag would stick.
             pointercancel bubbles from the thumb to this wrapper regardless of pointer capture. */}
@@ -200,7 +241,7 @@ export function FilterControls({
         </div>
       </Field>
 
-      <Field label="Holds">
+      <Field label="Holds" pin={pin('holds')}>
         <button
           type="button"
           onClick={() => setHoldPickerOpen(true)}
@@ -216,31 +257,43 @@ export function FilterControls({
       {/* Benchmarks + Favorites + the min-rating select share one flat row (iOS parity).
           Ascent status now lives in its own section below (per-member in a session). */}
       <Field label="Filter">
+        {/* Three facets share this row (iOS parity) — each carries its own pin control. */}
         <div className="flex flex-wrap items-center gap-2">
-          <Toggle variant="outline" size="sm" pressed={state.benchmarkOnly} onPressedChange={(v) => set({ benchmarkOnly: v })}>
-            {BENCHMARK_LABEL}
-          </Toggle>
-          <Toggle variant="outline" size="sm" pressed={state.favoritesOnly} onPressedChange={(v) => set({ favoritesOnly: v })}>
-            {FAVORITES_LABEL}
-          </Toggle>
-          <Select items={RATING_LABELS} value={String(state.minStars)} onValueChange={(v) => set({ minStars: Number(v) })}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(RATING_LABELS).map(([v, label]) => (
-                <SelectItem key={v} value={v}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <span className="inline-flex items-center gap-0.5">
+            <Toggle variant="outline" size="sm" pressed={state.benchmarkOnly} onPressedChange={(v) => set({ benchmarkOnly: v })}>
+              {BENCHMARK_LABEL}
+            </Toggle>
+            {pin('benchmarks')}
+          </span>
+          <span className="inline-flex items-center gap-0.5">
+            <Toggle variant="outline" size="sm" pressed={state.favoritesOnly} onPressedChange={(v) => set({ favoritesOnly: v })}>
+              {FAVORITES_LABEL}
+            </Toggle>
+            {pin('favorites')}
+          </span>
+          <span className="inline-flex items-center gap-0.5">
+            <Select items={RATING_LABELS} value={String(state.minStars)} onValueChange={(v) => set({ minStars: Number(v) })}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(RATING_LABELS).map(([v, label]) => (
+                  <SelectItem key={v} value={v}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {pin('stars')}
+          </span>
         </div>
       </Field>
 
       {/* Ascent status: one self row when solo, one row per member (self first) in a session.
           Soft-caps at ~8 rows; the section scrolls within the sheet on mobile. */}
-      <Field label="Ascent status">
+      {/* No pinning status while signed out — it can't filter, so a pinned nav control would be
+          dead weight (and FilterPillBar hides an already-pinned status control when signed out). */}
+      <Field label="Ascent status" pin={signedOut ? undefined : pin('status')}>
         {session ? (
           <div className="space-y-2">
             {session.state === 'paused' && (
@@ -292,7 +345,7 @@ export function FilterControls({
 
       {/* Foot rules — a fixed list (iOS parity), always shown so it's discoverable
           before any method-tagged problem loads. Label kept as "Method" to match iOS. */}
-      <Field label="Method">
+      <Field label="Method" pin={pin('methods')}>
         <div className="flex flex-wrap gap-1.5">
           {METHOD_LABELS.map((m) => (
             <Toggle
@@ -313,7 +366,7 @@ export function FilterControls({
       {/* Saved lists — one multi-select pill per list on this board (OR / union), the same
           `listFilter` the header pill bar drives. Hidden when the board has no lists (R4). */}
       {boardLists.length > 0 && (
-        <Field label="Saved lists">
+        <Field label="Saved lists" pin={pin('lists')}>
           <div className="flex flex-wrap gap-1.5">
             {boardLists.map((list) => (
               <Toggle

@@ -38,10 +38,10 @@ export function LogbookExportSection() {
         : new Map()
       const now = new Date()
       if (format === 'csv') {
-        downloadFile(exportFilename('csv', now), toCsv(ascents, catalogById), 'text/csv;charset=utf-8')
+        await downloadFile(exportFilename('csv', now), toCsv(ascents, catalogById), 'text/csv;charset=utf-8')
       } else {
         const json = JSON.stringify(toJson(ascents, catalogById, now.toISOString()), null, 2)
-        downloadFile(exportFilename('json', now), json, 'application/json')
+        await downloadFile(exportFilename('json', now), json, 'application/json')
       }
     } catch (err) {
       // Keep a download failure (Blob/createObjectURL unsupported, quota) from surfacing as

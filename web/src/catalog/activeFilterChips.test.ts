@@ -42,9 +42,14 @@ describe('describeActiveFilters', () => {
     expect(byId['grade']).toMatch(/–/)
   })
 
-  it('never emits a Favorites chip (it is a pinned toggle, not a removable pill)', () => {
-    const chips = describeActiveFilters(state({ favoritesOnly: true }), READY)
-    expect(chips).toEqual([])
+  it('emits Benchmarks/Favorites chips when active (removable when unpinned)', () => {
+    // Now user-pinnable, so an active one must still be removable in the bar; FilterPillBar
+    // suppresses the chip when the facet is pinned.
+    const chips = describeActiveFilters(state({ benchmarkOnly: true, favoritesOnly: true }), READY)
+    const byId = Object.fromEntries(chips.map((c) => [c.id, c]))
+    expect(byId['benchmarks']?.patch).toEqual({ benchmarkOnly: false })
+    expect(byId['favorites']?.patch).toEqual({ favoritesOnly: false })
+    expect(byId['favorites']?.label).toBe('Favorites')
   })
 
   it('omits the grade chip for a full-span (null) range', () => {
@@ -63,9 +68,9 @@ describe('describeActiveFilters', () => {
     expect(chips.map((c) => c.id)).toEqual(['stars'])
   })
 
-  it('never emits a saved-list chip (the selection is edited via the "Lists" control)', () => {
+  it('emits a collapsed saved-list chip when a list filter is active', () => {
     const chips = describeActiveFilters(state({ listFilter: ['a', 'b'] }), READY)
-    expect(chips).toEqual([])
+    expect(chips).toEqual([{ id: 'lists', label: 'Lists (2)', patch: { listFilter: [] } }])
   })
 
   it("each chip's patch clears exactly its own filter", () => {
