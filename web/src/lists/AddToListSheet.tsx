@@ -8,10 +8,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Bookmark, CalendarDays, Check, ChevronRight } from 'lucide-react'
+import { BadgeCheck, Bookmark, CalendarDays, Check, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '../auth/AuthProvider'
 import type { CatalogBoardDef } from '../board/boards'
+import { CatalogBoard } from '../board/CatalogBoard'
+import type { CatalogProblem } from '../catalog/catalogSync'
+import { ProblemMeta } from '../catalog/ProblemMeta'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Input } from '@/components/ui/input'
@@ -43,11 +46,13 @@ const NAME_SUGGESTIONS = ['Projects', 'Warmups', 'Ticklist', 'To try'] as const
 interface AddToListSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  sourceCatalogId: string
+  /** The problem being saved — shown as a preview above the list, and the source of its id. */
+  problem: CatalogProblem
   board: CatalogBoardDef
 }
 
-export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: AddToListSheetProps) {
+export function AddToListSheet({ open, onOpenChange, problem, board }: AddToListSheetProps) {
+  const sourceCatalogId = problem.source_catalog_id
   const { status } = useAuth()
   const signedIn = status !== 'signedOut'
   const { lists } = useSavedLists()
@@ -185,18 +190,42 @@ export function AddToListSheet({ open, onOpenChange, sourceCatalogId, board }: A
       <DrawerContent>
         <DrawerHeader className="pb-2">
           <DrawerTitle>Save to list</DrawerTitle>
-          {/* Only meaningful when there ARE lists to pick — with none, the create form
-              below is the whole story, so we drop the description and let its heading
-              ("Create your first list") stand alone. */}
-          {boardLists.length > 0 && (
-            <DrawerDescription>Pick a list to add this problem to.</DrawerDescription>
-          )}
+          {/* The visible preview below says WHAT you're saving, so the description is
+              sr-only — it keeps the Drawer accessibly labelled without repeating the
+              problem name on screen. */}
+          <DrawerDescription className="sr-only">
+            Save {problem.name} to one of your lists.
+          </DrawerDescription>
         </DrawerHeader>
+
+        {/* Preview of the problem being saved — a compact, non-interactive mirror of
+            CatalogRow (thumbnail + name + grade + meta) so the sheet always shows the
+            problem you're adding. Reuses CatalogBoard + ProblemMeta; the border-b divides
+            it from the list rows below. */}
+        <div className="flex items-center gap-3 border-b border-border px-4 pb-3">
+          <div className="w-[72px] shrink-0">
+            <CatalogBoard board={board} holds={problem.holds} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-sm font-semibold uppercase tracking-tight">
+                {problem.name}
+              </span>
+              {problem.is_benchmark && (
+                <BadgeCheck role="img" aria-label="Benchmark" className="size-4 shrink-0 text-benchmark" />
+              )}
+            </div>
+            <ProblemMeta problem={problem} />
+          </div>
+          <span className="shrink-0 rounded-md bg-secondary px-2.5 py-1 text-sm font-bold tabular-nums text-secondary-foreground">
+            {problem.grade}
+          </span>
+        </div>
 
         {/* The membership list — omitted entirely when this board has no lists yet, so the
             create form isn't double-stacked under an empty-state placeholder. */}
         {boardLists.length > 0 && (
-          <div className="max-h-[60vh] space-y-1 overflow-y-auto px-3 pb-2">
+          <div className="max-h-[50vh] space-y-1 overflow-y-auto px-3 pb-2">
             {boardLists.map((list) => {
               const isMember = members.has(list.id)
               const isPending = pendingIds.has(list.id)

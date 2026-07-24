@@ -9,10 +9,12 @@ import { useEffect, useState, type ReactElement } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInDialog } from '../auth/SignInDialog'
 import type { CatalogBoardDef } from '../board/boards'
+import type { CatalogProblem } from '../catalog/catalogSync'
 import { AddToListSheet } from './AddToListSheet'
 
 interface UseAddToListArgs {
-  sourceCatalogId: string
+  /** The problem being saved — rendered as a preview in the sheet and the source of its id. */
+  problem: CatalogProblem
   board: CatalogBoardDef
 }
 
@@ -23,7 +25,7 @@ interface UseAddToListResult {
   element: ReactElement
 }
 
-export function useAddToList({ sourceCatalogId, board }: UseAddToListArgs): UseAddToListResult {
+export function useAddToList({ problem, board }: UseAddToListArgs): UseAddToListResult {
   const { status } = useAuth()
   const signedIn = status !== 'signedOut'
   const [open, setOpen] = useState(false)
@@ -63,7 +65,7 @@ export function useAddToList({ sourceCatalogId, board }: UseAddToListArgs): UseA
       <AddToListSheet
         open={open}
         onOpenChange={setOpen}
-        sourceCatalogId={sourceCatalogId}
+        problem={problem}
         board={board}
       />
     </>

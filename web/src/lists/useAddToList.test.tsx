@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { boardByLayoutId } from '../board/boards'
+import type { CatalogProblem } from '../catalog/catalogSync'
 import { useAddToList } from './useAddToList'
 
 // Configurable auth so we can flip signed-out → signed-in to exercise the KTD3 resume.
@@ -11,8 +12,8 @@ vi.mock('../auth/AuthProvider', () => ({
 
 // Stub the sheet so this test isolates the hook's trigger + resume wiring.
 vi.mock('./AddToListSheet', () => ({
-  AddToListSheet: ({ open, sourceCatalogId }: { open: boolean; sourceCatalogId: string }) =>
-    open ? <div>ADD_TO_LIST_SHEET:{sourceCatalogId}</div> : null,
+  AddToListSheet: ({ open, problem }: { open: boolean; problem: CatalogProblem }) =>
+    open ? <div>ADD_TO_LIST_SHEET:{problem.source_catalog_id}</div> : null,
 }))
 
 // Stub the sign-in dialog with a controllable dismiss so we can close it without signing in.
@@ -38,8 +39,27 @@ vi.mock('../auth/SignInDialog', () => ({
 
 const board = boardByLayoutId(7)!
 
+// A minimal problem — the hook only reads its id (passed through to the sheet); the rest
+// satisfies the CatalogProblem type.
+function makeProblem(id: string): CatalogProblem {
+  return {
+    source_catalog_id: id,
+    layout_id: board.layoutId,
+    angle: 40,
+    name: 'Test Problem',
+    grade: '6C+',
+    user_grade: null,
+    setter: 'Tester',
+    stars: 0,
+    repeats: 0,
+    is_benchmark: false,
+    method: null,
+    holds: [],
+  }
+}
+
 function Harness({ id = 'a' }: { id?: string }) {
-  const addToList = useAddToList({ sourceCatalogId: id, board })
+  const addToList = useAddToList({ problem: makeProblem(id), board })
   return (
     <div>
       <button type="button" onClick={addToList.saveToList}>

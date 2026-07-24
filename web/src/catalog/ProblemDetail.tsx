@@ -113,7 +113,7 @@ export function ProblemDetail({
   }, [currentId])
 
   // Auth-gated save-to-list (owns its sheet + sign-in-resume — KTD3), shared with the bar.
-  const addToList = useAddToList({ sourceCatalogId: currentId, board })
+  const addToList = useAddToList({ problem: current, board })
   // BLE "light up" for the shown problem (connect-then-send), shared with the bar.
   const light = useLightUp(board, currentId)
 

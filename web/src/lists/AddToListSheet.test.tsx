@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { render } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { boardByLayoutId } from '../board/boards'
+import type { CatalogProblem } from '../catalog/catalogSync'
 import type { SavedList } from './listsTypes'
 import { AddToListSheet } from './AddToListSheet'
 
@@ -82,7 +83,22 @@ function savedList(id: string, name: string, boardLayoutId: number): SavedList {
   }
 }
 
-const sheet = () => <AddToListSheet open onOpenChange={() => {}} sourceCatalogId="cat-1" board={board} />
+const problem: CatalogProblem = {
+  source_catalog_id: 'cat-1',
+  layout_id: 7,
+  angle: 40,
+  name: 'Test Problem',
+  grade: '6C+',
+  user_grade: null,
+  setter: 'Tester',
+  stars: 0,
+  repeats: 0,
+  is_benchmark: false,
+  method: null,
+  holds: [],
+}
+
+const sheet = () => <AddToListSheet open onOpenChange={() => {}} problem={problem} board={board} />
 
 function mount() {
   return render(sheet())
@@ -120,7 +136,7 @@ describe('AddToListSheet', () => {
   it('each list row links to that list and closes the sheet on navigate', async () => {
     lists = [savedList('l7', 'Sevens', 7)]
     const onOpenChange = vi.fn()
-    render(<AddToListSheet open onOpenChange={onOpenChange} sourceCatalogId="cat-1" board={board} />)
+    render(<AddToListSheet open onOpenChange={onOpenChange} problem={problem} board={board} />)
 
     const link = await screen.findByRole('link', { name: 'Open Sevens' })
     expect(link).toHaveAttribute('data-to', '/lists/$listId')
@@ -228,14 +244,29 @@ describe('AddToListSheet', () => {
     })
   })
 
-  it('with no lists, the create form is the empty state — no dashed box or "pick a list" hint', async () => {
+  it('with no lists, the create form is the empty state — no "pick a list" hint, but the preview still shows', async () => {
     lists = [savedList('l5', 'Fives', 5)] // different board → this board has none
     mount()
     // The create form heads itself with the first-list prompt...
     expect(await screen.findByText('Create your first list')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'New list name' })).toBeInTheDocument()
-    // ...and the "pick a list" description is dropped so nothing double-stacks.
+    // ...the description is now an sr-only label, so no visible "pick a list" prompt double-stacks
+    // above the empty-state heading.
     expect(screen.queryByText(/Pick a list/)).toBeNull()
+    // ...and the problem preview renders even with no lists yet, so you still see what you're saving.
+    expect(screen.getByText('Test Problem')).toBeInTheDocument()
+  })
+
+  it('shows the benchmark badge in the preview only when the problem is a benchmark', async () => {
+    const { rerender } = render(
+      <AddToListSheet open onOpenChange={() => {}} problem={problem} board={board} />,
+    )
+    // Baseline fixture is not a benchmark → no badge.
+    expect(screen.queryByRole('img', { name: 'Benchmark' })).toBeNull()
+    rerender(
+      <AddToListSheet open onOpenChange={() => {}} problem={{ ...problem, is_benchmark: true }} board={board} />,
+    )
+    expect(screen.getByRole('img', { name: 'Benchmark' })).toBeInTheDocument()
   })
 
   it('rapid membership notifies apply the latest read, not a stale one (#3)', async () => {
