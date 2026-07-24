@@ -13,6 +13,24 @@ import { toast } from 'sonner'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 
+// Signed in by default so the logging paths (try stepper, Log ascent, the
+// already-sent-today confirms) are exercisable without a Supabase session.
+vi.mock('../auth/AuthProvider', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../auth/AuthProvider')>()
+  return { ...mod, useAuth: () => ({ status: 'signedIn', isRestoring: false }) }
+})
+
+// The logbook store feeds the sent-today checks and the log sheet — swap it for a
+// mutable in-test row list so tests control the problem's logged history.
+const ascentsMock = vi.hoisted(() => ({ rows: [] as unknown[] }))
+vi.mock('../logbook/ascents', () => ({
+  useAscents: () => ({ status: 'loaded', ascents: ascentsMock.rows, error: null }),
+  addAttemptTries: vi.fn(async () => {}),
+  createAscent: vi.fn(async () => {}),
+  deleteAscent: vi.fn(async () => {}),
+  updateAscent: vi.fn(async () => {}),
+}))
+
 vi.mock('../ble/useBle', () => ({
   useBle: vi.fn(() => ({ state: 'disconnected', deviceName: null, error: null })),
   connectBoard: vi.fn(),
@@ -94,6 +112,7 @@ function renderDetail(id: string, displayed = list) {
 beforeEach(() => {
   localStorage.clear()
   window.dispatchEvent(new StorageEvent('storage'))
+  ascentsMock.rows = []
   vi.clearAllMocks()
   vi.mocked(ble.useBle).mockReturnValue({ state: 'disconnected', deviceName: null, error: null })
   vi.mocked(ble.isConnected).mockReturnValue(false)
@@ -237,6 +256,70 @@ describe('ProblemDetail', () => {
     render(<Pager id="b" displayed={list} onPageOverQueue={onPageOverQueue} />)
     fireEvent.click(screen.getByRole('button', { name: /Q-Two/ }))
     expect(onPageOverQueue).toHaveBeenCalledWith('q2', [problem('q1', 'Q-One'), problem('q2', 'Q-Two')])
+  })
+
+  describe('already-sent-today confirms', () => {
+    const sentToday = (sourceCatalogId: string) => ({
+      id: 'send-1',
+      date: new Date().toISOString(),
+      sourceCatalogId,
+      userProblemId: null,
+      problemName: 'Middle',
+      problemGrade: '6B',
+      votedGrade: '6B',
+      tries: 1,
+      stars: 0,
+      comment: '',
+      sent: true,
+      boardLayoutId: 7,
+    })
+
+    it('opens the log sheet directly when there is no send today', () => {
+      renderDetail('b')
+      fireEvent.click(screen.getByRole('button', { name: 'Log ascent' }))
+      expect(screen.queryByText('Already sent today')).not.toBeInTheDocument()
+      expect(screen.getByText('Log send')).toBeInTheDocument()
+    })
+
+    it('asks before a second send today, and proceeds only on confirm', () => {
+      ascentsMock.rows = [sentToday('b')]
+      renderDetail('b')
+      fireEvent.click(screen.getByRole('button', { name: 'Log ascent' }))
+      expect(screen.getByText('Already sent today')).toBeInTheDocument()
+      expect(screen.queryByText('Log send')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Log again' }))
+      expect(screen.getByText('Log send')).toBeInTheDocument()
+    })
+
+    it('cancel keeps both the sheet and the dialog closed', () => {
+      ascentsMock.rows = [sentToday('b')]
+      renderDetail('b')
+      fireEvent.click(screen.getByRole('button', { name: 'Log ascent' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByText('Already sent today')).not.toBeInTheDocument()
+      expect(screen.queryByText('Log send')).not.toBeInTheDocument()
+    })
+
+    it('gates only the FIRST extra try on a problem sent today, then counts freely', () => {
+      ascentsMock.rows = [sentToday('b')]
+      renderDetail('b')
+      fireEvent.click(screen.getByRole('button', { name: 'Log a try' }))
+      // Gated: nothing counted yet.
+      expect(screen.getByText('Already sent today')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Log try anyway' }))
+      expect(screen.getByText('1 try')).toBeInTheDocument()
+      // Subsequent taps flow without the dialog.
+      fireEvent.click(screen.getByRole('button', { name: 'Log a try' }))
+      expect(screen.queryByText('Already sent today')).not.toBeInTheDocument()
+      expect(screen.getByText('2 tries')).toBeInTheDocument()
+    })
+
+    it('does not gate the try stepper on a problem not sent today', () => {
+      renderDetail('b')
+      fireEvent.click(screen.getByRole('button', { name: 'Log a try' }))
+      expect(screen.queryByText('Already sent today')).not.toBeInTheDocument()
+      expect(screen.getByText('1 try')).toBeInTheDocument()
+    })
   })
 
   it('surfaces a send error as a toast', async () => {

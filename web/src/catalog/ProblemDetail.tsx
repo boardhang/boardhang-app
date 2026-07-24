@@ -100,8 +100,9 @@ export function ProblemDetail({
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null)
   const [logOpen, setLogOpen] = useState(false)
   const [signInOpen, setSignInOpen] = useState(false)
-  // "Log ascent" on a problem already sent today — confirm before logging a duplicate.
-  const [relogConfirmOpen, setRelogConfirmOpen] = useState(false)
+  // Logging on a problem already sent today — confirm before a duplicate send ('send')
+  // or before starting to count more tries ('tries'); null = no dialog.
+  const [sentTodayConfirm, setSentTodayConfirm] = useState<'send' | 'tries' | null>(null)
   // Inline "Log try" stepper state: session-local pending tries for the shown problem,
   // written (merged) to the unsent-attempt row only when leaving the problem (iOS parity).
   // The pending problem is held as the object so a leave-flush needs no list lookup.
@@ -226,17 +227,27 @@ export function ProblemDetail({
   // (starts at 0 each time a problem is shown; not hydrated from existing logs, per iOS).
   const currentTries = pendingProblem?.source_catalog_id === currentId ? pendingTries : 0
 
-  function addTry() {
-    if (!signedIn) {
-      setSignInOpen(true)
-      return
-    }
+  function commitAddTry() {
     if (pendingProblem?.source_catalog_id !== currentId) {
       setPendingProblem(current)
       setPendingTries(1)
     } else {
       setPendingTries((t) => t + 1)
     }
+  }
+
+  function addTry() {
+    if (!signedIn) {
+      setSignInOpen(true)
+      return
+    }
+    // Starting to count tries on a problem already sent today asks first (working it
+    // more vs a mis-tap). Only the FIRST tap gates — once counting, +/- flow freely.
+    if (currentTries === 0 && problemLogContext(ascents, currentId, new Date()).todaySend) {
+      setSentTodayConfirm('tries')
+      return
+    }
+    commitAddTry()
   }
 
   function removeTry() {
@@ -281,7 +292,7 @@ export function ProblemDetail({
       return
     }
     if (problemLogContext(ascents, currentId, new Date()).todaySend) {
-      setRelogConfirmOpen(true)
+      setSentTodayConfirm('send')
       return
     }
     openLogSheet()
@@ -452,26 +463,32 @@ export function ProblemDetail({
           setPendingTries(0)
         }}
       />
-      <Dialog open={relogConfirmOpen} onOpenChange={setRelogConfirmOpen}>
+      <Dialog
+        open={sentTodayConfirm !== null}
+        onOpenChange={(open) => !open && setSentTodayConfirm(null)}
+      >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Already sent today</DialogTitle>
             <DialogDescription>
-              You already logged a send of {current.name} today. Log it again as a separate
-              entry?
+              {sentTodayConfirm === 'tries'
+                ? `You already logged a send of ${current.name} today. Log more tries on it anyway?`
+                : `You already logged a send of ${current.name} today. Log it again as a separate entry?`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRelogConfirmOpen(false)}>
+            <Button variant="outline" onClick={() => setSentTodayConfirm(null)}>
               Cancel
             </Button>
             <Button
               onClick={() => {
-                setRelogConfirmOpen(false)
-                openLogSheet()
+                const action = sentTodayConfirm
+                setSentTodayConfirm(null)
+                if (action === 'tries') commitAddTry()
+                else openLogSheet()
               }}
             >
-              Log again
+              {sentTodayConfirm === 'tries' ? 'Log try anyway' : 'Log again'}
             </Button>
           </DialogFooter>
         </DialogContent>
