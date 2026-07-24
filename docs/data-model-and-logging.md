@@ -124,8 +124,6 @@ in the flash bucket.
 
 - **Logbook** (`LogbookView`) filters ascents by `effectiveBoardLayoutId` (not the raw
   `boardLayoutId`) against the `BoardFilter` CSV — see [multi-board-model.md](multi-board-model.md).
-  The web logbook additionally folds each day-session behind a chevron header — today's
-  session starts expanded, past days collapsed (`LogbookScreen.tsx`).
 - **Grade pyramid** (`GradePyramidView`) includes only `sent == true` ascents, de-dupes to one
   ascent per distinct problem (earliest send kept, keyed by `sourceCatalogID` or `problemName`),
   groups by `problemGrade` (consensus, not the vote), and stacks by try bucket (flash / 2nd / 3rd /
