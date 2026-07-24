@@ -320,6 +320,21 @@ describe('ProblemDetail', () => {
       expect(screen.queryByText('Already sent today')).not.toBeInTheDocument()
       expect(screen.getByText('1 try')).toBeInTheDocument()
     })
+
+    it('seeds the log sheet with folded tries and the breakdown when an attempt row exists today', () => {
+      // 3 tries flushed earlier today (unsent attempt row) + the successful go = 4.
+      ascentsMock.rows = [
+        { ...sentToday('b'), id: 'att-1', sent: false, tries: 3, date: new Date().toISOString() },
+      ]
+      renderDetail('b')
+      fireEvent.click(screen.getByRole('button', { name: 'Log ascent' }))
+
+      // No send today → no confirm; the sheet opens directly with the folded seed.
+      expect(screen.queryByText('Already sent today')).not.toBeInTheDocument()
+      expect(screen.getByText('Log send')).toBeInTheDocument()
+      expect(screen.getByText(/Includes 3 tries from earlier today/)).toBeInTheDocument()
+      expect(screen.getByText('4')).toBeInTheDocument()
+    })
   })
 
   it('surfaces a send error as a toast', async () => {

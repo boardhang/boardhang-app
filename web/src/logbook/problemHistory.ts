@@ -3,7 +3,6 @@
 // and the Flash / Session flash distinction. No storage / no React, like sessions.ts.
 
 import type { Ascent } from './ascents'
-import { utcDay } from './attemptId'
 import { localDayKey } from './sessions'
 
 /** The stable problem key ascent rows merge/match on — `source_catalog_id` for catalog
@@ -19,11 +18,14 @@ export function ascentIdentity(a: {
 
 /** What the log-send sheet needs to know about a problem's logged past. */
 export interface ProblemLogContext {
-  /** Today's unsent attempt row (UTC-day bucket — the same bucket the deterministic
-   *  attempt id merges on), or null. A send absorbs this row. */
+  /** Today's unsent attempt row — LOCAL calendar day, the user's "today", matching the
+   *  logbook's grouping, the confirm gate, and iOS's same-calendar-day merge. (The
+   *  deterministic attempt id buckets by UTC day, but the absorb deletes by row id, so
+   *  the merge bucket doesn't constrain this lookup — matching by UTC day instead
+   *  would let a post-midnight send absorb a row the logbook shows under yesterday.) */
   todayAttempt: Ascent | null
-  /** The most recent send already logged today (LOCAL day — the user's "today", the
-   *  same day the logbook groups by), or null. A second same-day send asks first. */
+  /** The most recent send already logged today (LOCAL day), or null. A second
+   *  same-day send asks first. */
   todaySend: Ascent | null
   /** Distinct earlier local days with any logged rows (attempts or sends). */
   priorDays: number
@@ -38,9 +40,9 @@ export function problemLogContext(
   now: Date,
 ): ProblemLogContext {
   const rows = ascents.filter((a) => ascentIdentity(a) === identity)
-  const today = utcDay(now)
-  const todayAttempt = rows.find((a) => !a.sent && utcDay(new Date(a.date)) === today) ?? null
   const todayLocal = localDayKey(now)
+  const todayAttempt =
+    rows.find((a) => !a.sent && localDayKey(new Date(a.date)) === todayLocal) ?? null
   let todaySend: Ascent | null = null
   const priorDayKeys = new Set<string>()
   for (const a of rows) {

@@ -14,6 +14,7 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { supabase } from '../supabase/client'
 import { useAuth } from '../auth/AuthProvider'
 import { attemptId } from './attemptId'
+import { ascentIdentity } from './problemHistory'
 
 export interface Ascent {
   id: string
@@ -239,8 +240,7 @@ export async function addAttemptTries(input: {
   addTries: number
 }): Promise<void> {
   if (input.addTries <= 0) return
-  const identity = input.sourceCatalogId ?? input.userProblemId ?? `name:${input.problemName}`
-  const id = await attemptId(identity, new Date(input.date))
+  const id = await attemptId(ascentIdentity(input), new Date(input.date))
 
   // Accumulate onto any existing attempt row for today (iOS revive semantics).
   let existingTries = 0

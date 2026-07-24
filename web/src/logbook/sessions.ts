@@ -79,6 +79,8 @@ export function pyramid(ascents: Ascent[]): Pyramid {
   const earliest = new Map<string, Ascent>()
   for (const a of ascents) {
     if (!a.sent) continue
+    // Deliberately narrower than ascentIdentity (no userProblemId fallback): the iOS
+    // pyramid keys by sourceCatalogID-or-problemName, and this must match it exactly.
     const key = a.sourceCatalogId ?? `name:${a.problemName}`
     const existing = earliest.get(key)
     if (!existing || a.date < existing.date) earliest.set(key, a)

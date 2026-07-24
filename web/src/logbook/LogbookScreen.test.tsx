@@ -407,3 +407,34 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
     expect((await screen.findByTestId('detail')).getAttribute('data-ids')).toBe('p-1,p-2')
   })
 })
+
+describe('LogbookScreen — Session flash badge wiring', () => {
+  const addedBoard = { layoutId: 7, name: 'Mini MoonBoard 2025' }
+  const baseAscent = {
+    id: 'a1',
+    date: '2026-07-01T10:00:00',
+    boardLayoutId: 7,
+    problemName: 'MOON GIRL',
+    problemGrade: '6B',
+    votedGrade: '6B',
+    tries: 1,
+    stars: 0,
+    comment: '',
+    sent: false,
+    sourceCatalogId: 'p-1' as string | null,
+    userProblemId: null as string | null,
+  }
+
+  it('badges a later 1-try send as Session flash when an earlier row exists for the problem', () => {
+    boardState.addedBoards = [addedBoard]
+    ascentsState.ascents = [
+      { ...baseAscent, id: 'earlier', sent: false, tries: 2, date: '2026-07-01T10:00:00' },
+      { ...baseAscent, id: 'later', sent: true, tries: 1, date: '2026-07-06T10:00:00' },
+    ]
+    render(<LogbookScreen />)
+
+    // The pyramid legend also renders a bare "Flash" label, so assert the row badge
+    // by its exact Session-flash text rather than the absence of "Flash" globally.
+    expect(screen.getByText('Session flash')).toBeInTheDocument()
+  })
+})

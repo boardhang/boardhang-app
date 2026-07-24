@@ -59,13 +59,34 @@ describe('problemLogContext', () => {
     expect(problemLogContext([sendYesterday], 'cat-1', now).todaySend).toBeNull()
   })
 
-  it('finds today’s unsent attempt row by UTC day, ignoring sends and other days', () => {
-    const todayAttempt = ascent({ id: 'att', sent: false, tries: 3, date: '2026-07-24T09:00:00.000Z' })
-    const todaySend = ascent({ id: 'send', sent: true, date: '2026-07-24T08:00:00.000Z' })
-    const yesterdayAttempt = ascent({ id: 'old', sent: false, date: '2026-07-23T09:00:00.000Z' })
-    const context = problemLogContext([todaySend, yesterdayAttempt, todayAttempt], 'cat-1', now)
+  it('finds today’s unsent attempt row by local day, ignoring sends and other days', () => {
+    // Zone-less timestamps parse as machine-local time, so the local-day assertions
+    // hold in any test-runner timezone.
+    const localNow = new Date('2026-07-24T18:00:00')
+    const todayAttempt = ascent({ id: 'att', sent: false, tries: 3, date: '2026-07-24T09:00:00' })
+    const todaySend = ascent({ id: 'send', sent: true, date: '2026-07-24T08:00:00' })
+    const yesterdayAttempt = ascent({ id: 'old', sent: false, date: '2026-07-23T09:00:00' })
+    const context = problemLogContext([todaySend, yesterdayAttempt, todayAttempt], 'cat-1', localNow)
     expect(context.todayAttempt?.id).toBe('att')
     expect(context.hasHistory).toBe(true)
+  })
+
+  it('does not absorb a cross-midnight attempt from the previous local day', () => {
+    // 23:30 yesterday (local) vs a send today: local days differ, so the row is
+    // yesterday's logbook entry and must NOT be offered for absorption — even when
+    // the two timestamps share a UTC day bucket in some timezones.
+    const lateYesterday = ascent({ id: 'late', sent: false, date: '2026-07-23T23:30:00' })
+    const context = problemLogContext([lateYesterday], 'cat-1', new Date('2026-07-24T00:30:00'))
+    expect(context.todayAttempt).toBeNull()
+    expect(context.priorDays).toBe(1)
+  })
+
+  it('finds an attempt from earlier the same local day regardless of the UTC bucket', () => {
+    // 00:30 local can fall in the previous UTC day (east-of-UTC zones); the absorb
+    // must still find it for a send later the same local day.
+    const earlyToday = ascent({ id: 'early', sent: false, tries: 2, date: '2026-07-24T00:30:00' })
+    const context = problemLogContext([earlyToday], 'cat-1', new Date('2026-07-24T20:00:00'))
+    expect(context.todayAttempt?.id).toBe('early')
   })
 
   it('counts distinct earlier local days, excluding today', () => {
