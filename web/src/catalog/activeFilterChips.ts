@@ -1,8 +1,8 @@
 // Pure derivation of the header filter-pill bar's *removable* pills from FilterState.
-// The pinned toggles (Benchmark, Favorites) are NOT produced here — they are rendered
-// separately by FilterPillBar (they toggle, they don't "remove"). Each descriptor carries
-// the exact FilterState patch to apply on removal, so the component stays dumb: tap →
-// onChange({ ...filters, ...patch }).
+// Every active facet is emitted here. FilterPillBar suppresses the chip for any facet the
+// user has PINNED (it renders as a pinned control instead); an unpinned-but-active facet
+// falls through to its removable chip. Each descriptor carries the exact FilterState patch to
+// apply on removal, so the component stays dumb: tap → onChange({ ...filters, ...patch }).
 //
 // Ordering and gating deliberately mirror activeFilterCount/applyFilters so a pill never
 // appears for a filter the list isn't actually applying:
@@ -11,7 +11,14 @@
 //   - grade only for a real sub-range (`gradeRange` non-null; null = full span).
 
 import { FONT_GRADES } from '../board/grades'
-import { METHOD_LABELS, STATUS_KEYS, STATUS_LABELS, type FilterState } from './filters'
+import {
+  BENCHMARK_LABEL,
+  FAVORITES_LABEL,
+  METHOD_LABELS,
+  STATUS_KEYS,
+  STATUS_LABELS,
+  type FilterState,
+} from './filters'
 
 export interface FilterChip {
   /** Stable key so React never reshuffles pills on removal. */
@@ -48,9 +55,17 @@ export function describeActiveFilters(state: FilterState, ctx: ChipContext): Fil
     })
   }
 
-  // Favorites is a pinned always-on toggle in the bar (like Benchmark), not a removable
-  // chip — so it is intentionally NOT emitted here. Saved-list selections likewise are NOT
-  // chips: the "Lists" pill-bar control (pressed when active) is opened to edit them.
+  // Benchmarks/Favorites/Lists were formerly pinned-only (never chips). Now that pinning is
+  // user-configurable, an unpinned-but-active one must still be visible+removable in the bar,
+  // so they are emitted here too; FilterPillBar suppresses the chip whenever the facet is
+  // pinned (rendering it as the pinned control instead).
+  if (state.benchmarkOnly) {
+    chips.push({ id: 'benchmarks', label: BENCHMARK_LABEL, patch: { benchmarkOnly: false } })
+  }
+
+  if (state.favoritesOnly) {
+    chips.push({ id: 'favorites', label: FAVORITES_LABEL, patch: { favoritesOnly: false } })
+  }
 
   if (state.minStars > 0) {
     chips.push({ id: 'stars', label: `≥${state.minStars}★`, patch: { minStars: 0 } })
@@ -86,6 +101,16 @@ export function describeActiveFilters(state: FilterState, ctx: ChipContext): Fil
       id: 'holds',
       label: `Holds (${state.holdsFilter.length})`,
       patch: { holdsFilter: [] },
+    })
+  }
+
+  // Saved-list selection → one collapsed chip (the names live in the sheet/picker); removing
+  // clears the whole list filter. Suppressed when Lists is pinned (shown as the control).
+  if (state.listFilter.length > 0) {
+    chips.push({
+      id: 'lists',
+      label: `Lists (${state.listFilter.length})`,
+      patch: { listFilter: [] },
     })
   }
 

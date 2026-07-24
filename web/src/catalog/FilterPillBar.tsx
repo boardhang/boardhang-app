@@ -180,5 +180,3 @@ export function FilterPillBar({
     </div>
   )
 }
-
-export type { FilterPillBarProps }

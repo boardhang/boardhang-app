@@ -79,4 +79,12 @@ describe('FilterPillBar — pinned controls vs. active chips', () => {
     // Rendered once, as the pinned control — never also as a removable chip.
     expect(screen.queryByRole('button', { name: /^Remove .* filter$/ })).toBeNull()
   })
+
+  it('shows an unpinned active toggle facet (Favorites) as a removable chip, not vanished', () => {
+    // Regression: unpinning Benchmarks/Favorites/Lists must not make an active filter
+    // invisible in the header (no control AND no chip).
+    localStorage.setItem('catalogPinnedFilters_104', JSON.stringify([]))
+    renderBar({ layoutId: 104, filters: state({ favoritesOnly: true }) })
+    expect(screen.getByRole('button', { name: 'Remove Favorites filter' })).toBeInTheDocument()
+  })
 })

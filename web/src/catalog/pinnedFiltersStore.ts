@@ -15,6 +15,10 @@ const key = (layoutId: number) => `catalogPinnedFilters_${layoutId}`
 /** The out-of-the-box pinned set — mirrors the previously-hardcoded header controls. */
 export const DEFAULT_PINNED: readonly PinnableFacetId[] = ['benchmarks', 'favorites', 'lists']
 
+// Stable reference for getServerSnapshot (a fresh array per call would risk hydration churn if
+// SSR is ever added). Inert today — this is a client-only PWA — but cheap correctness.
+const SERVER_SNAPSHOT: PinnableFacetId[] = [...DEFAULT_PINNED]
+
 const VALID: ReadonlySet<string> = new Set<PinnableFacetId>([
   'sort',
   'grade',
@@ -69,15 +73,14 @@ function emit(layoutId: number): void {
 }
 
 if (typeof window !== 'undefined') {
-  // Cross-tab: a write in another tab invalidates every cached snapshot.
-  window.addEventListener('storage', () => {
+  // Cross-tab: only OUR keys (or a full clear, key === null) should invalidate the cache — the
+  // app writes many other localStorage keys, and reacting to all of them would re-render every
+  // filter surface on unrelated writes.
+  window.addEventListener('storage', (e) => {
+    if (e.key !== null && !e.key.startsWith('catalogPinnedFilters_')) return
     snapshots.clear()
     for (const l of listeners) l()
   })
-}
-
-export function isPinned(layoutId: number, id: PinnableFacetId): boolean {
-  return snapshot(layoutId).includes(id)
 }
 
 /** Pin or unpin a facet for this layout. */
@@ -100,6 +103,6 @@ export function usePinnedFacets(layoutId: number): PinnableFacetId[] {
   return useSyncExternalStore(
     subscribe,
     () => snapshot(layoutId),
-    () => [...DEFAULT_PINNED],
+    () => SERVER_SNAPSHOT,
   )
 }

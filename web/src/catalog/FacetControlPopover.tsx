@@ -160,6 +160,7 @@ function FacetBody({
         <div className="space-y-1.5">
           <div className="text-xs font-medium text-muted-foreground">Min rating</div>
           <Select
+            items={RATING_LABELS}
             value={String(filters.minStars)}
             onValueChange={(v) => set({ minStars: Number(v) })}
           >
@@ -277,6 +278,12 @@ function SortBody({
   const secondaryOptions = SORT_KEYS.filter(
     (k) => sortDimension(k) !== sortDimension(filters.sortPrimary),
   )
+  // base-ui's Select resolves the trigger label from `items`; without it the trigger shows
+  // the raw value. Mirror FilterControls' item maps.
+  const secondaryItems: Record<string, string> = {
+    none: 'No tiebreak',
+    ...Object.fromEntries(secondaryOptions.map((k) => [k, SORT_LABELS[k]])),
+  }
   const changePrimary = (primary: SortKey) => {
     const keep =
       filters.sortSecondary && sortDimension(filters.sortSecondary) !== sortDimension(primary)
@@ -286,7 +293,11 @@ function SortBody({
     <div className="space-y-3">
       <div className="space-y-1.5">
         <div className="text-xs font-medium text-muted-foreground">Sort by</div>
-        <Select value={filters.sortPrimary} onValueChange={(v) => changePrimary(v as SortKey)}>
+        <Select
+          items={SORT_LABELS}
+          value={filters.sortPrimary}
+          onValueChange={(v) => changePrimary(v as SortKey)}
+        >
           <SelectTrigger className="w-full">
             <SelectValue />
           </SelectTrigger>
@@ -302,6 +313,7 @@ function SortBody({
       <div className="space-y-1.5">
         <div className="text-xs font-medium text-muted-foreground">Then by</div>
         <Select
+          items={secondaryItems}
           value={filters.sortSecondary ?? 'none'}
           onValueChange={(v) => set({ sortSecondary: v === 'none' ? null : (v as SortKey) })}
         >
