@@ -5,8 +5,6 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { getRouteApi } from '@tanstack/react-router'
-import { SlidersHorizontal, X } from 'lucide-react'
-import type { DateRange } from 'react-day-picker'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInPanel } from '../auth/SignInPanel'
 import { useBoardStore } from '../board/boardStore'
@@ -16,25 +14,17 @@ import { ProblemDetail } from '../catalog/ProblemDetail'
 import { useProblemDrawer } from '../catalog/useProblemDrawer'
 import { useShowPreviews } from '../catalog/previewsStore'
 import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Slider } from '@/components/ui/slider'
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { useEnsureAscentsLoaded, type Ascent } from './ascents'
 import { AscentRow } from './AscentRow'
 import { GradePyramid } from './GradePyramid'
 import { LogAscentSheet, type LogTarget } from './LogAscentSheet'
 import { MoonBoardImportBanner } from './MoonBoardImportBanner'
-import { FONT_GRADES } from '../board/grades'
 import { priorHistoryIds } from './problemHistory'
-import { filterByDayRange, filterByGradeRange, loggedGradeSpan, sessions } from './sessions'
+import { sessions } from './sessions'
 
 const routeApi = getRouteApi('/logbook')
-
-const rangeLabelFormatter = new Intl.DateTimeFormat(undefined, {
-  day: 'numeric',
-  month: 'short',
-})
 
 export function LogbookScreen() {
   const { status, isRestoring } = useAuth()
@@ -52,26 +42,11 @@ export function LogbookScreen() {
   const [target, setTarget] = useState<LogTarget | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [catalogById, setCatalogById] = useState<Map<string, CatalogProblem>>(new Map())
-  // Filters narrowing the session list (not the pyramid): a date span (local days,
-  // inclusive) and a grade-ordinal range (null = full span, mirroring the catalog filter).
-  const [dateRange, setDateRange] = useState<DateRange | undefined>()
-  const [gradeRange, setGradeRange] = useState<[number, number] | null>(null)
-  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
 
   // Board-scoped view, mirroring iOS (the pyramid + list follow the active board).
   const boardAscents = useMemo(
     () => ascents.filter((a) => a.boardLayoutId === activeBoard.layoutId),
     [ascents, activeBoard.layoutId],
-  )
-  // The grade slider's domain: the span of grades actually logged on this board.
-  const gradeSpan = useMemo(() => loggedGradeSpan(boardAscents), [boardAscents])
-  const filteredAscents = useMemo(
-    () =>
-      filterByGradeRange(
-        filterByDayRange(boardAscents, dateRange?.from, dateRange?.to),
-        gradeRange,
-      ),
-    [boardAscents, dateRange, gradeRange],
   )
 
   // Enrich rows with cached catalog entries (setter / benchmark / thumbnail). Scoped to
@@ -96,13 +71,10 @@ export function LogbookScreen() {
       cancelled = true
     }
   }, [boardAscents])
-  const daySessions = useMemo(() => sessions(filteredAscents), [filteredAscents])
+  const daySessions = useMemo(() => sessions(boardAscents), [boardAscents])
   // Rows whose problem has earlier logged history — their one-try sends read
-  // "Session flash" (flash stays reserved for never-tried problems). Computed over ALL
-  // board ascents, not the filtered view: a row's history doesn't change with the filter.
+  // "Session flash" (flash stays reserved for never-tried problems).
   const historyIds = useMemo(() => priorHistoryIds(boardAscents), [boardAscents])
-  // The pyramid is the career picture — it always shows the FULL board history,
-  // untouched by the filters (which narrow only the session list below).
   const hasSends = boardAscents.some((a) => a.sent)
 
   function openEdit(ascent: Ascent) {
@@ -145,17 +117,6 @@ export function LogbookScreen() {
       ),
     [boardAscents],
   )
-
-  // Chip labels for the active filters (null = filter off).
-  const dateLabel = dateRange?.from
-    ? dateRange.to && dateRange.to.getTime() !== dateRange.from.getTime()
-      ? `${rangeLabelFormatter.format(dateRange.from)} – ${rangeLabelFormatter.format(dateRange.to)}`
-      : rangeLabelFormatter.format(dateRange.from)
-    : null
-  const gradeLabel = gradeRange
-    ? `${FONT_GRADES[gradeRange[0]]} – ${FONT_GRADES[gradeRange[1]]}`
-    : null
-  const filtersActive = dateLabel !== null || gradeLabel !== null
 
   // The board name only belongs here once the active board is one the user added —
   // otherwise the store's default board would leak a name for a board they never chose.
@@ -261,114 +222,6 @@ export function LogbookScreen() {
         <section className="mb-4 rounded-lg border border-border p-3">
           <GradePyramid ascents={boardAscents} />
         </section>
-      )}
-
-      {/* The session list's own header — "History" with the Filters opener ON the header
-          line — anchors the filters to the list below; the pyramid above is deliberately
-          outside their scope. Active filters show as removable tags under the header
-          (catalog pill-bar idiom: tap to remove, ✕ as the cue). */}
-      <div className="mb-1 flex items-center justify-between px-1">
-        <h2 className="text-sm font-semibold tracking-tight">History</h2>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setFilterSheetOpen(true)}
-          className="h-6 shrink-0 gap-1 rounded-[min(var(--radius-md),12px)] px-2 text-xs font-medium"
-        >
-          <SlidersHorizontal aria-hidden className="size-3.5" />
-          Filters
-        </Button>
-      </div>
-
-      {filtersActive && (
-        <div
-          role="group"
-          aria-label="Active logbook filters"
-          className="mb-2 flex flex-nowrap items-center gap-1.5 overflow-x-auto px-1 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-        {dateLabel && (
-          <button
-            type="button"
-            onClick={() => setDateRange(undefined)}
-            aria-label={`Remove ${dateLabel} filter`}
-            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[min(var(--radius-md),12px)] border border-border bg-transparent px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <span>{dateLabel}</span>
-            <X aria-hidden className="size-3 text-muted-foreground" />
-          </button>
-        )}
-        {gradeLabel && (
-          <button
-            type="button"
-            onClick={() => setGradeRange(null)}
-            aria-label={`Remove ${gradeLabel} filter`}
-            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[min(var(--radius-md),12px)] border border-border bg-transparent px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <span>{gradeLabel}</span>
-            <X aria-hidden className="size-3 text-muted-foreground" />
-          </button>
-        )}
-        </div>
-      )}
-
-      <Drawer open={filterSheetOpen} onOpenChange={setFilterSheetOpen} showSwipeHandle>
-        <DrawerContent>
-          <DrawerHeader className="flex flex-row items-center justify-between gap-2">
-            <DrawerTitle>Filters</DrawerTitle>
-            {filtersActive && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setDateRange(undefined)
-                  setGradeRange(null)
-                }}
-              >
-                Clear filters
-              </Button>
-            )}
-          </DrawerHeader>
-          <div className="max-h-[70vh] space-y-5 overflow-y-auto px-4 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-            <div className="space-y-1.5">
-              <div className="text-xs font-medium text-muted-foreground">
-                {`Dates · ${dateLabel ?? 'All'}`}
-              </div>
-              <Calendar
-                mode="range"
-                selected={dateRange}
-                onSelect={setDateRange}
-                defaultMonth={dateRange?.from}
-                disabled={{ after: new Date() }}
-                className="mx-auto"
-              />
-            </div>
-            {gradeSpan && gradeSpan[0] < gradeSpan[1] && (
-              <div className="space-y-1.5">
-                <div className="text-xs font-medium text-muted-foreground">
-                  {`Grade · ${FONT_GRADES[(gradeRange ?? gradeSpan)[0]]} – ${FONT_GRADES[(gradeRange ?? gradeSpan)[1]]}`}
-                </div>
-                <Slider
-                  aria-label="Grade range"
-                  min={gradeSpan[0]}
-                  max={gradeSpan[1]}
-                  step={1}
-                  value={[(gradeRange ?? gradeSpan)[0], (gradeRange ?? gradeSpan)[1]]}
-                  onValueChange={(value) => {
-                    const [lo, hi] = value as number[]
-                    setGradeRange(lo === gradeSpan[0] && hi === gradeSpan[1] ? null : [lo, hi])
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        </DrawerContent>
-      </Drawer>
-
-      {daySessions.length === 0 && (
-        <EmptyState
-          title="No ascents match your filters"
-          body="Adjust or clear the filters to see more of your history."
-        />
       )}
 
       <div className="space-y-4">

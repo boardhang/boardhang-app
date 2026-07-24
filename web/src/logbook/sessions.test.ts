@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { FONT_GRADES } from '../board/grades'
 import type { Ascent } from './ascents'
-import { filterByDayRange, filterByGradeRange, loggedGradeSpan, pyramid, sessions } from './sessions'
+import { pyramid, sessions } from './sessions'
 
 function ascent(partial: Partial<Ascent>): Ascent {
   return {
@@ -86,57 +85,5 @@ describe('pyramid', () => {
       ascent({ sourceCatalogId: 'c', problemGrade: '6A' }),
     ])
     expect(domain).toEqual(['6A', '6C+', '7A'])
-  })
-})
-
-describe('filterByDayRange', () => {
-  const list = [
-    ascent({ id: 'jul1', date: '2026-07-01T22:00:00' }),
-    ascent({ id: 'jul3', date: '2026-07-03T08:00:00' }),
-    ascent({ id: 'jul6', date: '2026-07-06T12:00:00' }),
-  ]
-
-  it('returns the list unchanged without a from date', () => {
-    expect(filterByDayRange(list)).toEqual(list)
-  })
-
-  it('keeps only ascents whose local day falls inside the inclusive span', () => {
-    const out = filterByDayRange(list, new Date('2026-07-01T00:00:00'), new Date('2026-07-03T23:59:00'))
-    expect(out.map((a) => a.id)).toEqual(['jul1', 'jul3'])
-  })
-
-  it('narrows to a single day when to is missing', () => {
-    const out = filterByDayRange(list, new Date('2026-07-03T15:00:00'))
-    expect(out.map((a) => a.id)).toEqual(['jul3'])
-  })
-
-  it('compares by local day, not timestamps', () => {
-    // A from late in the day still includes that whole day's earlier ascents.
-    const out = filterByDayRange(list, new Date('2026-07-03T23:00:00'), new Date('2026-07-06T00:30:00'))
-    expect(out.map((a) => a.id)).toEqual(['jul3', 'jul6'])
-  })
-})
-
-describe('filterByGradeRange / loggedGradeSpan', () => {
-  const list = [
-    ascent({ id: 'easy', problemGrade: '6A' }),
-    ascent({ id: 'mid', problemGrade: '6B+' }),
-    ascent({ id: 'hard', problemGrade: '7A' }),
-    ascent({ id: 'odd', problemGrade: 'V-weird' }),
-  ]
-  const gi = (g: string) => FONT_GRADES.indexOf(g)
-
-  it('spans the logged grades, ignoring off-scale ones', () => {
-    expect(loggedGradeSpan(list)).toEqual([gi('6A'), gi('7A')])
-    expect(loggedGradeSpan([ascent({ problemGrade: 'V-weird' })])).toBeNull()
-  })
-
-  it('keeps only in-range grades but never hides off-scale ones', () => {
-    const out = filterByGradeRange(list, [gi('6B'), gi('7A')])
-    expect(out.map((a) => a.id)).toEqual(['mid', 'hard', 'odd'])
-  })
-
-  it('null range returns the list unchanged', () => {
-    expect(filterByGradeRange(list, null)).toEqual(list)
   })
 })

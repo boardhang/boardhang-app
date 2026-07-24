@@ -86,7 +86,6 @@ vi.mock('@/components/ui/drawer', () => ({
       </div>
     ) : null,
   DrawerContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DrawerHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DrawerTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }))
 vi.mock('../catalog/catalogSync', async (importOriginal) => {
@@ -406,105 +405,5 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
     const replaceCall = navigate.mock.calls.find((c) => (c[0] as NavOpts | undefined)?.replace)
     expect((replaceCall![0] as NavOpts).search!({ problem: 'p-1' })).toEqual({ problem: 'p-2' })
     expect((await screen.findByTestId('detail')).getAttribute('data-ids')).toBe('p-1,p-2')
-  })
-})
-
-describe('LogbookScreen — filters', () => {
-  const addedBoard = { layoutId: 7, name: 'Mini MoonBoard 2025' }
-  const baseAscent = {
-    id: 'a1',
-    date: '2026-07-01T10:00:00',
-    boardLayoutId: 7,
-    problemName: 'CRIMP CITY',
-    problemGrade: '6A',
-    votedGrade: '6A',
-    tries: 1,
-    stars: 0,
-    comment: '',
-    sent: false,
-    sourceCatalogId: null as string | null,
-    userProblemId: null as string | null,
-  }
-
-  function openFilterSheet() {
-    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
-  }
-
-  it('narrows the sessions to a picked date span and removes it via the chip', async () => {
-    boardState.addedBoards = [addedBoard]
-    ascentsState.ascents = [
-      { ...baseAscent, id: 'j1', date: '2026-07-01T10:00:00', problemName: 'EARLY PROB' },
-      { ...baseAscent, id: 'j6', date: '2026-07-06T10:00:00', problemName: 'LATE PROB' },
-    ]
-    render(<LogbookScreen />)
-
-    expect(screen.getByText('EARLY PROB')).toBeInTheDocument()
-    expect(screen.getByText('LATE PROB')).toBeInTheDocument()
-
-    // Pick Jul 1 → Jul 3 in the sheet's inline calendar (today is 2026-07-24).
-    openFilterSheet()
-    fireEvent.click(await screen.findByRole('button', { name: /July 1st/ }))
-    fireEvent.click(screen.getByRole('button', { name: /July 3rd/ }))
-
-    expect(screen.getByText('EARLY PROB')).toBeInTheDocument()
-    expect(screen.queryByText('LATE PROB')).toBeNull()
-
-    // The active filter surfaces as a removable chip; tapping it clears the span.
-    fireEvent.click(screen.getByRole('button', { name: /Remove .* filter/ }))
-    expect(screen.getByText('LATE PROB')).toBeInTheDocument()
-  })
-
-  it('shows an empty state when the picked span has no ascents', async () => {
-    boardState.addedBoards = [addedBoard]
-    ascentsState.ascents = [{ ...baseAscent, id: 'j1', problemName: 'EARLY PROB' }]
-    render(<LogbookScreen />)
-
-    openFilterSheet()
-    fireEvent.click(await screen.findByRole('button', { name: /July 10th/ }))
-    fireEvent.click(screen.getByRole('button', { name: /July 12th/ }))
-
-    expect(screen.queryByText('EARLY PROB')).toBeNull()
-    expect(screen.getByText('No ascents match your filters')).toBeInTheDocument()
-  })
-
-  it('shows the grade slider spanning the logged grades', () => {
-    boardState.addedBoards = [addedBoard]
-    ascentsState.ascents = [
-      { ...baseAscent, id: 'g1', problemGrade: '6A' },
-      { ...baseAscent, id: 'g2', problemGrade: '7A', problemName: 'HARD ONE' },
-    ]
-    render(<LogbookScreen />)
-
-    expect(screen.getByRole('heading', { name: 'History' })).toBeInTheDocument()
-    openFilterSheet()
-    expect(screen.getByText('Grade · 6A – 7A')).toBeInTheDocument()
-  })
-
-  it('hides the grade slider when only one grade is logged', () => {
-    boardState.addedBoards = [addedBoard]
-    ascentsState.ascents = [{ ...baseAscent, id: 'g1', problemGrade: '6A' }]
-    render(<LogbookScreen />)
-
-    openFilterSheet()
-    expect(screen.queryByText(/Grade ·/)).toBeNull()
-  })
-
-  it('Clear filters in the sheet resets everything', async () => {
-    boardState.addedBoards = [addedBoard]
-    ascentsState.ascents = [
-      { ...baseAscent, id: 'j1', date: '2026-07-01T10:00:00', problemName: 'EARLY PROB' },
-      { ...baseAscent, id: 'j6', date: '2026-07-06T10:00:00', problemName: 'LATE PROB' },
-    ]
-    render(<LogbookScreen />)
-
-    openFilterSheet()
-    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull()
-    fireEvent.click(await screen.findByRole('button', { name: /July 1st/ }))
-    fireEvent.click(screen.getByRole('button', { name: /July 3rd/ }))
-    expect(screen.queryByText('LATE PROB')).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
-    expect(screen.getByText('LATE PROB')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull()
   })
 })

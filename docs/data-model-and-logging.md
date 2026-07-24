@@ -124,13 +124,6 @@ in the flash bucket.
 
 - **Logbook** (`LogbookView`) filters ascents by `effectiveBoardLayoutId` (not the raw
   `boardLayoutId`) against the `BoardFilter` CSV — see [multi-board-model.md](multi-board-model.md).
-  The web logbook's session list sits under its own "History" header whose right edge
-  holds a "Filters" opener → bottom sheet (inline range calendar over local days,
-  inclusive; grade-range slider spanning the grades actually logged), with one removable
-  chip per active filter under the header (catalog pill-bar idiom). Filters narrow only the session list — the pyramid always shows
-  the full board history (`LogbookScreen.tsx`; `filterByDayRange`, `filterByGradeRange`,
-  `loggedGradeSpan` in `sessions.ts`). Session-flash badges likewise derive from the full
-  history, not the filtered view.
 - **Grade pyramid** (`GradePyramidView`) includes only `sent == true` ascents, de-dupes to one
   ascent per distinct problem (earliest send kept, keyed by `sourceCatalogID` or `problemName`),
   groups by `problemGrade` (consensus, not the vote), and stacks by try bucket (flash / 2nd / 3rd /
