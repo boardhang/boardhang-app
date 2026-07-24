@@ -127,10 +127,10 @@ in the flash bucket.
   The web logbook adds a compact filter row below the pyramid, mirroring the catalog's
   pill-bar idiom: a "Filters" opener → bottom sheet (inline range calendar over local days,
   inclusive; grade-range slider spanning the grades actually logged), with one removable
-  chip per active filter. Filters narrow both the pyramid and the session list
-  (`LogbookScreen.tsx`; `filterByDayRange`, `filterByGradeRange`, `loggedGradeSpan` in
-  `sessions.ts`). Session-flash badges still derive from the full history, not the
-  filtered view.
+  chip per active filter. Filters narrow only the session list — the pyramid always shows
+  the full board history (`LogbookScreen.tsx`; `filterByDayRange`, `filterByGradeRange`,
+  `loggedGradeSpan` in `sessions.ts`). Session-flash badges likewise derive from the full
+  history, not the filtered view.
 - **Grade pyramid** (`GradePyramidView`) includes only `sent == true` ascents, de-dupes to one
   ascent per distinct problem (earliest send kept, keyed by `sourceCatalogID` or `problemName`),
   groups by `problemGrade` (consensus, not the vote), and stacks by try bucket (flash / 2nd / 3rd /

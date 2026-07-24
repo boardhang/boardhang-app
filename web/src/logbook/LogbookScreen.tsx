@@ -52,8 +52,8 @@ export function LogbookScreen() {
   const [target, setTarget] = useState<LogTarget | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [catalogById, setCatalogById] = useState<Map<string, CatalogProblem>>(new Map())
-  // Filters narrowing the pyramid + session list: a date span (local days, inclusive)
-  // and a grade-ordinal range (null = full span, mirroring the catalog filter).
+  // Filters narrowing the session list (not the pyramid): a date span (local days,
+  // inclusive) and a grade-ordinal range (null = full span, mirroring the catalog filter).
   const [dateRange, setDateRange] = useState<DateRange | undefined>()
   const [gradeRange, setGradeRange] = useState<[number, number] | null>(null)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
@@ -101,7 +101,9 @@ export function LogbookScreen() {
   // "Session flash" (flash stays reserved for never-tried problems). Computed over ALL
   // board ascents, not the filtered view: a row's history doesn't change with the filter.
   const historyIds = useMemo(() => priorHistoryIds(boardAscents), [boardAscents])
-  const hasSends = filteredAscents.some((a) => a.sent)
+  // The pyramid is the career picture — it always shows the FULL board history,
+  // untouched by the filters (which narrow only the session list below).
+  const hasSends = boardAscents.some((a) => a.sent)
 
   function openEdit(ascent: Ascent) {
     setTarget({ kind: 'edit', ascent })
@@ -257,13 +259,13 @@ export function LogbookScreen() {
 
       {hasSends && (
         <section className="mb-4 rounded-lg border border-border p-3">
-          <GradePyramid ascents={filteredAscents} />
+          <GradePyramid ascents={boardAscents} />
         </section>
       )}
 
       {/* Compact filter row, mirroring the catalog's pill bar: a small "Filters" opener
           plus one removable tag per active filter. The controls live in a bottom sheet
-          and narrow BOTH the pyramid above and the sessions below. */}
+          and narrow only the session list below — the pyramid stays the full history. */}
       <div
         role="group"
         aria-label="Logbook filters"
