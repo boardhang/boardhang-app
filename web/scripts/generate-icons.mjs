@@ -9,7 +9,7 @@
 //   cd web && node scripts/generate-icons.mjs
 //
 // Outputs (committed): public/apple-touch-icon.png, public/pwa-192.png,
-// public/pwa-512.png.
+// public/pwa-512.png, public/og.png.
 
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -46,4 +46,28 @@ for (const { file, size, padding } of targets) {
     .toFile(path.join(publicDir, file))
 
   console.log(`wrote public/${file} (${size}×${size})`)
+}
+
+// Open Graph card (og.png, 1200×630): the tileless mark (public/logo.svg — bolt
+// hole punched transparent) centered on the brand tile background #0E1116, so the
+// LED glow reads on link previews. Referenced absolutely from index.html.
+{
+  const OG_W = 1200
+  const OG_H = 630
+  const OG_BG = { r: 0x0e, g: 0x11, b: 0x16, alpha: 1 }
+  const inner = Math.round(OG_H * 0.66)
+  const logo = readFileSync(path.join(publicDir, 'logo.svg'))
+  const mark = await sharp(logo, { density: 512 })
+    .resize(inner, inner, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer()
+
+  await sharp({
+    create: { width: OG_W, height: OG_H, channels: 4, background: OG_BG },
+  })
+    .composite([{ input: mark, gravity: 'center' }])
+    .png()
+    .toFile(path.join(publicDir, 'og.png'))
+
+  console.log(`wrote public/og.png (${OG_W}×${OG_H})`)
 }
