@@ -1,17 +1,18 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { og } from '@/lib/og'
 
 export const metadata: Metadata = {
   title: 'Guides',
   description:
     'Guides to browsing MoonBoard problems on the web and building DIY LED MoonBoards.',
   alternates: { canonical: '/guides' },
-  openGraph: {
+  openGraph: og({
     title: 'Guides',
     description:
       'Guides to browsing MoonBoard problems on the web and building DIY LED MoonBoards.',
     url: '/guides',
-  },
+  }),
 }
 
 const guides = [

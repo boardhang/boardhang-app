@@ -1,25 +1,29 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { JsonLd } from '../components/json-ld'
+import { JsonLd } from '@/components/json-ld'
+import { og } from '@/lib/og'
+import { APP_URL, SITE_URL } from '@/lib/urls'
 
 export const metadata: Metadata = {
   title: { absolute: 'Boardhang — free web app for DIY LED MoonBoards' },
   description:
     'Boardhang lights MoonBoard problems on DIY LED boards over Web Bluetooth — no install, no account. Browse ~12,000 curated problems across 5 layouts, including 2,832 official benchmarks.',
+  alternates: { canonical: '/' },
+  openGraph: og({ url: '/' }),
 }
 
 const organizationJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
   name: 'Boardhang',
-  url: 'https://boardhang.app',
+  url: SITE_URL,
 }
 
 const softwareApplicationJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
   name: 'Boardhang',
-  url: 'https://www.boardhang.app',
+  url: APP_URL,
   applicationCategory: 'SportsApplication',
   operatingSystem: 'Web',
   offers: {

@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next'
+import { SITE_URL } from '@/lib/urls'
 
 // Everything on the apex is meant to be crawled — by search engines and by
 // AI crawlers alike. The named AI/user agents get explicit Allow entries so
@@ -20,6 +21,6 @@ export default function robots(): MetadataRoute.Robots {
       { userAgent: '*', allow: '/' },
       ...aiCrawlers.map((userAgent) => ({ userAgent, allow: '/' })),
     ],
-    sitemap: 'https://boardhang.app/sitemap.xml',
+    sitemap: `${SITE_URL}/sitemap.xml`,
   }
 }

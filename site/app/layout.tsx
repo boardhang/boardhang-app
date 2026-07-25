@@ -1,27 +1,23 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
+import { SITE_URL } from '@/lib/urls'
 import './globals.css'
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://boardhang.app'),
+  metadataBase: new URL(SITE_URL),
   title: {
     template: '%s · Boardhang',
     default: 'Boardhang',
   },
   description:
     'Boardhang is a free web app for lighting MoonBoard problems on DIY LED boards over Web Bluetooth — browse ~12k curated problems across 5 layouts and light them straight from the browser.',
+  // og:image comes from the app/opengraph-image.png file convention, which
+  // applies to every route and survives page-level openGraph overrides
+  // (a page-level openGraph object replaces this one wholesale).
   openGraph: {
     siteName: 'Boardhang',
     type: 'website',
-    images: [
-      {
-        url: '/og.png',
-        width: 1200,
-        height: 630,
-        alt: 'Boardhang',
-      },
-    ],
   },
   twitter: {
     card: 'summary_large_image',

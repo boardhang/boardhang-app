@@ -7,7 +7,7 @@
 // devDependency, so a plain `npm install` already provides it):
 //   cd site && node scripts/generate-og.mjs
 //
-// Output (committed): public/og.png
+// Output (committed): app/opengraph-image.png (Next.js file convention — emits og:image for every route)
 
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
-const publicDir = path.resolve(dir, '../public')
+const outDir = path.resolve(dir, '../app')
 const markSvg = readFileSync(path.resolve(dir, '../../brand/resin-jug-b-open.svg'))
 const markUri = `data:image/svg+xml;base64,${markSvg.toString('base64')}`
 
@@ -32,6 +32,6 @@ const svg = `
     font-size="110" font-weight="700" fill="#E6E9EE">Boardhang</text>
 </svg>`
 
-await sharp(Buffer.from(svg), { density: 72 }).png().toFile(path.join(publicDir, 'og.png'))
+await sharp(Buffer.from(svg), { density: 72 }).png().toFile(path.join(outDir, 'opengraph-image.png'))
 
-console.log(`wrote public/og.png (${WIDTH}×${HEIGHT})`)
+console.log(`wrote app/opengraph-image.png (${WIDTH}×${HEIGHT})`)

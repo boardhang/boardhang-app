@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next'
+import { SITE_URL } from '@/lib/urls'
 
-const base = 'https://boardhang.app'
+const base = SITE_URL
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [

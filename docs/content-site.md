@@ -12,7 +12,7 @@ Deploy runbook: [`site/CLAUDE.md`](../site/CLAUDE.md) (do not confuse with the
 
 | Host | Project | Role | Indexable? |
 | --- | --- | --- | --- |
-| `boardhang.app` (apex) | `boardhang-site` (`site/`) | Landing page, `/guides`, future problem/benchmark pages | **Yes** — `robots.ts` allows all crawlers incl. AI bots; `sitemap.ts` lists every page; canonical URLs via `metadataBase` |
+| `boardhang.app` (apex) | `boardhang-site` (`site/`) | Landing page, `/guides`, future problem/benchmark pages | **Yes** — `robots.ts` allows all crawlers incl. AI bots; `sitemap.ts` lists every page; every page sets `alternates.canonical`, resolved against `metadataBase` |
 | `www.boardhang.app` | `boardly` (`web/`) | The PWA (catalog, BLE lighting, logbook, sessions) | **No** — every response carries `X-Robots-Tag: noindex` (`web/vercel.json` headers); `web/public/robots.txt` allows crawling so the noindex is seen; `web/public/sitemap.xml` is an intentionally empty urlset |
 
 **Why the cross-host split is load-bearing:** the PWA's service worker registers

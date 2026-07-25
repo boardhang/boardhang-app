@@ -1,17 +1,18 @@
 import { JsonLd } from '@/components/json-ld'
+import { og } from '@/lib/og'
 
 export const metadata = {
   title: 'The MoonBoard website is retired — where to browse problems now',
   description:
     'moonboard.com no longer serves problem pages. Here is every place you can still browse MoonBoard problems in 2026 — in the browser or in the official app.',
   alternates: { canonical: '/guides/moonboard-website-retired' },
-  openGraph: {
+  openGraph: og({
     title: 'The MoonBoard website is retired — where to browse problems now',
     description:
       'moonboard.com no longer serves problem pages. Here is every place you can still browse MoonBoard problems in 2026 — in the browser or in the official app.',
     type: 'article',
     url: '/guides/moonboard-website-retired',
-  },
+  }),
 }
 
 export const faqs = [
