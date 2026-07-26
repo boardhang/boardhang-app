@@ -1,24 +1,25 @@
-// "My Boards": the boards the user owns. Each board is a clean row (name +
-// config summary). The active board shows a primary "Browse" action into its
-// catalog; every other owned board shows a secondary "Set as active" that just
-// switches the active board (staying on this list). Tapping the config button
-// opens a bottom drawer to edit angle and installed hold sets (or remove it) —
-// mirroring iOS, where board config lives behind a separate sheet. Also the
-// first-run surface (zero added boards).
+// "Boards": the boards the user holds, led by the active one as a hero. Below it a
+// compact switcher lists the others — tapping one promotes it into the hero. Session
+// controls are demoted to a strip that only appears when there is something to resume or
+// join, because a board you climb on is this page's subject and a session is an occasional
+// overlay on it. Also the first-run surface (zero instances).
+//
+// Board setup lives behind the hero's "Set up" action; the guided flow replaces the
+// drawer below.
 
 import { useRef, useState } from 'react'
 import { ScanQrCode, Settings2 } from 'lucide-react'
 import { BOARDS, hasAngleChoice } from '../board/boards'
 import type { BoardInstance } from '../board/boardInstance'
-import { instanceName } from '../board/boardInstance'
+import { canSetAngle, canSetHoldSets, instanceName } from '../board/boardInstance'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { activeCsv, holdSetContext } from '../board/holdSetMembership'
 import { CatalogBoard } from '../board/CatalogBoard'
+import { BoardHero } from './BoardHero'
 import { useSessions } from '../sessions/sessionsStore'
 import { useResumableSessions } from '../sessions/useResumableSessions'
 import { ResumableSessionRow } from '../sessions/ResumableSessionRow'
 import { ScanToJoinButton } from '../sessions/ScanToJoin'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -26,10 +27,14 @@ import {
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
-  DrawerTrigger,
 } from '@/components/ui/drawer'
 import { Toggle } from '@/components/ui/toggle'
-import { cn } from '@/lib/utils'
+
+/**
+ * Whether the sharing loop exists yet. A single flag so every share entry point on this
+ * page appears at once rather than leaking in half-built; the sharing units flip it.
+ */
+const SHARING_AVAILABLE = false
 
 interface MyBoardsProps {
   /** Jump to the catalog after activating a board (given its instance id). */
@@ -45,35 +50,61 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   const { activeSession } = useSessions()
   // Cross-device resume: list this user's live sessions (across all boards on this surface) so
   // they can re-adopt one created/joined elsewhere. The hook owns the fetch, self-heal, and
-  // adopt-and-navigate; MyBoards just renders the section.
+  // adopt-and-navigate; this screen just renders the section.
   const { resumable, resumingId, endedNotice, onResume } = useResumableSessions()
 
   const addedIds = new Set(instances.map((i) => i.layoutId))
   const addable = BOARDS.filter((b) => !addedIds.has(b.layoutId))
 
-  // Freeze the row order for this mount. "Set as active" promotes the board to
-  // the MRU front in the store, but the list must not reshuffle under the user's
-  // finger — only the Active badge / Browse button swap in place. A fresh mount
-  // re-reads the MRU order (active board on top). Boards added this session
-  // append; removed ones drop out — membership stays live, only order is frozen.
-  // Seeded empty; the append loop below fills it in MRU order on first render.
+  // Freeze the switcher order for this mount. Activating promotes the instance to the MRU
+  // front in the store, but the list must not reshuffle under the user's finger — the
+  // tapped instance and the outgoing hero exchange slots and nothing else moves. A fresh
+  // mount re-reads the MRU order. Instances added this session append; removed ones drop
+  // out — membership stays live, only order is frozen. Seeded empty; the append loop below
+  // fills it in MRU order on first render.
   const orderRef = useRef<string[]>([])
   const byId = new Map(instances.map((i) => [i.instanceId, i] as const))
-  const orderedBoards: BoardInstance[] = []
+  const ordered: BoardInstance[] = []
   for (const id of orderRef.current) {
     const i = byId.get(id)
     if (i) {
-      orderedBoards.push(i)
+      ordered.push(i)
       byId.delete(id)
     }
   }
-  for (const i of instances) if (byId.has(i.instanceId)) orderedBoards.push(i) // newly added this session
-  orderRef.current = orderedBoards.map((i) => i.instanceId)
+  for (const i of instances) if (byId.has(i.instanceId)) ordered.push(i) // newly added this session
+  orderRef.current = ordered.map((i) => i.instanceId)
 
-  return (
-    <div className="space-y-4">
-      {!activeSession && resumable.length > 0 && (
-        <section className="space-y-2">
+  /**
+   * Promote an instance into the hero, exchanging frozen slots with the outgoing hero.
+   *
+   * The switcher renders the frozen order minus whichever instance is in the hero, so
+   * swapping the two ids here is what makes the outgoing hero land in exactly the slot the
+   * promoted one vacated. Without the swap, promoting anything other than the frozen
+   * front would shuffle every row between them.
+   */
+  function promote(instanceId: string) {
+    const order = orderRef.current
+    const from = order.indexOf(instanceId)
+    const to = order.indexOf(activeInstance.instanceId)
+    if (from !== -1 && to !== -1) {
+      order[from] = activeInstance.instanceId
+      order[to] = instanceId
+    }
+    activateBoard(instanceId)
+  }
+
+  const [setUpFor, setSetUpFor] = useState<string | null>(null)
+  const setUpInstance = instances.find((i) => i.instanceId === setUpFor)
+
+  // Sessions, demoted: nothing renders while one is active (the session pill and the
+  // catalog's own bar carry those controls), and only what exists renders otherwise. It
+  // stays available at first-run on purpose — resuming a session started on another device
+  // adds its board, which is exactly what someone with no boards here needs.
+  const sessionStrip = !activeSession && (
+    <section aria-label="Sessions" className="space-y-2">
+      {resumable.length > 0 && (
+        <>
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Resume session
           </h2>
@@ -85,9 +116,9 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
               onResume={(sess) => void onResume(sess)}
             />
           ))}
-        </section>
+        </>
       )}
-      {!activeSession && endedNotice && resumable.length === 0 && (
+      {endedNotice && resumable.length === 0 && (
         <p
           role="status"
           className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
@@ -95,72 +126,115 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
           That session has ended.
         </p>
       )}
-      {!activeSession && (
-        <ScanToJoinButton variant="outline" className="w-full">
-          <ScanQrCode className="size-4" />
-          Join a session
-        </ScanToJoinButton>
-      )}
-      {instances.length === 0 ? (
+      <ScanToJoinButton variant="outline" className="w-full">
+        <ScanQrCode className="size-4" />
+        Join a session
+      </ScanToJoinButton>
+    </section>
+  )
+
+  if (instances.length === 0) {
+    return (
+      <div className="space-y-4">
         <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
           <p className="mb-1 font-medium text-foreground">Add your first board</p>
           <p className="text-sm">Pick the MoonBoard you have to start browsing its problems.</p>
         </div>
-      ) : (
+        {sessionStrip}
+        <AddBoardSection boards={addable} onAdd={addBoard} />
+      </div>
+    )
+  }
+
+  const others = ordered.filter((i) => i.instanceId !== activeInstance.instanceId)
+
+  return (
+    <div className="space-y-5">
+      <BoardHero
+        instance={activeInstance}
+        onBrowse={() => onActivated(activeInstance.instanceId)}
+        onSetUp={() => setSetUpFor(activeInstance.instanceId)}
+        sharingAvailable={SHARING_AVAILABLE}
+      />
+
+      {sessionStrip}
+
+      {others.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             My boards
           </h2>
-          {orderedBoards.map((instance) => (
-            <BoardCard
+          {others.map((instance) => (
+            <SwitcherRow
               key={instance.instanceId}
               instance={instance}
-              active={instance.instanceId === activeInstance.instanceId}
-              // Active board → browse its catalog (already active, no switch).
-              onBrowse={() => onActivated(instance.instanceId)}
-              // Inactive board → just switch the active board; stay on this list.
-              onSetActive={() => activateBoard(instance.instanceId)}
-              onRemove={() => removeBoard(instance.instanceId)}
-              onAngle={(angle) => setAngle(instance, angle)}
-              onHoldSets={(csv) => setActiveHoldSetsRaw(instance, csv)}
+              onSetActive={() => promote(instance.instanceId)}
+              onSetUp={() => setSetUpFor(instance.instanceId)}
             />
           ))}
         </section>
       )}
 
-      {addable.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Add a board
-          </h2>
-          {addable.map((board) => (
-            <div key={board.layoutId} className="flex items-center justify-between rounded-lg border px-3 py-2">
-              <span className="text-sm">{board.name}</span>
-              <Button size="sm" variant="outline" onClick={() => addBoard(board.layoutId)}>
-                Add
-              </Button>
-            </div>
-          ))}
-        </section>
+      <AddBoardSection boards={addable} onAdd={addBoard} />
+
+      {setUpInstance && (
+        <BoardConfigDrawer
+          instance={setUpInstance}
+          onClose={() => setSetUpFor(null)}
+          onAngle={(angle) => setAngle(setUpInstance, angle)}
+          onHoldSets={(csv) => setActiveHoldSetsRaw(setUpInstance, csv)}
+          onRemove={() => {
+            removeBoard(setUpInstance.instanceId)
+            setSetUpFor(null)
+          }}
+        />
       )}
     </div>
   )
 }
 
-interface BoardCardProps {
-  instance: BoardInstance
-  active: boolean
-  onBrowse: () => void
-  onSetActive: () => void
-  onRemove: () => void
-  onAngle: (angle: number) => void
-  onHoldSets: (csv: string) => void
+function AddBoardSection({
+  boards,
+  onAdd,
+}: {
+  boards: typeof BOARDS
+  onAdd: (layoutId: number) => void
+}) {
+  if (boards.length === 0) return null
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Add a board
+      </h2>
+      {boards.map((board) => (
+        <div key={board.layoutId} className="flex items-center justify-between rounded-lg border px-3 py-2">
+          <span className="text-sm">{board.name}</span>
+          <Button size="sm" variant="outline" onClick={() => onAdd(board.layoutId)}>
+            Add
+          </Button>
+        </div>
+      ))}
+    </section>
+  )
 }
 
-function BoardCard({ instance, active, onBrowse, onSetActive, onRemove, onAngle, onHoldSets }: BoardCardProps) {
+/**
+ * One non-active instance. Compact by design: its whole job is to become the hero, so it
+ * carries a thumbnail, its name and config summary, and the switch action. Two instances
+ * of one layout are told apart by the owner-set name a shared board carries.
+ */
+function SwitcherRow({
+  instance,
+  onSetActive,
+  onSetUp,
+}: {
+  instance: BoardInstance
+  onSetActive: () => void
+  onSetUp: () => void
+}) {
   const board = instance.layout
   const angle = getAngle(instance)
-  const { filterable, active: installed } = holdSetContext(
+  const { filterable, active: installed, visible } = holdSetContext(
     board.membershipResource,
     getActiveHoldSetsRaw(instance),
   )
@@ -168,34 +242,36 @@ function BoardCard({ instance, active, onBrowse, onSetActive, onRemove, onAngle,
     installed.size >= filterable.length ? 'All hold sets' : `${installed.size} of ${filterable.length} sets`
   const subtitle = [hasAngleChoice(board) ? `${angle}°` : null, holdSummary].filter(Boolean).join(' · ')
 
+  const name = instanceName(instance)
+
   return (
-    <Card className={cn('py-3', active ? 'border-primary/60 bg-primary/5' : 'bg-transparent')}>
-      <CardContent className="flex items-center gap-2 px-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate font-medium">{instanceName(instance)}</span>
-            {active && (
-              <Badge className="shrink-0 bg-accent text-accent-foreground">Active</Badge>
-            )}
-          </div>
-          <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
-        </div>
-        {active ? (
-          <Button size="sm" onClick={onBrowse}>
-            Browse
-          </Button>
-        ) : (
-          <Button size="sm" variant="outline" onClick={onSetActive}>
-            Set as active
-          </Button>
-        )}
-        <BoardConfigDrawer
-          instance={instance}
-          angle={angle}
-          onAngle={onAngle}
-          onHoldSets={onHoldSets}
-          onRemove={onRemove}
-        />
+    <Card className="bg-transparent py-3">
+      <CardContent className="flex items-center gap-1 px-3">
+        {/* The row itself switches. A "Set as active" button here would eat the width the
+            name needs, and on a phone the name is the only thing telling two instances of
+            the same layout apart — so it gets the room instead. */}
+        <button
+          type="button"
+          aria-label={`Switch to ${name}`}
+          onClick={onSetActive}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 pr-1 text-left transition-colors hover:bg-accent/50"
+        >
+          <span className="w-10 shrink-0">
+            <CatalogBoard board={board} holds={[]} visibleHoldSetIds={visible} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">{name}</span>
+            <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label={`Configure ${name}`}
+          onClick={onSetUp}
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Settings2 className="size-4" />
+        </button>
       </CardContent>
     </Card>
   )
@@ -203,14 +279,15 @@ function BoardCard({ instance, active, onBrowse, onSetActive, onRemove, onAngle,
 
 interface BoardConfigDrawerProps {
   instance: BoardInstance
-  angle: number
+  onClose: () => void
   onAngle: (angle: number) => void
   onHoldSets: (csv: string) => void
   onRemove: () => void
 }
 
-function BoardConfigDrawer({ instance, angle, onAngle, onHoldSets, onRemove }: BoardConfigDrawerProps) {
+function BoardConfigDrawer({ instance, onClose, onAngle, onHoldSets, onRemove }: BoardConfigDrawerProps) {
   const board = instance.layout
+  const angle = getAngle(instance)
   const { membership, filterable, active: installed, visible } = holdSetContext(
     board.membershipResource,
     getActiveHoldSetsRaw(instance),
@@ -227,13 +304,7 @@ function BoardConfigDrawer({ instance, angle, onAngle, onHoldSets, onRemove }: B
   }
 
   return (
-    <Drawer showSwipeHandle>
-      <DrawerTrigger
-        aria-label={`Configure ${instanceName(instance)}`}
-        className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <Settings2 className="size-4" />
-      </DrawerTrigger>
+    <Drawer open onOpenChange={(open) => !open && onClose()} showSwipeHandle>
       <DrawerContent>
         <DrawerHeader>
           <DrawerTitle>{instanceName(instance)}</DrawerTitle>
@@ -251,37 +322,57 @@ function BoardConfigDrawer({ instance, angle, onAngle, onHoldSets, onRemove }: B
           >
             <CatalogBoard board={board} holds={[]} visibleHoldSetIds={visible} />
           </div>
-          {hasAngleChoice(board) && (
-            <div className="space-y-1.5">
-              <div className="text-xs font-medium text-muted-foreground">Angle</div>
-              <div className="flex gap-1.5">
-                {board.angles.map((a) => (
-                  <Toggle key={a} size="sm" variant="outline" pressed={angle === a} onPressedChange={() => onAngle(a)}>
-                    {a}°
-                  </Toggle>
-                ))}
+          {/* A shared board's definition belongs to its owner, and the store refuses the
+              write regardless — so state it as read-only rather than offering a control
+              that silently does nothing. */}
+          {hasAngleChoice(board) &&
+            (canSetAngle(instance) ? (
+              <div className="space-y-1.5">
+                <div className="text-xs font-medium text-muted-foreground">Angle</div>
+                <div className="flex gap-1.5">
+                  {board.angles.map((a) => (
+                    <Toggle key={a} size="sm" variant="outline" pressed={angle === a} onPressedChange={() => onAngle(a)}>
+                      {a}°
+                    </Toggle>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-          {filterable.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="text-xs font-medium text-muted-foreground">Installed hold sets</div>
-              <div className="flex flex-wrap gap-1.5">
-                {filterable.map((id) => (
-                  <Toggle
-                    key={id}
-                    size="sm"
-                    variant="outline"
-                    pressed={installed.has(id)}
-                    disabled={installed.size === 1 && installed.has(id)}
-                    onPressedChange={() => toggleSet(id)}
-                  >
-                    {setName(id)}
-                  </Toggle>
-                ))}
+            ) : (
+              <div className="space-y-1.5">
+                <div className="text-xs font-medium text-muted-foreground">Angle</div>
+                <p className="text-sm">
+                  {angle}° <span className="text-muted-foreground">— fixed by the board’s owner</span>
+                </p>
               </div>
-            </div>
-          )}
+            ))}
+          {filterable.length > 0 &&
+            (canSetHoldSets(instance) ? (
+              <div className="space-y-1.5">
+                <div className="text-xs font-medium text-muted-foreground">Installed hold sets</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {filterable.map((id) => (
+                    <Toggle
+                      key={id}
+                      size="sm"
+                      variant="outline"
+                      pressed={installed.has(id)}
+                      disabled={installed.size === 1 && installed.has(id)}
+                      onPressedChange={() => toggleSet(id)}
+                    >
+                      {setName(id)}
+                    </Toggle>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="text-xs font-medium text-muted-foreground">Installed hold sets</div>
+                <p className="text-sm">
+                  {[...installed].map(setName).join(', ')}{' '}
+                  <span className="text-muted-foreground">— set by the board’s owner</span>
+                </p>
+              </div>
+            ))}
           <Button
             variant={confirmRemove ? 'destructive' : 'outline'}
             className="w-full"

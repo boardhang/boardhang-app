@@ -90,7 +90,9 @@ describe('catalog route guards', () => {
   it('bounces an unknown board id to My Boards', async () => {
     addBoard(7)
     renderWithRouter('/board/999/catalog')
-    expect(await screen.findByText(/my boards/i)).toBeInTheDocument()
+    // Landed on the Boards page: its hero carries the held board.
+    expect(await screen.findByRole('region', { name: 'Active board' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Mini MoonBoard 2025' })).toBeInTheDocument()
   })
 
   it('previews a registry-valid but un-added board (does not bounce)', async () => {

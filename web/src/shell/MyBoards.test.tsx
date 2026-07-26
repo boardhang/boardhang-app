@@ -48,13 +48,26 @@ beforeEach(() => {
 
 /** Add a board by name from the "Add a board" list. */
 function addBoard(name: string) {
-  const addRow = screen.getByText(name).closest('div')!
+  const addSection = screen.getByText('Add a board').closest('section')!
+  const addRow = within(addSection).getByText(name).closest('div')!
   fireEvent.click(within(addRow).getByRole('button', { name: 'Add' }))
 }
 
-/** Open a board's config drawer. */
-function openConfig(name: string) {
-  fireEvent.click(screen.getByRole('button', { name: `Configure ${name}` }))
+/** The hero region (the active board). */
+const hero = () => screen.getByRole('region', { name: 'Active board' })
+
+/** The switcher section listing the non-active boards. */
+const switcher = () => screen.getByText('My boards').closest('section')!
+
+/** Board names in switcher order, for asserting the frozen order. */
+const switcherOrder = () =>
+  within(switcher())
+    .getAllByRole('button', { name: /^Switch to / })
+    .map((b) => b.getAttribute('aria-label')!.replace('Switch to ', ''))
+
+/** Open the active board's config from the hero. */
+function openHeroConfig() {
+  fireEvent.click(within(hero()).getByRole('button', { name: 'Set up' }))
 }
 
 /** Hold-set / angle toggles in the open drawer (the aria-pressed buttons). */
@@ -78,55 +91,148 @@ describe('MyBoards', () => {
     expect(screen.queryByRole('button', { name: 'Join a session' })).not.toBeInTheDocument()
   })
 
-  it('makes the first owned board active, and Browse opens its catalog', () => {
+  it('leads with the active board as a hero and no switcher when it is the only one', () => {
     const onActivated = vi.fn()
     render(<MyBoards onActivated={onActivated} />)
     addBoard('MoonBoard Masters 2019') // first owned board → becomes active
     expect(getActiveInstanceId()).toBe('5')
-    const myBoards = screen.getByText('My boards').closest('section')!
-    fireEvent.click(within(myBoards).getByRole('button', { name: 'Browse' }))
+
+    expect(within(hero()).getByRole('heading', { name: 'MoonBoard Masters 2019' })).toBeInTheDocument()
+    expect(screen.queryByText('My boards')).toBeNull() // nothing to switch to
+
+    fireEvent.click(within(hero()).getByRole('button', { name: 'Browse' }))
     expect(onActivated).toHaveBeenCalledWith('5')
     expect(getActiveInstanceId()).toBe('5') // Browse doesn't switch the active board
   })
 
-  it('Set as active switches the active board without leaving the list', () => {
-    const onActivated = vi.fn()
-    render(<MyBoards onActivated={onActivated} />)
+  it('puts the active board in the hero and every other board in the switcher', () => {
+    render(<MyBoards onActivated={() => {}} />)
     addBoard('MoonBoard Masters 2019') // active (id 5)
-    addBoard('MoonBoard Masters 2017') // owned but not active (id 4)
-    const myBoards = screen.getByText('My boards').closest('section')!
+    addBoard('MoonBoard Masters 2017') // id 4
+    addBoard('MoonBoard 2016') // id 2
 
-    // Exactly one Browse (the active board) and one Set as active (the other).
-    expect(within(myBoards).getAllByRole('button', { name: 'Browse' })).toHaveLength(1)
-    const orderBefore = within(myBoards)
-      .getAllByText(/MoonBoard Masters 20\d\d/)
-      .map((el) => el.textContent)
-    fireEvent.click(within(myBoards).getByRole('button', { name: 'Set as active' }))
-
-    expect(getActiveInstanceId()).toBe('4') // switched
-    expect(onActivated).not.toHaveBeenCalled() // stayed on the list, no navigation
-    // The row order does not reshuffle on activate — the badge/button swap in place.
-    const orderAfter = within(myBoards)
-      .getAllByText(/MoonBoard Masters 20\d\d/)
-      .map((el) => el.textContent)
-    expect(orderAfter).toEqual(orderBefore)
-    // The Browse button (active board) is now on the board that was switched to.
-    expect(within(myBoards).getAllByRole('button', { name: 'Browse' })).toHaveLength(1)
+    expect(within(hero()).getByRole('heading', { name: 'MoonBoard Masters 2019' })).toBeInTheDocument()
+    expect(within(switcher()).getAllByRole('button', { name: /^Switch to / })).toHaveLength(2)
+    // Exactly one Browse on the page — the hero's.
+    expect(screen.getAllByRole('button', { name: 'Browse' })).toHaveLength(1)
   })
 
-  it('configures the angle from the board drawer', () => {
+  it('promotes a switcher board into the hero, the outgoing hero taking its slot', () => {
+    const onActivated = vi.fn()
+    render(<MyBoards onActivated={onActivated} />)
+    addBoard('MoonBoard Masters 2019') // id 5 → active, so it is the hero
+    addBoard('MoonBoard Masters 2017') // id 4
+    addBoard('MoonBoard 2016') // id 2
+
+    // The switcher holds the two non-active boards. Order is frozen for this mount, so it
+    // follows the sequence they were added in, not the store's MRU order.
+    expect(switcherOrder()).toEqual(['MoonBoard Masters 2017', 'MoonBoard 2016'])
+
+    // Promote the *second* switcher row (2016) — the case where the outgoing hero is not
+    // adjacent to it, so a naive "frozen order minus active" would shuffle 2017 as well.
+    fireEvent.click(within(switcher()).getAllByRole('button', { name: /^Switch to / })[1])
+
+    expect(getActiveInstanceId()).toBe('2')
+    expect(onActivated).not.toHaveBeenCalled() // stayed on the page, no navigation
+    expect(within(hero()).getByRole('heading', { name: 'MoonBoard 2016' })).toBeInTheDocument()
+    // The outgoing hero lands in the exact slot 2016 vacated, and 2017 has not moved.
+    expect(switcherOrder()).toEqual(['MoonBoard Masters 2017', 'MoonBoard Masters 2019'])
+  })
+
+  it('tells two instances of one layout apart by the shared one’s owner-set name', () => {
+    localStorage.setItem('addedBoards', '5|S:b1')
+    localStorage.setItem('activeBoardId', '5')
+    localStorage.setItem(
+      'sharedBoard__S:b1',
+      JSON.stringify({
+        boardId: 'b1',
+        role: 'member',
+        name: 'Gym wall',
+        layoutId: 5,
+        angleMode: 'fixed',
+        canonicalAngle: 25,
+        canonicalHoldSetsRaw: '',
+      }),
+    )
+    window.dispatchEvent(new StorageEvent('storage'))
+    render(<MyBoards onActivated={() => {}} />)
+
+    expect(within(hero()).getByRole('heading', { name: 'MoonBoard Masters 2019' })).toBeInTheDocument()
+    expect(within(switcher()).getByText('Gym wall')).toBeInTheDocument()
+  })
+
+  it('states a fixed shared board’s angle and hold sets as read-only, offering no control', () => {
+    // The store refuses these writes anyway, so offering a toggle that silently does
+    // nothing would be worse than not offering one.
+    localStorage.setItem('addedBoards', 'S:b1')
+    localStorage.setItem('activeBoardId', 'S:b1')
+    localStorage.setItem(
+      'sharedBoard__S:b1',
+      JSON.stringify({
+        boardId: 'b1',
+        role: 'member',
+        name: 'Gym wall',
+        layoutId: 5,
+        angleMode: 'fixed',
+        canonicalAngle: 25,
+        canonicalHoldSetsRaw: '17|18',
+      }),
+    )
+    window.dispatchEvent(new StorageEvent('storage'))
+    render(<MyBoards onActivated={() => {}} />)
+    openHeroConfig()
+
+    expect(screen.queryByRole('button', { name: '40°' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '25°' })).toBeNull()
+    expect(screen.getByText(/fixed by the board’s owner/)).toBeInTheDocument()
+    expect(screen.getByText(/set by the board’s owner/)).toBeInTheDocument()
+    expect(toggles()).toHaveLength(0)
+  })
+
+  it('still offers the controls to the owner of a shared board', () => {
+    localStorage.setItem('addedBoards', 'S:b1')
+    localStorage.setItem('activeBoardId', 'S:b1')
+    localStorage.setItem(
+      'sharedBoard__S:b1',
+      JSON.stringify({
+        boardId: 'b1',
+        role: 'owner',
+        name: 'My garage',
+        layoutId: 5,
+        angleMode: 'fixed',
+        canonicalAngle: 25,
+        canonicalHoldSetsRaw: '',
+      }),
+    )
+    window.dispatchEvent(new StorageEvent('storage'))
+    render(<MyBoards onActivated={() => {}} />)
+    openHeroConfig()
+
+    expect(screen.getByRole('button', { name: '25°' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText(/fixed by the board’s owner/)).toBeNull()
+  })
+
+  it('configures the active board’s angle from the hero’s Set up', () => {
     render(<MyBoards onActivated={() => {}} />)
     addBoard('MoonBoard Masters 2019')
-    openConfig('MoonBoard Masters 2019')
+    openHeroConfig()
     expect(screen.getByRole('button', { name: '40°' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: '25°' }))
     expect(screen.getByRole('button', { name: '25°' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('configures a non-active board from its switcher row', () => {
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019') // active
+    addBoard('Mini MoonBoard 2025') // switcher; 4 hold sets, no angle choice
+    fireEvent.click(screen.getByRole('button', { name: 'Configure Mini MoonBoard 2025' }))
+    expect(toggles()).toHaveLength(4) // Mini's hold sets, not the active board's 7
+  })
+
   it('toggles installed hold sets and blocks removing the last one', () => {
     render(<MyBoards onActivated={() => {}} />)
     addBoard('Mini MoonBoard 2025') // 4 hold sets, no angle choice
-    openConfig('Mini MoonBoard 2025')
+    openHeroConfig()
     expect(toggles()).toHaveLength(4)
 
     fireEvent.click(toggles()[0])
@@ -140,12 +246,27 @@ describe('MyBoards', () => {
   it('removes a board from its drawer after a confirm click', () => {
     render(<MyBoards onActivated={() => {}} />)
     addBoard('MoonBoard Masters 2019')
-    expect(screen.getByText('My boards')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Active board' })).toBeInTheDocument()
 
-    openConfig('MoonBoard Masters 2019')
+    openHeroConfig()
     fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
     fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
-    expect(screen.queryByText('My boards')).toBeNull() // back to first-run
+    expect(screen.queryByRole('region', { name: 'Active board' })).toBeNull() // back to first-run
+  })
+
+  it('renders no hero, switcher, or share affordance at first run', () => {
+    render(<MyBoards onActivated={() => {}} />)
+    expect(screen.queryByRole('region', { name: 'Active board' })).toBeNull()
+    expect(screen.queryByText('My boards')).toBeNull()
+    expect(screen.queryByRole('button', { name: /share/i })).toBeNull()
+  })
+
+  it('renders no share affordance anywhere while sharing is unavailable', () => {
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+    addBoard('MoonBoard Masters 2017')
+    expect(screen.queryByRole('button', { name: /share/i })).toBeNull()
+    expect(screen.queryByText(/^Share/)).toBeNull()
   })
 
   // ── U3: cross-device "Resume session" surface ──
