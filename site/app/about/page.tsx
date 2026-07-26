@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { og } from '@/lib/og'
+import { CONTACT_EMAIL } from '@/lib/urls'
 
 const description =
   'Boardhang is a free, unofficial web app for MoonBoards, built by two climbers with a DIY LED board. Who makes it, where the catalog comes from, and how to reach us.'
@@ -71,10 +72,12 @@ export default function About() {
 
       <h2 className="mt-10 text-xl font-semibold">Get in touch</h2>
       <p className="mt-3 text-[var(--muted)]">
-        The fastest way to reach us is to{' '}
-        <a href="https://github.com/boardhang/boardhang-app/issues">open an issue</a> — that
-        covers bugs, feature ideas and corrections. If you hold rights in anything published
-        here and want it changed or taken down, open an issue and we will act on it.
+        For bugs, feature ideas and corrections, the fastest route is to{' '}
+        <a href="https://github.com/boardhang/boardhang-app/issues">open an issue</a> — it is
+        public, so other people benefit from the answer. For anything you would rather not
+        raise in public, email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. That
+        includes rights enquiries: if you hold rights in anything published here and want it
+        changed or taken down, write to us and we will act on it.
       </p>
 
       <h2 className="mt-10 text-xl font-semibold">What it costs</h2>

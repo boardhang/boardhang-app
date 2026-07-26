@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { JsonLd } from '@/components/json-ld'
 import { og } from '@/lib/og'
-import { APP_URL, SITE_URL } from '@/lib/urls'
+import { APP_URL, CONTACT_EMAIL, SITE_URL } from '@/lib/urls'
 
 export const metadata: Metadata = {
   title: { absolute: 'Boardhang — free web app for MoonBoards' },
@@ -28,6 +28,7 @@ const organizationJsonLd = {
   contactPoint: {
     '@type': 'ContactPoint',
     contactType: 'customer support',
+    email: CONTACT_EMAIL,
     url: `${GITHUB_URL}/issues`,
   },
 }

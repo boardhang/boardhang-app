@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { Logo } from '@/components/logo'
-import { SITE_URL } from '@/lib/urls'
+import { CONTACT_EMAIL, SITE_URL } from '@/lib/urls'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -52,7 +52,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <p className="mt-3">
             Open source under the MIT license —{' '}
             <a href="https://github.com/boardhang/boardhang-app">issues and pull requests
-            welcome</a>.
+            welcome</a>. Questions, corrections or rights enquiries:{' '}
+            <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
           </p>
           <p className="mt-3 flex flex-wrap gap-4">
             <a href="https://www.boardhang.app">Open the app</a>
