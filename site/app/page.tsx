@@ -5,9 +5,9 @@ import { og } from '@/lib/og'
 import { APP_URL, SITE_URL } from '@/lib/urls'
 
 export const metadata: Metadata = {
-  title: { absolute: 'Boardhang — free web app for LED MoonBoards' },
+  title: { absolute: 'Boardhang — free web app for MoonBoards' },
   description:
-    'A free web app for LED MoonBoards: filters that stay put, sessions with friends, and one tap to light any problem over Web Bluetooth. No install, no account.',
+    'A free web app for MoonBoards: filters that stay put, sessions with friends, and one tap to light any problem over Web Bluetooth. No install, no account.',
   alternates: { canonical: '/' },
   openGraph: og({ url: '/' }),
 }
@@ -32,9 +32,9 @@ const softwareApplicationJsonLd = {
     priceCurrency: 'USD',
   },
   description:
-    'Free, unofficial web app for DIY LED MoonBoards. Connects over Web Bluetooth and lights MoonBoard problems on boards running the open-source ArduinoMoonBoardLED firmware — including boards the official app cannot drive because it truncates Bluetooth writes over 20 bytes.',
+    'Free, unofficial web app for DIY MoonBoards. Connects over Web Bluetooth and lights MoonBoard problems on boards running the open-source ArduinoMoonBoardLED firmware — including boards the official app cannot drive because it truncates Bluetooth writes over 20 bytes.',
   featureList: [
-    'Lights problems on DIY LED MoonBoards over Web Bluetooth',
+    'Lights problems on DIY MoonBoards over Web Bluetooth',
     'Compatible with the open-source ArduinoMoonBoardLED Arduino firmware',
     'Chunks Bluetooth writes, avoiding the official app’s 20-byte truncation bug on DIY LED systems',
     'Catalog of ~12,000 curated MoonBoard problems including 2,832 official benchmarks',
@@ -59,7 +59,7 @@ export default function Home() {
           The MoonBoard app we wished we had
         </h1>
         <p className="mt-4 text-lg text-[var(--muted)]">
-          Boardhang is a free web app for LED MoonBoards, built by two climbers tired of
+          Boardhang is a free web app for MoonBoards, built by two climbers tired of
           re-setting filters every visit, cross-checking logbooks by shouting across the mat,
           and asking “which problem is that?”. Open it in a browser — no install, no
           account — and it lights problems on your board over Web Bluetooth.

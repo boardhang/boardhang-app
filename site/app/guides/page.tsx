@@ -5,12 +5,12 @@ import { og } from '@/lib/og'
 export const metadata: Metadata = {
   title: 'Guides',
   description:
-    'Guides to browsing MoonBoard problems on the web and building DIY LED MoonBoards.',
+    'Guides to browsing MoonBoard problems on the web and building DIY MoonBoards.',
   alternates: { canonical: '/guides' },
   openGraph: og({
     title: 'Guides',
     description:
-      'Guides to browsing MoonBoard problems on the web and building DIY LED MoonBoards.',
+      'Guides to browsing MoonBoard problems on the web and building DIY MoonBoards.',
     url: '/guides',
   }),
 }
