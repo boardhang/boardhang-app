@@ -19,8 +19,49 @@ Deploy runbook: [`site/CLAUDE.md`](../site/CLAUDE.md) (do not confuse with the
 `navigateFallback: '/index.html'` and answers *every* www navigation from the cached
 shell. Content pages on www would be hijacked for returning users. The apex is a
 different origin the SW cannot reach — that is the safety mechanism. **Never serve
-content routes from www** until the Phase 2 consolidation (PWA → `/app/*` with a
-self-unregistering stub SW — a separate, safety-adjacent project).
+content routes from www.**
+
+### The split is permanent (decided 2026-07-26)
+
+Two hosts is the end state, not a staging post. The strategy doc's Phase 2 — moving
+the PWA to `/app/*` so both surfaces share one host — is **dropped**. It was written
+before the content site existed, and once the content site became the indexable
+surface the thing it was solving mostly stopped being a problem:
+
+- Consolidation pools authority between hosts. Neither host has any authority to
+  pool, and the PWA is `noindex` **by design**, so it can never benefit from pooling
+  no matter which host it sits on.
+- The one real gain was share links building equity on indexable pages. That comes
+  from changing what the PWA's share button emits, which works the same across
+  origins — no move required. See the follow-ups below.
+- Consolidating on the **apex** would move the PWA cross-origin, losing every user's
+  favorites, filters, pinned filters and added boards, the logbook for signed-out
+  users, every Web Bluetooth pairing, and every installed PWA. Consolidating on
+  **www** is safe for users but means migrating the content site — rewriting every
+  canonical and 301'ing the apex — to buy what a share-button change already buys.
+
+Consequences that follow from this:
+
+- The apex→www redirects below are **standing policy**, not a temporary bridge.
+  They stay **307**: permanence buys nothing here, and a cached permanent redirect
+  cannot be undone if this is ever revisited.
+- Apex canonicals are permanent. Write them freely.
+- `www` hosting the *app* rather than the marketing site is unconventional — the
+  usual shape is `example.com` for content and `app.example.com` for the app. It is
+  this way because the PWA was there first and its origin carries user data and
+  Bluetooth grants. **Do not "fix" the naming**: `www` → `app` is another
+  cross-origin move with the same losses listed above.
+
+Revisit only if the PWA itself ever needs to be indexable — that would mean
+server-rendering real content inside the app, which is the job this site exists to do.
+
+Open follow-ups this decision creates (neither is built):
+
+- The PWA's share button should emit apex content URLs rather than www app URLs, so
+  pasted links land on an indexable page.
+- The PWA needs at least one link back to the apex. Today the apex links out to www
+  repeatedly and www links back nowhere, so the link graph is one-way into a
+  noindexed host.
 
 Cloudflare fronts both hosts. Its "managed robots.txt / block AI bots" zone feature,
 when enabled, overrides **both** `web/public/robots.txt` and `site/`'s `robots.ts` —
@@ -33,10 +74,14 @@ App-shaped apex paths 307-redirect to the same path on www
 (`redirects()` in `site/next.config.ts`): `/board/:path*`, `/boards`,
 `/session/:path*`, `/lists/:path*`, `/logbook/:path*`, `/settings`. This keeps
 pre-existing apex deep links working — `joinUrl.ts` explicitly supports hand-pasted
-`boardhang.app/session/join/…` invites. Temporary (307) on purpose: Phase 2 moves the
-app onto the apex, and cached permanent redirects would fight that move.
+`boardhang.app/session/join/…` invites.
 
-**Every new top-level PWA route needs a matching entry in that list** until Phase 2.
+**307, not 301, permanently.** These are standing policy now that the two-origin
+split is the end state, but they stay temporary redirects: a permanent redirect is
+cached indefinitely by browsers and cannot be invalidated later, and permanence buys
+nothing when the target is a `noindex` host with no ranking to consolidate.
+
+**Every new top-level PWA route needs a matching entry in that list.**
 
 ## Canonical URLs and the deep-link mapping
 

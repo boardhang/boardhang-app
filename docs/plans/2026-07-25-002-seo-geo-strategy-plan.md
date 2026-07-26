@@ -80,6 +80,35 @@ benchmark list pages + ~15 hubs + ~3.5–4.5k tiered problem pages**, rest `noin
 - Astro was evaluated as runner-up: better raw HTML/CWV, but loses on ISR at thousands of
   pages with periodic mirror refreshes and on React board-component reuse.
 
+> **Amendment 2026-07-26 — Phase 2 is dropped; two origins is the end state.**
+>
+> "One canonical host" above is superseded. The content site stays on the apex
+> `boardhang.app` and the PWA stays on `www.boardhang.app`, permanently. Decision #1
+> (no separate `boardhang.com` site) is unaffected and still holds — the costly split
+> is across registrable domains, which this avoids; apex-vs-www is the mild kind.
+>
+> Why the consolidation stopped being worth it once the content site existed:
+> consolidation pools authority, but neither host has any to pool, and the PWA is
+> `noindex` **by design** so it can never benefit from pooling wherever it sits. The
+> one real gain — share links building equity on indexable pages — comes from the
+> share button emitting content URLs, which works identically across origins.
+>
+> Against that: consolidating on the apex moves the PWA cross-origin and loses every
+> user's favorites, filters and added boards, the logbook for signed-out users, every
+> Web Bluetooth pairing and every installed PWA. Consolidating on www is safe for
+> users but is a full content-site migration to buy what a share-button change buys.
+> Phase 2 was also tiered safety-adjacent (full review) — too expensive for the
+> return.
+>
+> Note this section was already internally inconsistent: the bullet named www as the
+> canonical host while Phase 2 described a same-origin path move, which only works if
+> the content site relocates to www. `docs/content-site.md` had resolved it the other
+> way ("Phase 2 moves the app onto the apex") — the cross-origin reading the same
+> paragraph's own rationale rules out. Dropping Phase 2 settles it.
+>
+> Current state and the two follow-ups this creates live in
+> [docs/content-site.md](../content-site.md) §"The split is permanent".
+
 ## Data-rights posture (not legal advice — risk framing)
 
 Moon Climbing (UK) treats the problem DB as an asset (web access killed, app
