@@ -28,6 +28,9 @@ interface AscentRowProps {
   /** Open this ascent's problem detail. Omitted when the problem can't be resolved
    *  (user-created or uncached) — the content area then renders as a non-interactive div. */
   onSelect?: () => void
+  /** The problem has an earlier-dated logged row — a one-try send then reads
+   *  "Session flash", not "Flash" (see priorHistoryIds). */
+  hasPriorHistory?: boolean
 }
 
 /** +1 harder / -1 softer / 0 same, comparing voted vs official grade. */
@@ -46,6 +49,7 @@ export function AscentRow({
   showThumbnail = false,
   onEdit,
   onSelect,
+  hasPriorHistory = false,
 }: AscentRowProps) {
   const setter = catalog?.setter
   const holds = catalog?.holds
@@ -82,7 +86,7 @@ export function AscentRow({
               <Star className="size-3" /> {ascent.stars}
             </span>
           )}
-          <span className="shrink-0">{triesLabel(ascent.tries, ascent.sent)}</span>
+          <span className="shrink-0">{triesLabel(ascent.tries, ascent.sent, hasPriorHistory)}</span>
           {setter && <span className="truncate">by {setter}</span>}
         </div>
         {ascent.comment && (

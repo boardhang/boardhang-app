@@ -23,9 +23,11 @@ export const TRY_BUCKET_COLOR: Record<TryBucket, string> = {
   '4+ tries': '#ef4444', // red
 }
 
-/** Compact tries label for a logbook row: "Flash" (a one-try *send*), else "N try/tries".
- *  A flash requires a send — a single unsent attempt reads "1 try", not "Flash". */
-export function triesLabel(tries: number, sent: boolean): string {
-  if (sent && tries <= 1) return 'Flash'
+/** Compact tries label for a logbook row or the log sheet: a one-try *send* reads
+ *  "Flash" — but only on a problem with no logged history; with earlier tries or sends
+ *  on record it reads "Session flash" (flash is reserved for never-tried problems).
+ *  Anything else reads "N try/tries" — a single unsent attempt is "1 try", never a flash. */
+export function triesLabel(tries: number, sent: boolean, hasPriorHistory = false): string {
+  if (sent && tries <= 1) return hasPriorHistory ? 'Session flash' : 'Flash'
   return `${tries} ${tries === 1 ? 'try' : 'tries'}`
 }

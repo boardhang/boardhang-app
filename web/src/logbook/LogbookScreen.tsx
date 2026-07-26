@@ -21,6 +21,7 @@ import { AscentRow } from './AscentRow'
 import { GradePyramid } from './GradePyramid'
 import { LogAscentSheet, type LogTarget } from './LogAscentSheet'
 import { MoonBoardImportBanner } from './MoonBoardImportBanner'
+import { priorHistoryIds } from './problemHistory'
 import { sessions } from './sessions'
 
 const routeApi = getRouteApi('/logbook')
@@ -71,6 +72,9 @@ export function LogbookScreen() {
     }
   }, [boardAscents])
   const daySessions = useMemo(() => sessions(boardAscents), [boardAscents])
+  // Rows whose problem has earlier logged history — their one-try sends read
+  // "Session flash" (flash stays reserved for never-tried problems).
+  const historyIds = useMemo(() => priorHistoryIds(boardAscents), [boardAscents])
   const hasSends = boardAscents.some((a) => a.sent)
 
   function openEdit(ascent: Ascent) {
@@ -244,6 +248,7 @@ export function LogbookScreen() {
                       catalog={catalog}
                       board={activeBoard}
                       showThumbnail={showThumbnails}
+                      hasPriorHistory={historyIds.has(ascent.id)}
                       onEdit={openEdit}
                       onSelect={
                         catalog

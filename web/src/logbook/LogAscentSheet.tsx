@@ -2,6 +2,10 @@
 // `LogAscentSheet`. Opened from the logbook (edit) and from problem detail (new send /
 // new attempt). Sends get a random id; unsent same-day attempts get the deterministic
 // attempt id so they merge with any existing attempt row (iOS or web).
+//
+// A send ABSORBS the day's unsent attempt row (target.absorb): the caller folds its
+// tries into the seeded count and the sheet soft-deletes the row after saving, so a
+// day of tries + a send lands as one logbook entry carrying the total.
 
 import { useEffect, useState } from 'react'
 import { Minus, Plus, Star, Trash2 } from 'lucide-react'
@@ -23,7 +27,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { attemptId } from './attemptId'
-import { createAscent, deleteAscent, updateAscent, type Ascent } from './ascents'
+import {
+  absorbAttemptRow,
+  createAscent,
+  deleteAscent,
+  updateAscent,
+  useAscents,
+  type Ascent,
+} from './ascents'
+import { ascentIdentity } from './problemHistory'
+import { localDayKey } from './sessions'
 
 /** What the sheet is operating on. */
 export type LogTarget =
@@ -38,6 +51,16 @@ export type LogTarget =
       sent: boolean
       /** Pre-seed the tries stepper (e.g. from the inline try count). Defaults to 1. */
       tries?: number
+      /** Same-day unsent attempt row this send absorbs: its tries are already folded
+       *  into `tries` by the caller, and the row is soft-deleted after the send saves —
+       *  so the day ends up with ONE logbook entry carrying the total. */
+      absorb?: { id: string; tries: number }
+      /** Tries logged earlier today (absorbed row + inline stepper) — breakdown line. */
+      earlierTriesToday?: number
+      /** Distinct earlier local days with logged history — context line. */
+      priorDays?: number
+      /** Any logged history for this problem (drives Flash vs Session flash). */
+      hasPriorHistory?: boolean
     }
   | { kind: 'edit'; ascent: Ascent }
 
@@ -45,8 +68,11 @@ interface LogAscentSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   target: LogTarget | null
-  /** Called after a successful save (not on cancel), so a caller can clear pending state. */
-  onSaved?: () => void
+  /** Called after a successful save (not on cancel), so a caller can clear pending state.
+   *  `keptTodayTries` is true when a backdated send deliberately left the day's inline
+   *  tries with the caller (they belong to today, not the send) — the caller must NOT
+   *  clear its pending stepper in that case, so its own leave-flush persists them. */
+  onSaved?: (info: { keptTodayTries: boolean }) => void
 }
 
 /** ISO → local `YYYY-MM-DDTHH:mm` for <input type="datetime-local">. */
@@ -61,11 +87,8 @@ function fromLocalInput(local: string): string {
   return new Date(local).toISOString()
 }
 
-function problemIdentity(t: Extract<LogTarget, { kind: 'create' }>): string {
-  return t.sourceCatalogId ?? t.userProblemId ?? `name:${t.problemName}`
-}
-
 export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscentSheetProps) {
+  const { ascents } = useAscents()
   const editing = target?.kind === 'edit' ? target.ascent : null
   const problemGrade =
     target?.kind === 'edit' ? target.ascent.problemGrade : (target?.problemGrade ?? '')
@@ -107,6 +130,27 @@ export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscen
 
   const title = editing ? 'Edit log' : sent ? 'Log send' : 'Log attempt'
 
+  // "Flash" is reserved for problems with no logged history at all; a one-try send on
+  // a problem tried (or sent) before reads "Session flash". Create targets carry the
+  // flag from the caller; edit targets derive it from earlier-dated rows in the store.
+  const hasPriorHistory = editing
+    ? ascents.some(
+        (a) =>
+          a.id !== editing.id &&
+          ascentIdentity(a) === ascentIdentity(editing) &&
+          a.date < editing.date,
+      )
+    : target.kind === 'create' && (target.hasPriorHistory ?? false)
+  const earlierTriesToday = target.kind === 'create' ? (target.earlierTriesToday ?? 0) : 0
+  const priorDays = target.kind === 'create' ? (target.priorDays ?? 0) : 0
+
+  // Whether the send still lands on today's local day. A send seeds its tries with the
+  // day's earlier tries folded in (the absorb) — but those tries belong to TODAY, so if
+  // the user re-dates the send off today they must NOT ride along: the displayed count
+  // and the saved count drop back to the send's own tries, and today's tries stay put.
+  const onToday = dateLocal ? localDayKey(new Date(dateLocal)) === localDayKey(new Date()) : true
+  const displayTries = sent && !onToday ? Math.max(1, tries - earlierTriesToday) : tries
+
   async function handleSave() {
     if (!target) return
     setSaving(true)
@@ -115,6 +159,7 @@ export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscen
     // it never renders a vote arrow (mirrors iOS).
     const resolvedGrade = sent ? votedGrade : problemGrade
     const dateIso = fromLocalInput(dateLocal)
+    const sendOnToday = localDayKey(new Date(dateIso)) === localDayKey(new Date())
     try {
       if (target.kind === 'edit') {
         await updateAscent(target.ascent.id, {
@@ -126,9 +171,12 @@ export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscen
           sent,
         })
       } else {
+        // A send re-dated off today doesn't own the day's earlier tries — they stay on
+        // today (kept in the caller's pending stepper), so the send carries only its own.
+        const sendTries = sent && !sendOnToday ? Math.max(1, tries - earlierTriesToday) : tries
         const id = sent
           ? crypto.randomUUID()
-          : await attemptId(problemIdentity(target), new Date(dateIso))
+          : await attemptId(ascentIdentity(target), new Date(dateIso))
         await createAscent({
           id,
           date: dateIso,
@@ -137,14 +185,26 @@ export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscen
           problemName: target.problemName,
           problemGrade: target.problemGrade,
           votedGrade: resolvedGrade,
-          tries,
+          tries: sendTries,
           stars,
           comment,
           sent,
           boardLayoutId: target.boardLayoutId,
         })
+        if (sent && target.absorb && sendOnToday) {
+          // On-today send: the absorbed tries now live on the send row — drop today's
+          // attempt row so the day shows ONE logbook entry. The delete is guarded (row
+          // must still hold the folded tries) and best-effort: the send is already
+          // saved, and surfacing a cleanup failure would invite a retry that duplicates.
+          await absorbAttemptRow(target.absorb.id, target.absorb.tries).catch(() => {})
+        }
       }
-      onSaved?.()
+      // A backdated send didn't fold today's earlier tries into itself, so the caller
+      // must KEEP its pending inline stepper — its own deferred leave-flush writes those
+      // tries onto today's attempt row reliably (no fragile best-effort write here that
+      // could silently drop them). Every other save consumed the pending tries → clear.
+      const keptTodayTries = sent && !sendOnToday && earlierTriesToday > 0
+      onSaved?.({ keptTodayTries })
       onOpenChange(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -209,31 +269,47 @@ export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscen
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Tries</span>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Fewer tries"
-                disabled={tries <= 1}
-                onClick={() => setTries((t) => Math.max(1, t - 1))}
-              >
-                <Minus className="size-4" />
-              </Button>
-              <span className="w-14 text-center text-sm tabular-nums text-muted-foreground">
-                {tries === 1 ? 'Flash' : tries}
-              </span>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="More tries"
-                disabled={tries >= 99}
-                onClick={() => setTries((t) => Math.min(99, t + 1))}
-              >
-                <Plus className="size-4" />
-              </Button>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Tries</span>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Fewer tries"
+                  disabled={displayTries <= 1}
+                  onClick={() => setTries((t) => Math.max(1, t - 1))}
+                >
+                  <Minus className="size-4" />
+                </Button>
+                <span className="min-w-14 whitespace-nowrap text-center text-sm tabular-nums text-muted-foreground">
+                  {sent && displayTries === 1 ? (hasPriorHistory ? 'Session flash' : 'Flash') : displayTries}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="More tries"
+                  disabled={displayTries >= 99}
+                  onClick={() => setTries((t) => Math.min(99, t + 1))}
+                >
+                  <Plus className="size-4" />
+                </Button>
+              </div>
             </div>
+            {((onToday && earlierTriesToday > 0) || priorDays > 0) && (
+              <p className="text-right text-xs text-muted-foreground">
+                {onToday && earlierTriesToday > 0 &&
+                  `${earlierTriesToday} ${earlierTriesToday === 1 ? 'try' : 'tries'} from earlier today${sent ? ' + this send' : ''}`}
+                {onToday && earlierTriesToday > 0 && priorDays > 0 && ' · '}
+                {priorDays > 0 && `Tried on ${priorDays} earlier day${priorDays === 1 ? '' : 's'}`}
+              </p>
+            )}
+            {sent && !onToday && earlierTriesToday > 0 && (
+              <p className="text-right text-xs text-muted-foreground">
+                Today's {earlierTriesToday} {earlierTriesToday === 1 ? 'try' : 'tries'} stay as a
+                separate entry
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-between">

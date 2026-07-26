@@ -2,7 +2,7 @@
 title: Drag DOM elements via imperative compositor transforms, not per-move React state
 date: 2026-07-23
 category: docs/solutions/design-patterns
-module: web catalog (draggable session pill)
+module: web (continuous pointer-follow interactions)
 problem_type: design_pattern
 component: frontend_stimulus
 severity: medium
@@ -25,7 +25,7 @@ tags:
 
 ## Context
 
-The catalog's floating session pill (`web/src/catalog/SessionBarPill.tsx`) is drag-to-reposition. The first implementation did the obvious React thing on every `pointermove`: measure bounds (`querySelector` + `getBoundingClientRect` — forced synchronous reflows), `setState` the new position (full re-render of the pill subtree), and reposition via `left/top` — all while the pill's `backdrop-filter` re-blurred its backdrop each frame. At 60–120 input events per second the drag visibly stuttered.
+The pattern was built for the catalog's floating session pill when it was drag-to-reposition (the drag has since been removed as a product decision — the pill now docks in a fixed spot — but the pattern remains the house approach for any pointer-follow interaction). The first implementation did the obvious React thing on every `pointermove`: measure bounds (`querySelector` + `getBoundingClientRect` — forced synchronous reflows), `setState` the new position (full re-render of the pill subtree), and reposition via `left/top` — all while the pill's `backdrop-filter` re-blurred its backdrop each frame. At 60–120 input events per second the drag visibly stuttered.
 
 ## Guidance
 
@@ -81,7 +81,7 @@ const endDrag = (e) => {
 }
 ```
 
-Full implementation with tests (drag threshold, click swallowing, two-finger gating, mid-drag rotation): `web/src/catalog/SessionBarPill.tsx` + `SessionBarPill.test.tsx`.
+The full reference implementation with tests (drag threshold, click swallowing, two-finger gating, mid-drag rotation) lived in `web/src/catalog/SessionBarPill.tsx` + `SessionBarPill.test.tsx` until the pill's drag was removed — recover it from git history (PRs #107/#110).
 
 ## Related
 

@@ -14,6 +14,7 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { supabase } from '../supabase/client'
 import { useAuth } from '../auth/AuthProvider'
 import { attemptId } from './attemptId'
+import { ascentIdentity } from './problemHistory'
 
 export interface Ascent {
   id: string
@@ -156,6 +157,36 @@ export function resetAscents(): void {
   setState({ status: 'idle', ascents: [], error: null })
 }
 
+/** The store's current rows WITHOUT waiting for a React re-render — event handlers
+ *  that just awaited a write need a fresh snapshot, not the render-closure array. */
+export function getAscentsSnapshot(): Ascent[] {
+  return state.ascents
+}
+
+/**
+ * Resolve once the store has settled enough for a read-your-history decision (the
+ * sent-today gate, the absorb seed). Kicks off a (re)load when idle or errored — a
+ * user-initiated retry — and waits for the in-flight load either way, capped so a
+ * hung fetch can't wedge the tap; on timeout or a failed load the caller proceeds
+ * with whatever the store holds.
+ */
+export async function settleAscents(capMs = 5000): Promise<void> {
+  if (!supabase) return
+  if (state.status === 'loaded') return
+  const load: Promise<void> =
+    state.status === 'loading'
+      ? new Promise((resolve) => {
+          const unsub = subscribe(() => {
+            if (state.status !== 'loading') {
+              unsub()
+              resolve()
+            }
+          })
+        })
+      : loadAscents()
+  await Promise.race([load, new Promise<void>((resolve) => setTimeout(resolve, capMs))])
+}
+
 /**
  * Create (or upsert) an ascent. Sends use a random id (upsert is a plain insert);
  * unsent attempts pass the deterministic attempt id so re-logging the same problem/day
@@ -239,22 +270,30 @@ export async function addAttemptTries(input: {
   addTries: number
 }): Promise<void> {
   if (input.addTries <= 0) return
-  const identity = input.sourceCatalogId ?? input.userProblemId ?? `name:${input.problemName}`
-  const id = await attemptId(identity, new Date(input.date))
+  const id = await attemptId(ascentIdentity(input), new Date(input.date))
 
-  // Accumulate onto any existing attempt row for today (iOS revive semantics).
+  // Accumulate onto any existing attempt row for today (iOS revive semantics). The
+  // SERVER copy is authoritative when reachable: the local store can hold a stale
+  // pre-absorb row from another tab or device, and trusting it would resurrect tries
+  // a send already folded in (double-counting the day). Fall back to the local copy
+  // only when the read fails or Supabase isn't configured.
   let existingTries = 0
-  const local = state.ascents.find((a) => a.id === id)
-  if (local) {
-    existingTries = local.tries
-  } else if (supabase) {
-    const { data } = await supabase
+  let serverAnswered = false
+  if (supabase) {
+    const { data, error } = await supabase
       .from('ascents')
       .select('tries, deleted')
       .eq('id', id)
       .maybeSingle()
-    const row = data as { tries: number; deleted: boolean } | null
-    if (row && !row.deleted) existingTries = row.tries
+    if (!error) {
+      serverAnswered = true
+      const row = data as { tries: number; deleted: boolean } | null
+      if (row && !row.deleted) existingTries = row.tries
+    }
+  }
+  if (!serverAnswered) {
+    const local = state.ascents.find((a) => a.id === id)
+    if (local) existingTries = local.tries
   }
 
   await createAscent({
@@ -295,6 +334,27 @@ export async function updateAscent(id: string, patch: AscentPatch): Promise<void
     setState({ ascents: prev })
     throw new Error(error.message)
   }
+}
+
+/**
+ * Finish an absorb: soft-delete the attempt row whose tries a send just folded in —
+ * but only while the row still holds exactly those tries. A peer device or tab may
+ * have added tries while the sheet sat open; deleting then would silently destroy
+ * them, so on any mismatch (or an unverifiable read) the row is left in place — a
+ * visible leftover beats invisible loss.
+ */
+export async function absorbAttemptRow(id: string, expectedTries: number): Promise<void> {
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('ascents')
+      .select('tries, deleted')
+      .eq('id', id)
+      .maybeSingle()
+    if (error) return
+    const row = data as { tries: number; deleted: boolean } | null
+    if (!row || row.deleted || row.tries !== expectedTries) return
+  }
+  await deleteAscent(id)
 }
 
 /** Soft-delete an ascent (optimistic remove; rolls back on failure). */

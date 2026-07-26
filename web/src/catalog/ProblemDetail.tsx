@@ -16,7 +16,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, ListPlus, Repeat, Star } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInDialog } from '../auth/SignInDialog'
-import { addAttemptTries } from '../logbook/ascents'
+import { addAttemptTries, getAscentsSnapshot, settleAscents } from '../logbook/ascents'
+import { problemLogContext, type ProblemLogContext } from '../logbook/problemHistory'
 import { TryStepper } from '../logbook/TryStepper'
 import { useLightUp } from '../ble/useLightUp'
 import { CatalogBoard } from '../board/CatalogBoard'
@@ -38,6 +39,14 @@ import { ProblemDetailQueueStrip } from './ProblemDetailQueueStrip'
 import { useActiveQueueProblems } from '../sessions/useActiveQueueProblems'
 import { useShowPreviews } from './previewsStore'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 interface ProblemDetailProps {
   /** The problem to show (resolved from ?problem, with full-slab fallback, upstream). */
@@ -87,6 +96,12 @@ export function ProblemDetail({
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null)
   const [logOpen, setLogOpen] = useState(false)
   const [signInOpen, setSignInOpen] = useState(false)
+  // Logging on a problem already sent today — confirm before a duplicate send ('send')
+  // or before starting to count more tries ('tries'); null = no dialog.
+  const [sentTodayConfirm, setSentTodayConfirm] = useState<'send' | 'tries' | null>(null)
+  // A history read (settle + flush drain) is in flight — re-entrancy guard for the
+  // gate taps and the Log ascent button's disabled state.
+  const [logBusy, setLogBusy] = useState(false)
   // Inline "Log try" stepper state: session-local pending tries for the shown problem,
   // written (merged) to the unsent-attempt row only when leaving the problem (iOS parity).
   // The pending problem is held as the object so a leave-flush needs no list lookup.
@@ -127,15 +142,30 @@ export function ProblemDetail({
   // ── Deferred flush of the inline "Log try" stepper (iOS parity) ──────────────
   // Write/merge the unsent-attempt row only when the user leaves the problem: paging
   // to another problem, or closing the pager (unmount). Same-day tries accumulate.
+  // Flushes are tracked per problem identity (and chained, keeping their
+  // read-modify-write order) so the log-send gate can drain a pending flush before
+  // deciding what to absorb — otherwise a quick page-away-and-back could log a send
+  // that misses the just-flushed tries and leaves two rows for the day.
+  const flushInFlight = useRef<Map<string, Promise<void>>>(new Map())
   const flush = useCallback((p: CatalogProblem | null, tries: number) => {
     if (!p || tries <= 0) return
-    void addAttemptTries({
-      sourceCatalogId: p.source_catalog_id,
-      problemName: p.name,
-      problemGrade: p.grade,
-      boardLayoutId: board.layoutId,
-      date: new Date().toISOString(),
-      addTries: tries,
+    const identity = p.source_catalog_id
+    const prev = flushInFlight.current.get(identity) ?? Promise.resolve()
+    const next = prev
+      .then(() =>
+        addAttemptTries({
+          sourceCatalogId: p.source_catalog_id,
+          problemName: p.name,
+          problemGrade: p.grade,
+          boardLayoutId: board.layoutId,
+          date: new Date().toISOString(),
+          addTries: tries,
+        }),
+      )
+      .catch(() => {})
+    flushInFlight.current.set(identity, next)
+    void next.finally(() => {
+      if (flushInFlight.current.get(identity) === next) flushInFlight.current.delete(identity)
     })
   }, [board.layoutId])
 
@@ -211,17 +241,35 @@ export function ProblemDetail({
   // (starts at 0 each time a problem is shown; not hydrated from existing logs, per iOS).
   const currentTries = pendingProblem?.source_catalog_id === currentId ? pendingTries : 0
 
-  function addTry() {
-    if (!signedIn) {
-      setSignInOpen(true)
-      return
-    }
+  function commitAddTry() {
     if (pendingProblem?.source_catalog_id !== currentId) {
       setPendingProblem(current)
       setPendingTries(1)
     } else {
       setPendingTries((t) => t + 1)
     }
+  }
+
+  async function addTry() {
+    if (!signedIn) {
+      setSignInOpen(true)
+      return
+    }
+    // Starting to count tries on a problem already sent today asks first (working it
+    // more vs a mis-tap). Only the FIRST tap gates — once counting, +/- flow freely.
+    if (currentTries === 0) {
+      if (logBusy) return
+      setLogBusy(true)
+      try {
+        if ((await resolveLogContext()).todaySend) {
+          setSentTodayConfirm('tries')
+          return
+        }
+      } finally {
+        setLogBusy(false)
+      }
+    }
+    commitAddTry()
   }
 
   function removeTry() {
@@ -233,12 +281,24 @@ export function ProblemDetail({
     })
   }
 
-  // "Log ascent" opens the full sheet as a SEND, pre-seeding tries from the stepper.
-  function logAscent() {
-    if (!signedIn) {
-      setSignInOpen(true)
-      return
-    }
+  // The logged-history context behind the sent-today gate and the absorb seed. The
+  // render-closure `ascents` array can lag reality two ways in the moment that
+  // matters, so this settles the store (kicking a retry when idle/errored — the
+  // cold-start / gym-wifi case that would otherwise silently disable the gate and
+  // the absorb), drains any in-flight flush for this problem, and reads a FRESH
+  // store snapshot.
+  async function resolveLogContext(): Promise<ProblemLogContext> {
+    await settleAscents()
+    await (flushInFlight.current.get(currentId) ?? Promise.resolve())
+    return problemLogContext(getAscentsSnapshot(), currentId, new Date())
+  }
+
+  // Open the full sheet as a SEND that folds in the day's earlier tries: the attempt
+  // row flushed earlier today (absorbed + soft-deleted on save) plus the inline
+  // stepper, plus 1 for the successful go — the stepper counts failed goes.
+  // The sheet also learns the problem's logged past (Flash vs Session flash).
+  function openLogSheet(context: ProblemLogContext) {
+    const earlierToday = (context.todayAttempt?.tries ?? 0) + currentTries
     setLogTarget({
       kind: 'create',
       sourceCatalogId: currentId,
@@ -246,9 +306,36 @@ export function ProblemDetail({
       problemGrade: current.grade,
       boardLayoutId: board.layoutId,
       sent: true,
-      tries: Math.max(currentTries, 1),
+      tries: earlierToday + 1,
+      absorb: context.todayAttempt
+        ? { id: context.todayAttempt.id, tries: context.todayAttempt.tries }
+        : undefined,
+      earlierTriesToday: earlierToday,
+      priorDays: context.priorDays,
+      hasPriorHistory: context.hasHistory || currentTries > 0,
     })
     setLogOpen(true)
+  }
+
+  // "Log ascent" — but a send already logged today asks first (a second same-day send
+  // is a deliberate duplicate, usually a mis-tap), then proceeds via openLogSheet.
+  async function logAscent() {
+    if (!signedIn) {
+      setSignInOpen(true)
+      return
+    }
+    if (logBusy) return
+    setLogBusy(true)
+    try {
+      const context = await resolveLogContext()
+      if (context.todaySend) {
+        setSentTodayConfirm('send')
+        return
+      }
+      openLogSheet(context)
+    } finally {
+      setLogBusy(false)
+    }
   }
 
   // Side-swipe the board to page prev/next (vertical drags fall through to the
@@ -379,8 +466,8 @@ export function ProblemDetail({
       </div>
 
       <div className="flex items-center gap-3">
-        <TryStepper count={currentTries} onRemove={removeTry} onAdd={addTry} />
-        <Button size="lg" className="flex-1" onClick={logAscent}>
+        <TryStepper count={currentTries} onRemove={removeTry} onAdd={() => void addTry()} />
+        <Button size="lg" className="flex-1" onClick={() => void logAscent()} disabled={logBusy}>
           <CheckCircle2 className="size-5" />
           Log ascent
         </Button>
@@ -409,13 +496,48 @@ export function ProblemDetail({
         open={logOpen}
         onOpenChange={setLogOpen}
         target={logTarget}
-        onSaved={() => {
-          // The send consumed the pending tries — clear them so they aren't ALSO
-          // flushed as a separate unsent-attempt row.
+        onSaved={({ keptTodayTries }) => {
+          // An on-today send folded the pending tries into itself — clear them so they
+          // aren't ALSO flushed as a separate unsent-attempt row. A backdated send does
+          // NOT own today's tries, so keep the pending stepper: the normal leave-flush
+          // writes those tries onto today's attempt row reliably.
+          if (keptTodayTries) return
           setPendingProblem(null)
           setPendingTries(0)
         }}
       />
+      <Dialog
+        open={sentTodayConfirm !== null}
+        onOpenChange={(open) => !open && setSentTodayConfirm(null)}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Already sent today</DialogTitle>
+            <DialogDescription>
+              {sentTodayConfirm === 'tries'
+                ? `You already logged a send of ${current.name} today. Log more tries on it anyway?`
+                : `You already logged a send of ${current.name} today. Log it again as a separate entry?`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSentTodayConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const action = sentTodayConfirm
+                setSentTodayConfirm(null)
+                if (action === 'tries') commitAddTry()
+                // Store already settled by the gate that opened this dialog — the
+                // re-resolve is a fast fresh-snapshot read.
+                else void resolveLogContext().then(openLogSheet)
+              }}
+            >
+              {sentTodayConfirm === 'tries' ? 'Log try anyway' : 'Log again'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <SignInDialog
         open={signInOpen}
         onOpenChange={setSignInOpen}

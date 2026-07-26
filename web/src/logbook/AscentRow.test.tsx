@@ -37,3 +37,23 @@ describe('AscentRow — sent vs attempt', () => {
     expect(screen.queryByLabelText('Sent')).toBeNull()
   })
 })
+
+describe('AscentRow — Flash vs Session flash', () => {
+  it('labels a 1-try send Flash without prior history', () => {
+    render(<AscentRow ascent={ascent({ tries: 1, sent: true })} board={board} onEdit={vi.fn()} />)
+    expect(screen.getByText('Flash')).toBeInTheDocument()
+  })
+
+  it('labels a 1-try send Session flash when the problem has prior history', () => {
+    render(
+      <AscentRow
+        ascent={ascent({ tries: 1, sent: true })}
+        board={board}
+        onEdit={vi.fn()}
+        hasPriorHistory
+      />,
+    )
+    expect(screen.getByText('Session flash')).toBeInTheDocument()
+    expect(screen.queryByText('Flash')).toBeNull()
+  })
+})

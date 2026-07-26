@@ -91,6 +91,51 @@ Opens prefilled with `tries: max(pending, 1)` and `sent: true`; captures `votedG
 `comment`, `date`. Supports both create (nil ascent) and edit (mutate existing) modes. When
 `sent == false`, it forces `votedGrade = problemGrade`.
 
+### Web: a send absorbs the day's attempt row
+
+The web client (`web/src/logbook/LogAscentSheet.tsx` + `catalog/ProblemDetail.tsx`) folds the
+day's tries into an explicit send instead of leaving two rows for the day:
+
+- "Log ascent" seeds the sheet's tries with *(today's unsent-attempt tries) + (pending stepper
+  tries) + 1* — the stepper counts **failed** goes; the `+1` is the successful one. The sheet
+  shows the breakdown ("N tries from earlier today **+ this send**" / "Tried on N earlier days"),
+  so the auto-added send is explicit and the seeded total never reads as a silent off-by-one.
+- On save, the send row carries the total and today's unsent attempt row is **soft-deleted**
+  (`LogTarget.absorb`), so a day of tries + a send lands as **one** logbook entry.
+- **Only while the send stays dated today.** Re-dating the send off today unfolds the absorb:
+  the day's earlier tries belong to *today*, not the backdated send, so the send drops back to
+  its own tries (`tries − earlierTriesToday`) and today's persisted attempt row is left in place.
+  The never-persisted inline-stepper tries aren't written by the sheet — instead it returns
+  `onSaved({ keptTodayTries: true })` so the caller (`ProblemDetail`) *keeps* its pending stepper,
+  and its own deferred leave-flush persists them onto today's attempt row reliably (no fragile
+  best-effort write that could silently drop them). The sheet reflects the unfold live — the
+  count and Flash label update, the "+ this send" line hides, and a note says "Today's N tries
+  stay as a separate entry". This is what keeps a backdated send from double-counting the day.
+- Attempt rows from earlier days are untouched history — a send never rewrites a past day.
+  Tries logged *after* a send revive a fresh attempt row for that day (deterministic-id
+  semantics), which then shows as its own entry.
+- A problem **already sent today** (local day) asks before logging more — both "Log
+  ascent" and the *first* tap of the inline try stepper open a confirm dialog ("Already
+  sent today …"), so a duplicate same-day send or a post-send attempt row is always
+  deliberate, never a mis-tap. Once confirmed, further stepper taps flow freely.
+
+The iOS app is **on hold** and does not absorb — it writes the send alongside the day's
+attempt row, and its accumulate-flush trusts its local row copy. The web side guards its
+half (the flush reads the server row's `tries`/`deleted` before accumulating —
+`addAttemptTries`; the absorb delete only fires while the row still holds the folded
+tries — `absorbAttemptRow`). These guards matter even web-only (two open tabs recreate
+the same races); if iOS development resumes, it must mirror them before cross-device
+same-day logging is safe.
+
+### Flash vs Session flash (web)
+
+"Flash" is reserved for problems with **no logged history at all**. A one-try send on a problem
+with any earlier-dated row (attempts *or* sends) is labeled **"Session flash"** — both in the
+log sheet's tries stepper and on the logbook row badge (`triesLabel` in `tryBucket.ts`, history
+derived in `problemHistory.ts`). A lone unsent attempt still reads "1 try", never a flash. The
+grade pyramid is unchanged: it buckets by the row's tries count, so a session flash still lands
+in the flash bucket.
+
 ## Logbook & grade pyramid
 
 - **Logbook** (`LogbookView`) filters ascents by `effectiveBoardLayoutId` (not the raw
@@ -114,5 +159,7 @@ in [navigation-and-ui-flows.md](navigation-and-ui-flows.md); board-scoped keys a
 - `boardLayoutId` defaults to 7 to backfill pre-multi-board ascents; resolve board via
   `effectiveBoardLayoutId`.
 - `sent == false` rows are attempts-only: excluded from the pyramid, `votedGrade` ignored.
-- Same-day merge only applies to un-sent attempts; explicit sends always create a new row.
+- Same-day merge only applies to un-sent attempts; explicit sends always create a new row —
+  but on **web** a send also absorbs (soft-deletes) today's attempt row after folding its
+  tries in (see "Web: a send absorbs the day's attempt row").
 - Ascents are denormalized on purpose — don't "normalize" by joining to `Problem`.

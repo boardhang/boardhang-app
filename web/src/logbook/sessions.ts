@@ -24,7 +24,7 @@ const titleFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 /** Local calendar-day key for a Date (matches iOS `Calendar.current.startOfDay`). */
-function localDayKey(d: Date): string {
+export function localDayKey(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
@@ -79,6 +79,8 @@ export function pyramid(ascents: Ascent[]): Pyramid {
   const earliest = new Map<string, Ascent>()
   for (const a of ascents) {
     if (!a.sent) continue
+    // Deliberately narrower than ascentIdentity (no userProblemId fallback): the iOS
+    // pyramid keys by sourceCatalogID-or-problemName, and this must match it exactly.
     const key = a.sourceCatalogId ?? `name:${a.problemName}`
     const existing = earliest.get(key)
     if (!existing || a.date < existing.date) earliest.set(key, a)
