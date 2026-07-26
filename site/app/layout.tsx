@@ -39,9 +39,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             Boardhang is an unofficial, community-built project — not affiliated with Moon
             Climbing Ltd.
           </p>
+          <p className="mt-3">
+            Open source under the MIT license —{' '}
+            <a href="https://github.com/boardhang/boardhang-app">issues and pull requests
+            welcome</a>.
+          </p>
           <p className="mt-3 flex gap-4">
             <a href="https://www.boardhang.app">Open the app</a>
             <Link href="/guides">Guides</Link>
+            <a href="https://github.com/boardhang/boardhang-app">GitHub</a>
           </p>
         </footer>
       </body>

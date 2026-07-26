@@ -26,6 +26,7 @@ const softwareApplicationJsonLd = {
   url: APP_URL,
   applicationCategory: 'SportsApplication',
   operatingSystem: 'Web',
+  license: 'https://opensource.org/license/mit/',
   offers: {
     '@type': 'Offer',
     price: '0',
@@ -46,6 +47,7 @@ const softwareApplicationJsonLd = {
     'Recently-viewed history of lit problems',
     'Local logbook with a grade pyramid, exportable anytime — you own your data',
     'Runs in the browser with no install and no account',
+    'Open source under the MIT license — issues and pull requests welcome on GitHub',
   ],
 }
 
@@ -162,6 +164,19 @@ export default function Home() {
         <p className="mt-3 text-[var(--muted)]">
           Web Bluetooth needs Chrome or Edge on desktop or Android. On iPhone, use the Bluefy
           browser. Browsing the catalog works in any modern browser.
+        </p>
+      </section>
+
+      <section className="mt-14">
+        <h2 className="text-xl font-semibold">Built in the open</h2>
+        <p className="mt-3 text-[var(--muted)]">
+          Boardhang is open source under the MIT license — the whole app, catalog to
+          Bluetooth, lives{' '}
+          <a href="https://github.com/boardhang/boardhang-app">on GitHub</a>. If something
+          bugs you or there’s a feature you wish existed,{' '}
+          <a href="https://github.com/boardhang/boardhang-app/issues">open an issue</a> and
+          tell us, or send a pull request and build it with us. That’s how this app got made
+          in the first place.
         </p>
       </section>
 
