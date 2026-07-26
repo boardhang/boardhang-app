@@ -7,7 +7,7 @@ import { APP_URL, SITE_URL } from '@/lib/urls'
 export const metadata: Metadata = {
   title: { absolute: 'Boardhang — free web app for LED MoonBoards' },
   description:
-    'Boardhang lights MoonBoard problems on your board over Web Bluetooth — no install, no account. Browse ~12,000 curated problems across 5 layouts, including 2,832 official benchmarks.',
+    'A free web app for LED MoonBoards: filters that stay put, sessions with friends, and one tap to light any problem over Web Bluetooth. No install, no account.',
   alternates: { canonical: '/' },
   openGraph: og({ url: '/' }),
 }
@@ -40,6 +40,9 @@ const softwareApplicationJsonLd = {
     'Catalog of ~12,000 curated MoonBoard problems including 2,832 official benchmarks',
     'Covers 5 layouts: MoonBoard 2016, 2024, Masters 2017, Masters 2019 and Mini MoonBoard 2025',
     'Search, grade filters and favorites',
+    'Remembers filter and sort settings per board between visits',
+    'Collaboration sessions: see what each climber in your crew has sent or tried, and what is lit on the wall right now',
+    'Recently-viewed history of lit problems',
     'Local logbook with a grade pyramid',
     'Runs in the browser with no install and no account',
   ],
@@ -53,12 +56,13 @@ export default function Home() {
 
       <section className="pt-8">
         <h1 className="text-3xl font-semibold leading-tight">
-          Light MoonBoard problems on your LED board
+          The MoonBoard app we wished we had
         </h1>
         <p className="mt-4 text-lg text-[var(--muted)]">
-          Boardhang is a free web app for LED MoonBoards. Open it in the browser — no
-          install, no account — and it connects to your board over Web Bluetooth and lights
-          problems on the wall.
+          Boardhang is a free web app for LED MoonBoards, built by two climbers tired of
+          re-setting filters every visit, cross-checking logbooks by shouting across the mat,
+          and asking “which problem is that?”. Open it in a browser — no install, no
+          account — and it lights problems on your board over Web Bluetooth.
         </p>
         <p className="mt-6 flex flex-wrap items-center gap-4">
           <a
@@ -68,6 +72,23 @@ export default function Home() {
             Open the app
           </a>
           <Link href="/guides">Read the guides</Link>
+        </p>
+      </section>
+
+      <section className="mt-14">
+        <h2 className="text-xl font-semibold">Why we built it</h2>
+        <p className="mt-3 text-[var(--muted)]">
+          Boardhang started with two climbers, one board and a growing list of annoyances
+          with the official app. The default sorting never made sense, and nothing was
+          saved — every trip into the catalog began with setting the same filters again.
+          Climbing together meant constant cross-checking: “have you done this one?”, “what
+          can we both try?”. And every time someone changed the problem, the same questions
+          from across the room: “which problem is that?” and “what was the one before?”.
+        </p>
+        <p className="mt-3 text-[var(--muted)]">
+          So we built the app we wished we had: filters that stay how you set them, sessions
+          that show what everyone has sent and tried, what’s lit on the wall right now, and a
+          recently-viewed list for the one before.
         </p>
       </section>
 
@@ -90,6 +111,21 @@ export default function Home() {
             </strong>{' '}
             Pick a problem and Boardhang sends it to your board over Web Bluetooth — start,
             hand and finish holds each in their own color.
+          </li>
+          <li>
+            <strong className="font-medium text-[var(--foreground)]">
+              Keep your filters.
+            </strong>{' '}
+            Sort and filter the catalog once — Boardhang remembers your setup per board, so
+            every visit starts where you left off, not from scratch.
+          </li>
+          <li>
+            <strong className="font-medium text-[var(--foreground)]">
+              Session with friends.
+            </strong>{' '}
+            Sign in free to start a session: see what everyone has sent or tried without
+            asking, find a problem to work on together, and always know what’s lit on the
+            wall — with a recently-viewed list for “what was that last one?”.
           </li>
           <li>
             <strong className="font-medium text-[var(--foreground)]">
