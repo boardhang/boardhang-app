@@ -2,33 +2,28 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { og } from '@/lib/og'
 
+const description = 'Practical guides to browsing MoonBoard problems on the web.'
+
 export const metadata: Metadata = {
-  title: 'Guides',
-  description:
-    'Guides to browsing MoonBoard problems on the web and building DIY MoonBoards.',
+  title: 'MoonBoard guides: browsing problems on the web',
+  description,
   alternates: { canonical: '/guides' },
   openGraph: og({
-    title: 'Guides',
-    description:
-      'Guides to browsing MoonBoard problems on the web and building DIY MoonBoards.',
+    title: 'MoonBoard guides: browsing problems on the web',
+    description,
     url: '/guides',
   }),
 }
 
 const guides = [
   {
-    href: '/guides/moonboard-website-retired',
-    title: 'The MoonBoard website is retired — where to browse problems now',
+    href: '/guides/moonboard-website-not-working',
+    title: 'MoonBoard website not working — where to browse problems now',
     description:
-      'moonboard.com no longer serves problem pages. Where you can still browse MoonBoard problems — in the browser or in the official app.',
+      'A comparison of the four places you can still browse MoonBoard problems — including the honest limits of ours.',
     date: 'July 25, 2026',
     dateTime: '2026-07-25',
   },
-]
-
-const upcoming = [
-  'Build a DIY LED MoonBoard: parts, wiring and firmware',
-  'The 20-byte BLE bug: lighting MoonBoard problems from the browser',
 ]
 
 export default function Guides() {
@@ -36,7 +31,9 @@ export default function Guides() {
     <>
       <h1 className="text-3xl font-semibold">Guides</h1>
       <p className="mt-4 text-[var(--muted)]">
-        Practical guides to browsing MoonBoard problems on the web and building DIY LED boards.
+        moonboard.com no longer serves problem pages and the official app is the only
+        sanctioned source, so a lot of MoonBoard knowledge now lives in forum threads and
+        GitHub issues. These guides write it down.
       </p>
       <ul className="mt-8 space-y-8">
         {guides.map((guide) => (
@@ -53,12 +50,6 @@ export default function Guides() {
               </p>
             </article>
           </li>
-        ))}
-      </ul>
-      <h2 className="mt-12 text-xl font-semibold">Coming soon</h2>
-      <ul className="mt-4 list-disc space-y-2 pl-6 text-[var(--muted)]">
-        {upcoming.map((title) => (
-          <li key={title}>{title}</li>
         ))}
       </ul>
     </>

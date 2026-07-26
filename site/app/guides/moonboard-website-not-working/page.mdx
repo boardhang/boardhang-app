@@ -1,17 +1,24 @@
 import { JsonLd } from '@/components/json-ld'
 import { og } from '@/lib/og'
 
+export const title = 'MoonBoard website not working? Where to browse problems'
+export const description =
+  'moonboard.com’s problem pages no longer load. Here is every place you can still browse MoonBoard problems in 2026 — in the browser or in the official app.'
+export const url = '/guides/moonboard-website-not-working'
+export const published = '2026-07-25'
+
 export const metadata = {
-  title: 'The MoonBoard website is retired — where to browse problems now',
-  description:
-    'moonboard.com no longer serves problem pages. Here is every place you can still browse MoonBoard problems in 2026 — in the browser or in the official app.',
-  alternates: { canonical: '/guides/moonboard-website-retired' },
+  title: { absolute: title },
+  description,
+  alternates: { canonical: url },
   openGraph: og({
-    title: 'The MoonBoard website is retired — where to browse problems now',
-    description:
-      'moonboard.com no longer serves problem pages. Here is every place you can still browse MoonBoard problems in 2026 — in the browser or in the official app.',
+    title,
+    description,
     type: 'article',
-    url: '/guides/moonboard-website-retired',
+    url,
+    publishedTime: published,
+    modifiedTime: published,
+    authors: ['Boardhang'],
   }),
 }
 
@@ -25,8 +32,8 @@ export const faqs = [
     a: 'Yes, through community-built sites. Boardhang offers around 12,000 curated problems across five MoonBoard layouts, free and without an account. Boardsesh covers Kilter, Tension and MoonBoard, and MoonBoard Guidebook is a benchmarks-only browser. None of these are official, and none carry every problem ever set.',
   },
   {
-    q: 'What happened to my MoonBoard favorites after the app update?',
-    a: 'The June 22, 2026 migration required a full uninstall and reinstall of the MoonBoard app, and favorites that were only stored locally on the device were lost for many users in the process.',
+    q: 'What happened to my MoonBoard favorites and saved lists after the app update?',
+    a: 'The June 2026 migration required a full uninstall and reinstall of the MoonBoard app. Climbers reported that favorites and saved lists stored only on the device did not survive the reinstall.',
   },
   {
     q: 'Is Boardhang an official MoonBoard app?',
@@ -34,7 +41,7 @@ export const faqs = [
   },
   {
     q: 'Does the old MoonBoard app still work?',
-    a: 'Not for long. Moon Climbing scheduled the old app and its API to stop working about six weeks after the June 2026 migration finished rolling out, so the new app is the only supported option going forward.',
+    a: 'Not for long. Moon Climbing announced that the old app and its API would stop working about six weeks after the June 2026 migration finished rolling out, so the new app is the only supported option going forward.',
   },
 ]
 
@@ -42,17 +49,30 @@ export const faqs = [
   data={{
     '@context': 'https://schema.org',
     '@type': 'Article',
-    headline: 'The MoonBoard website is retired — where to browse problems now',
-    description:
-      'moonboard.com no longer serves problem pages. Here is every place you can still browse MoonBoard problems in 2026 — in the browser or in the official app.',
-    datePublished: '2026-07-25',
-    dateModified: '2026-07-25',
+    headline: title,
+    description,
+    image: 'https://boardhang.app/opengraph-image.png',
+    datePublished: published,
+    dateModified: published,
+    isAccessibleForFree: true,
     author: {
       '@type': 'Organization',
       name: 'Boardhang',
       url: 'https://boardhang.app',
     },
-    mainEntityOfPage: 'https://boardhang.app/guides/moonboard-website-retired',
+    publisher: {
+      '@type': 'Organization',
+      name: 'Boardhang',
+      url: 'https://boardhang.app',
+      logo: {
+        '@type': 'ImageObject',
+        url: 'https://boardhang.app/opengraph-image.png',
+      },
+    },
+    mainEntityOfPage: {
+      '@type': 'WebPage',
+      '@id': `https://boardhang.app${url}`,
+    },
   }}
 />
 
@@ -60,6 +80,7 @@ export const faqs = [
   data={{
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
+    mainEntityOfPage: `https://boardhang.app${url}`,
     mainEntity: faqs.map((f) => ({
       '@type': 'Question',
       name: f.q,
@@ -68,7 +89,7 @@ export const faqs = [
   }}
 />
 
-# The MoonBoard website is retired — where to browse problems now
+# MoonBoard website not working — where to browse problems now
 
 <p className="mt-2 text-sm text-[var(--muted)]">Last updated: July 25, 2026</p>
 
@@ -98,7 +119,7 @@ we are biased — here is the honest comparison anyway.
 
 ### 1. Boardhang — free, in the browser, no account
 
-[Boardhang](https://www.boardhang.app) is a curated MoonBoard catalog that runs
+[Boardhang](/) is a curated MoonBoard catalog that runs
 in any browser: roughly 12,000 problems (benchmarks plus problems with 10 or
 more repeats), including 2,832 official benchmarks, across MoonBoard 2016,
 MoonBoard 2024, Masters 2017, Masters 2019 and Mini 2025. You get filters,
@@ -109,6 +130,9 @@ Web Bluetooth.
 The honest limits: it is a curated subset, not every problem ever set; the data
 is community-mirrored; and it is unofficial, with no affiliation to Moon
 Climbing.
+
+[Open Boardhang in your browser](https://www.boardhang.app) — no install, no
+account.
 
 ### 2. The official MoonBoard app — complete, but app-only
 
@@ -171,17 +195,18 @@ anything recent.
   </table>
 </div>
 
-## What happened to my favorites?
+## What happened to my favorites and saved lists?
 
-On June 22, 2026, Moon Climbing rolled out an app migration that required a
-full uninstall and reinstall of the MoonBoard app. Favorites that were stored
-only locally on the device did not survive that step, and many climbers opened
-the new app to find years of saved problems gone. Moon also scheduled the old
-app and its API to stop working about six weeks after the migration finished
-rolling out, so staying on the old version is not a way out.
+In June 2026, Moon Climbing rolled out an app migration that required a full
+uninstall and reinstall of the MoonBoard app. Climbers reported that favorites
+and saved lists stored only on the device did not survive that step, and that
+they opened the new app to find years of saved problems and carefully built
+lists gone. Moon also announced that the old app and its API would stop working
+about six weeks after the migration finished rolling out, so staying on the old
+version is not a way out.
 
-There is no undo for locally stored favorites lost in the reinstall. If you are
-rebuilding a list from memory, browsing by grade and benchmark status in a
+There is no undo for favorites or lists that were only stored on the device. If
+you are rebuilding from memory, browsing by grade and benchmark status in a
 catalog like Boardhang or the official app is the fastest way to find the
 problems you remember. It is also a good argument for keeping your ticks
 somewhere that survives an app migration — an account-synced logbook, an

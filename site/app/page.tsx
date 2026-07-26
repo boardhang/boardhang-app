@@ -7,46 +7,59 @@ import { APP_URL, SITE_URL } from '@/lib/urls'
 export const metadata: Metadata = {
   title: { absolute: 'Boardhang — free web app for MoonBoards' },
   description:
-    'A free web app for MoonBoards: filters that stay put, sessions with friends, and one tap to light any problem over Web Bluetooth. No install, no account.',
+    'Free, unofficial web app for MoonBoards: browse around 12,000 problems, keep your filters between visits, and light any problem over Web Bluetooth.',
   alternates: { canonical: '/' },
   openGraph: og({ url: '/' }),
 }
 
+const ORG_ID = `${SITE_URL}/#organization`
+const GITHUB_URL = 'https://github.com/boardhang/boardhang-app'
+
 const organizationJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
+  '@id': ORG_ID,
   name: 'Boardhang',
   url: SITE_URL,
+  logo: `${SITE_URL}/opengraph-image.png`,
+  description:
+    'Boardhang is an unofficial, community-built free web app for MoonBoards, made by two climbers with a DIY LED board. Not affiliated with Moon Climbing Ltd.',
+  sameAs: [GITHUB_URL],
 }
 
 const softwareApplicationJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
+  '@id': `${SITE_URL}/#app`,
   name: 'Boardhang',
   url: APP_URL,
   applicationCategory: 'SportsApplication',
   operatingSystem: 'Web',
   license: 'https://opensource.org/license/mit/',
+  isAccessibleForFree: true,
+  publisher: { '@id': ORG_ID },
+  sameAs: [GITHUB_URL],
+  browserRequirements:
+    'Browsing the catalog works in any modern browser. Lighting problems over Web Bluetooth requires Chrome or Edge on desktop or Android, or the Bluefy browser on iOS.',
   offers: {
     '@type': 'Offer',
     price: '0',
     priceCurrency: 'USD',
   },
   description:
-    'Free, unofficial web app for DIY MoonBoards. Connects over Web Bluetooth and lights MoonBoard problems on boards running the open-source ArduinoMoonBoardLED firmware — including boards the official app cannot drive because it truncates Bluetooth writes over 20 bytes.',
+    'Free, unofficial web app for DIY MoonBoards. Connects over Web Bluetooth and lights MoonBoard problems on boards running the open-source ArduinoMoonBoardLED firmware.',
   featureList: [
     'Lights problems on DIY MoonBoards over Web Bluetooth',
     'Compatible with the open-source ArduinoMoonBoardLED Arduino firmware',
-    'Chunks Bluetooth writes, avoiding the official app’s 20-byte truncation bug on DIY LED systems',
     'Catalog of ~12,000 curated MoonBoard problems including 2,832 official benchmarks',
     'Covers 5 layouts: MoonBoard 2016, 2024, Masters 2017, Masters 2019 and Mini MoonBoard 2025',
     'Search, grade filters and favorites',
     'Remembers filter and sort settings per board between visits',
     'Every problem is shareable as a normal web link',
-    'Collaboration sessions: see what each climber in your crew has sent or tried, and what is lit on the wall right now',
+    'Collaboration sessions (free sign-in required): see what each climber in your crew has sent or tried, and what is lit on the wall right now',
     'Recently-viewed history of lit problems',
     'Local logbook with a grade pyramid, exportable anytime — you own your data',
-    'Runs in the browser with no install and no account',
+    'Runs in the browser with no install — browsing, filtering and lighting problems need no account',
     'Open source under the MIT license — issues and pull requests welcome on GitHub',
   ],
 }
@@ -104,15 +117,15 @@ export default function Home() {
               Light problems on the wall.
             </strong>{' '}
             Pick a problem and Boardhang sends it to your board over Web Bluetooth — start,
-            hand and finish holds each in their own color.
+            hand and finish holds each in their own color. It works with DIY LED MoonBoards
+            running the open-source ArduinoMoonBoardLED firmware.
           </li>
           <li>
             <strong className="font-medium text-[var(--foreground)]">
               Keep your filters.
             </strong>{' '}
             Sort and filter the catalog once — Boardhang remembers your setup per board, so
-            every visit starts where you left off, not from scratch. We also user-tested the
-            filter UX with climbers and rebuilt the parts everyone griped about.
+            every visit starts where you left off, not from scratch.
           </li>
           <li>
             <strong className="font-medium text-[var(--foreground)]">
@@ -139,7 +152,8 @@ export default function Home() {
           </li>
           <li>
             <strong className="font-medium text-[var(--foreground)]">Log your ascents.</strong>{' '}
-            A local logbook tracks what you have climbed and shows an accurate grade pyramid.
+            A local logbook tracks what you have climbed and builds a grade pyramid from every
+            ascent you log.
           </li>
           <li>
             <strong className="font-medium text-[var(--foreground)]">Own your logbook.</strong>{' '}
@@ -147,16 +161,6 @@ export default function Home() {
             never locked in or lost to an app migration.
           </li>
         </ul>
-      </section>
-
-      <section className="mt-14">
-        <h2 className="text-xl font-semibold">Why not the official app?</h2>
-        <p className="mt-3 text-[var(--muted)]">
-          The official MoonBoard app truncates Bluetooth writes longer than 20 bytes. Official
-          hardware works around that, but DIY LED systems receive cut-off messages, so longer
-          problems light up half-finished or not at all. Boardhang splits every message into
-          chunks the board can handle, so each hold lights the way it should.
-        </p>
       </section>
 
       <section className="mt-14">
@@ -186,7 +190,11 @@ export default function Home() {
           <a href="https://www.boardhang.app" className="font-medium">
             Open the app
           </a>{' '}
-          or start with the <Link href="/guides">guides</Link>.
+          — or read{' '}
+          <Link href="/guides/moonboard-website-not-working">
+            where to browse MoonBoard problems now that moonboard.com no longer serves them
+          </Link>
+          .
         </p>
       </section>
     </>

@@ -67,6 +67,6 @@ disclaimer; keep it.
 - Articles are MDX (`page.mdx`) with `metadata` + canonical, an Article JSON-LD
   block, a visible "Last updated" date, and — where a FAQ exists — a FAQPage JSON-LD
   block driven by the same array as the rendered FAQ so schema and text never drift
-  (see `site/app/guides/moonboard-website-retired/page.mdx` as the reference).
+  (see `site/app/guides/moonboard-website-not-working/page.mdx` as the reference).
 - Comparisons must stay honest and disclose that Boardhang writes them; no dead
   "coming soon" links on the guides index.
