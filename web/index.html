@@ -56,6 +56,17 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- The app is client-rendered, so this is the only markup an agent that does not
+         execute JavaScript ever sees — which is every AI crawler. It carries the one
+         link off this origin, to the indexable content site on the apex, so the link
+         graph is not one-way into a noindexed host. Inline styles on purpose: without
+         JS the bundle never loads, so no stylesheet applies. -->
+    <noscript>
+      <p style="max-width: 34rem; margin: 0 auto; padding: 2rem 1.5rem; font-family: system-ui, sans-serif; line-height: 1.6">
+        Boardhang needs JavaScript to run. For guides, and for what Boardhang is and who
+        builds it, visit <a href="https://boardhang.app">boardhang.app</a>.
+      </p>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

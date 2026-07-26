@@ -2,7 +2,16 @@
 // nav's Settings tab (`/settings`). Holds Appearance (theme) and per-surface climb
 // preview toggles; laid out as labeled Card rows so more settings can slot in later.
 
-import { ChevronRight, Download, Monitor, Moon, Sun } from 'lucide-react'
+import {
+  BookOpen,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  Info,
+  Monitor,
+  Moon,
+  Sun,
+} from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -19,6 +28,25 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: Monitor },
+]
+
+// The project site is a separate origin (the app is on www, the content site on the
+// apex — see docs/content-site.md). These open in a new tab: in an installed
+// standalone PWA, navigating the window to another origin strands the user with no
+// back affordance.
+const SITE_LINKS: { href: string; label: string; detail: string; icon: typeof Info }[] = [
+  {
+    href: 'https://boardhang.app/guides',
+    label: 'Guides',
+    detail: 'Where to browse MoonBoard problems, and how the board works.',
+    icon: BookOpen,
+  },
+  {
+    href: 'https://boardhang.app/about',
+    label: 'About Boardhang',
+    detail: 'Who makes it, where the catalog comes from, and how to reach us.',
+    icon: Info,
+  },
 ]
 
 const PREVIEW_OPTIONS: { surface: PreviewSurface; label: string; detail: string }[] = [
@@ -118,6 +146,27 @@ export function SettingsScreen() {
             </div>
             <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
           </Link>
+        </CardContent>
+      </Card>
+
+      <Card className="py-0">
+        <CardContent className="divide-y p-0">
+          {SITE_LINKS.map(({ href, label, detail, icon: Icon }) => (
+            <a
+              key={href}
+              href={href}
+              target="_blank"
+              rel="noopener"
+              className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50"
+            >
+              <Icon className="size-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium">{label}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div>
+              </div>
+              <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+            </a>
+          ))}
         </CardContent>
       </Card>
     </div>

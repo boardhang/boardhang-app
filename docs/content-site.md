@@ -67,13 +67,24 @@ Consequences that follow from this:
 Revisit only if the PWA itself ever needs to be indexable — that would mean
 server-rendering real content inside the app, which is the job this site exists to do.
 
-Open follow-ups this decision creates (neither is built):
+Follow-ups this decision created:
 
-- The PWA's share button should emit apex content URLs rather than www app URLs, so
-  pasted links land on an indexable page.
-- The PWA needs at least one link back to the apex. Today the apex links out to www
-  repeatedly and www links back nowhere, so the link graph is one-way into a
-  noindexed host.
+- **Done (2026-07-26): the PWA links back to the apex.** Two rows at the foot of
+  `web/src/shell/SettingsScreen.tsx` (Guides, About Boardhang), plus a `<noscript>` in
+  `web/index.html`. The `<noscript>` is the load-bearing half for crawlers: the app is
+  client-rendered, so an in-app React link is invisible to anything that does not
+  execute JavaScript, which is every AI crawler. Both are pinned by tests in
+  `SettingsScreen.test.tsx` — the links exist for a reason and should not be quietly
+  dropped.
+- **Blocked: the PWA's share button cannot emit apex content URLs yet.** Two reasons,
+  and both have to clear first. (1) There is no problem-share button — the only share
+  surface is `web/src/sessions/ShareSession.tsx`, which shares *session invites*, and
+  those must stay on www: a session has no content-page equivalent, and `joinUrl.ts`
+  builds from `window.location.origin` on purpose so a QR works on prod, preview and
+  localhost alike. (2) The apex problem pages do not exist —
+  `/problems/<layout>/<slug>-<id>` is reserved, not built, and is not in the apex→www
+  redirect list, so emitting such a URL today yields a 404. This becomes actionable as
+  part of shipping the programmatic problem pages, not before.
 
 Cloudflare fronts both hosts. Its "managed robots.txt / block AI bots" zone feature,
 when enabled, overrides **both** `web/public/robots.txt` and `site/`'s `robots.ts` —
