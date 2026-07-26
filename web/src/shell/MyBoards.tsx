@@ -4,31 +4,25 @@
 // join, because a board you climb on is this page's subject and a session is an occasional
 // overlay on it. Also the first-run surface (zero instances).
 //
-// Board setup lives behind the hero's "Set up" action; the guided flow replaces the
-// drawer below.
+// Adding and configuring both go through BoardSetupFlow — this screen only decides which
+// board (if any) that flow opens on.
 
 import { useRef, useState } from 'react'
-import { ScanQrCode, Settings2 } from 'lucide-react'
+import { Plus, ScanQrCode, Settings2 } from 'lucide-react'
 import { BOARDS, hasAngleChoice } from '../board/boards'
 import type { BoardInstance } from '../board/boardInstance'
-import { canSetAngle, canSetHoldSets, instanceName } from '../board/boardInstance'
+import { instanceName } from '../board/boardInstance'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
-import { activeCsv, holdSetContext } from '../board/holdSetMembership'
+import { holdSetContext } from '../board/holdSetMembership'
 import { CatalogBoard } from '../board/CatalogBoard'
 import { BoardHero } from './BoardHero'
+import { BoardSetupFlow } from './BoardSetupFlow'
 import { useSessions } from '../sessions/sessionsStore'
 import { useResumableSessions } from '../sessions/useResumableSessions'
 import { ResumableSessionRow } from '../sessions/ResumableSessionRow'
 import { ScanToJoinButton } from '../sessions/ScanToJoin'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import {
-  Drawer,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-} from '@/components/ui/drawer'
-import { Toggle } from '@/components/ui/toggle'
 
 /**
  * Whether the sharing loop exists yet. A single flag so every share entry point on this
@@ -36,14 +30,16 @@ import { Toggle } from '@/components/ui/toggle'
  */
 const SHARING_AVAILABLE = false
 
+/** What the setup flow is open on: adding a new board, configuring one, or closed. */
+type SetupTarget = 'add' | BoardInstance | null
+
 interface MyBoardsProps {
   /** Jump to the catalog after activating a board (given its instance id). */
   onActivated: (instanceId: string) => void
 }
 
 export function MyBoards({ onActivated }: MyBoardsProps) {
-  const { instances, activeInstance, addBoard, removeBoard, activateBoard, setAngle, setActiveHoldSetsRaw } =
-    useBoardStore()
+  const { instances, activeInstance, activateBoard } = useBoardStore()
   // Joining a session is a no-session action, so hide the scan affordance once one is active
   // (mirrors the catalog StartBar/ActiveBar swap). Signed-out users still see it — the join
   // route owns sign-in.
@@ -53,8 +49,10 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   // adopt-and-navigate; this screen just renders the section.
   const { resumable, resumingId, endedNotice, onResume } = useResumableSessions()
 
+  const [setUp, setSetUp] = useState<SetupTarget>(null)
+
   const addedIds = new Set(instances.map((i) => i.layoutId))
-  const addable = BOARDS.filter((b) => !addedIds.has(b.layoutId))
+  const anythingLeftToAdd = BOARDS.some((b) => !addedIds.has(b.layoutId))
 
   // Freeze the switcher order for this mount. Activating promotes the instance to the MRU
   // front in the store, but the list must not reshuffle under the user's finger — the
@@ -94,9 +92,6 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
     activateBoard(instanceId)
   }
 
-  const [setUpFor, setSetUpFor] = useState<string | null>(null)
-  const setUpInstance = instances.find((i) => i.instanceId === setUpFor)
-
   // Sessions, demoted: nothing renders while one is active (the session pill and the
   // catalog's own bar carry those controls), and only what exists renders otherwise. It
   // stays available at first-run on purpose — resuming a session started on another device
@@ -133,15 +128,24 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
     </section>
   )
 
+  const setupFlow = setUp !== null && (
+    <BoardSetupFlow
+      instance={setUp === 'add' ? undefined : setUp}
+      sharingAvailable={SHARING_AVAILABLE}
+      onClose={() => setSetUp(null)}
+    />
+  )
+
   if (instances.length === 0) {
     return (
       <div className="space-y-4">
         <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
           <p className="mb-1 font-medium text-foreground">Add your first board</p>
-          <p className="text-sm">Pick the MoonBoard you have to start browsing its problems.</p>
+          <p className="mb-4 text-sm">Pick the MoonBoard you have to start browsing its problems.</p>
+          <Button onClick={() => setSetUp('add')}>Add a board</Button>
         </div>
         {sessionStrip}
-        <AddBoardSection boards={addable} onAdd={addBoard} />
+        {setupFlow}
       </div>
     )
   }
@@ -153,7 +157,7 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
       <BoardHero
         instance={activeInstance}
         onBrowse={() => onActivated(activeInstance.instanceId)}
-        onSetUp={() => setSetUpFor(activeInstance.instanceId)}
+        onSetUp={() => setSetUp(activeInstance)}
         sharingAvailable={SHARING_AVAILABLE}
       />
 
@@ -169,52 +173,21 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
               key={instance.instanceId}
               instance={instance}
               onSetActive={() => promote(instance.instanceId)}
-              onSetUp={() => setSetUpFor(instance.instanceId)}
+              onSetUp={() => setSetUp(instance)}
             />
           ))}
         </section>
       )}
 
-      <AddBoardSection boards={addable} onAdd={addBoard} />
-
-      {setUpInstance && (
-        <BoardConfigDrawer
-          instance={setUpInstance}
-          onClose={() => setSetUpFor(null)}
-          onAngle={(angle) => setAngle(setUpInstance, angle)}
-          onHoldSets={(csv) => setActiveHoldSetsRaw(setUpInstance, csv)}
-          onRemove={() => {
-            removeBoard(setUpInstance.instanceId)
-            setSetUpFor(null)
-          }}
-        />
+      {anythingLeftToAdd && (
+        <Button variant="outline" className="w-full" onClick={() => setSetUp('add')}>
+          <Plus className="size-4" />
+          Add a board
+        </Button>
       )}
-    </div>
-  )
-}
 
-function AddBoardSection({
-  boards,
-  onAdd,
-}: {
-  boards: typeof BOARDS
-  onAdd: (layoutId: number) => void
-}) {
-  if (boards.length === 0) return null
-  return (
-    <section className="space-y-2">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Add a board
-      </h2>
-      {boards.map((board) => (
-        <div key={board.layoutId} className="flex items-center justify-between rounded-lg border px-3 py-2">
-          <span className="text-sm">{board.name}</span>
-          <Button size="sm" variant="outline" onClick={() => onAdd(board.layoutId)}>
-            Add
-          </Button>
-        </div>
-      ))}
-    </section>
+      {setupFlow}
+    </div>
   )
 }
 
@@ -241,7 +214,6 @@ function SwitcherRow({
   const holdSummary =
     installed.size >= filterable.length ? 'All hold sets' : `${installed.size} of ${filterable.length} sets`
   const subtitle = [hasAngleChoice(board) ? `${angle}°` : null, holdSummary].filter(Boolean).join(' · ')
-
   const name = instanceName(instance)
 
   return (
@@ -274,115 +246,5 @@ function SwitcherRow({
         </button>
       </CardContent>
     </Card>
-  )
-}
-
-interface BoardConfigDrawerProps {
-  instance: BoardInstance
-  onClose: () => void
-  onAngle: (angle: number) => void
-  onHoldSets: (csv: string) => void
-  onRemove: () => void
-}
-
-function BoardConfigDrawer({ instance, onClose, onAngle, onHoldSets, onRemove }: BoardConfigDrawerProps) {
-  const board = instance.layout
-  const angle = getAngle(instance)
-  const { membership, filterable, active: installed, visible } = holdSetContext(
-    board.membershipResource,
-    getActiveHoldSetsRaw(instance),
-  )
-  const [confirmRemove, setConfirmRemove] = useState(false)
-  const setName = (id: number) => membership.sets.find((s) => s.id === id)?.name ?? `Set ${id}`
-
-  function toggleSet(id: number) {
-    const next = new Set(installed)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    if (next.size === 0) return // empty = "all"; keep at least one
-    onHoldSets(activeCsv(next, membership))
-  }
-
-  return (
-    <Drawer open onOpenChange={(open) => !open && onClose()} showSwipeHandle>
-      <DrawerContent>
-        <DrawerHeader>
-          <DrawerTitle>{instanceName(instance)}</DrawerTitle>
-        </DrawerHeader>
-        <div className="space-y-5 px-4 pb-8">
-          {/* Live board preview: the installed hold sets' overlay art, so toggling
-              a set below makes its holds appear/disappear. No markers (no problem
-              selected) — mirrors iOS's HoldSetEditorView preview. Height-capped so
-              the pills and Remove button stay reachable in the bottom sheet; the
-              max-width is derived from the board aspect so height ≤ the cap and
-              tall boards letterbox narrower rather than overflow. */}
-          <div
-            className="mx-auto w-full"
-            style={{ maxWidth: `calc(45vh * ${board.geometry.width} / ${board.geometry.height})` }}
-          >
-            <CatalogBoard board={board} holds={[]} visibleHoldSetIds={visible} />
-          </div>
-          {/* A shared board's definition belongs to its owner, and the store refuses the
-              write regardless — so state it as read-only rather than offering a control
-              that silently does nothing. */}
-          {hasAngleChoice(board) &&
-            (canSetAngle(instance) ? (
-              <div className="space-y-1.5">
-                <div className="text-xs font-medium text-muted-foreground">Angle</div>
-                <div className="flex gap-1.5">
-                  {board.angles.map((a) => (
-                    <Toggle key={a} size="sm" variant="outline" pressed={angle === a} onPressedChange={() => onAngle(a)}>
-                      {a}°
-                    </Toggle>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <div className="text-xs font-medium text-muted-foreground">Angle</div>
-                <p className="text-sm">
-                  {angle}° <span className="text-muted-foreground">— fixed by the board’s owner</span>
-                </p>
-              </div>
-            ))}
-          {filterable.length > 0 &&
-            (canSetHoldSets(instance) ? (
-              <div className="space-y-1.5">
-                <div className="text-xs font-medium text-muted-foreground">Installed hold sets</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {filterable.map((id) => (
-                    <Toggle
-                      key={id}
-                      size="sm"
-                      variant="outline"
-                      pressed={installed.has(id)}
-                      disabled={installed.size === 1 && installed.has(id)}
-                      onPressedChange={() => toggleSet(id)}
-                    >
-                      {setName(id)}
-                    </Toggle>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <div className="text-xs font-medium text-muted-foreground">Installed hold sets</div>
-                <p className="text-sm">
-                  {[...installed].map(setName).join(', ')}{' '}
-                  <span className="text-muted-foreground">— set by the board’s owner</span>
-                </p>
-              </div>
-            ))}
-          <Button
-            variant={confirmRemove ? 'destructive' : 'outline'}
-            className="w-full"
-            onClick={() => (confirmRemove ? onRemove() : setConfirmRemove(true))}
-            onBlur={() => setConfirmRemove(false)}
-          >
-            {confirmRemove ? 'Confirm — remove this board' : 'Remove board'}
-          </Button>
-        </div>
-      </DrawerContent>
-    </Drawer>
   )
 }

@@ -46,11 +46,14 @@ beforeEach(() => {
   window.dispatchEvent(new StorageEvent('storage')) // reset boardStore snapshot
 })
 
-/** Add a board by name from the "Add a board" list. */
+/** Add a board by name, driving the guided setup flow to completion. */
 function addBoard(name: string) {
-  const addSection = screen.getByText('Add a board').closest('section')!
-  const addRow = within(addSection).getByText(name).closest('div')!
-  fireEvent.click(within(addRow).getByRole('button', { name: 'Add' }))
+  fireEvent.click(screen.getByRole('button', { name: /Add a board/ }))
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(name) }))
+  // Multi-angle boards get an angle step; single-angle ones skip straight to hold sets.
+  const next = screen.queryByRole('button', { name: 'Next' })
+  if (next) fireEvent.click(next)
+  fireEvent.click(screen.getByRole('button', { name: 'Add board' }))
 }
 
 /** The hero region (the active board). */
@@ -74,10 +77,22 @@ function openHeroConfig() {
 const toggles = () => screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed'))
 
 describe('MyBoards', () => {
-  it('shows the first-run prompt and every addable board when none are added', () => {
+  it('shows the first-run prompt with a single way in', () => {
     render(<MyBoards onActivated={() => {}} />)
     expect(screen.getByText('Add your first board')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(5)
+    expect(screen.getByRole('button', { name: 'Add a board' })).toBeInTheDocument()
+  })
+
+  it('offers every unheld board in the flow’s first step, and drops one once held', () => {
+    render(<MyBoards onActivated={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add a board' }))
+    expect(screen.getByText('Which board do you have?')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /MoonBoard/ })).toHaveLength(5)
+    fireEvent.click(screen.getByRole('button', { name: /Mini MoonBoard 2025/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add board' }))
+
+    fireEvent.click(screen.getByRole('button', { name: /Add a board/ }))
+    expect(screen.getAllByRole('button', { name: /MoonBoard/ })).toHaveLength(4)
   })
 
   it('offers Join a session with no active session (including first-run)', () => {
