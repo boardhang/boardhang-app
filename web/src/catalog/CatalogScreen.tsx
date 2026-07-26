@@ -13,7 +13,13 @@ import { toast } from 'sonner'
 import { getRouteApi } from '@tanstack/react-router'
 import { FONT_GRADES, GRADE_FILTER_FLOOR, gradeIndex } from '../board/grades'
 import { boardByLayoutId, defaultAngle } from '../board/boards'
-import { getActiveHoldSetsRaw, getAngle, setAngle, useBoardStore } from '../board/boardStore'
+import {
+  getActiveHoldSetsRaw,
+  getAngle,
+  instanceForLayout,
+  setAngle,
+  useBoardStore,
+} from '../board/boardStore'
 import { holdSetContext, isClimbable } from '../board/holdSetMembership'
 import { CatalogList } from './CatalogList'
 import { FilterSheet } from './FilterSheet'
@@ -54,10 +60,14 @@ export function CatalogScreen() {
   const search = routeApi.useSearch()
   const navigate = routeApi.useNavigate()
 
-  const { addedBoards, addBoard } = useBoardStore()
+  const { instances, addBoard } = useBoardStore()
   // beforeLoad guarantees the board exists in the registry (unknown ids redirect).
   const board = boardByLayoutId(Number(layoutId))!
-  const added = addedBoards.some((b) => b.layoutId === board.layoutId)
+  const added = instances.some((i) => i.layoutId === board.layoutId)
+  // Which instance of this layout is being browsed. The route names only the layout, so
+  // this resolves to the bare-layout-id instance; the explicit `instance` search param
+  // arrives with shared boards.
+  const instance = instanceForLayout(board)
 
   // Angle comes from the URL (?angle), never a fresh getAngle() in render — the URL
   // is the single truth, so localStorage can't drift from it. Fall back to the
@@ -66,9 +76,12 @@ export function CatalogScreen() {
 
   // Mirror the resolved angle back into boardStore so /boards (which can't read this
   // route) stays coherent with a deep-linked ?angle. Only writes when it differs.
+  // On a shared instance whose wall is fixed, setAngle refuses the write and getAngle
+  // already resolves to canonical, so this is inert rather than a back door into the
+  // owner's definition.
   useEffect(() => {
-    if (getAngle(board) !== angle) setAngle(board.layoutId, angle)
-  }, [board, angle])
+    if (getAngle(instance) !== angle) setAngle(instance, angle)
+  }, [instance, angle])
 
   const { problems, loading, degraded, resync } = useSlab(board.layoutId, angle)
   const { favoriteIds } = useFavorites()
@@ -187,7 +200,7 @@ export function CatalogScreen() {
   // Installed-hold-set climbable check. The raw string is read in render (boardStore
   // re-renders this component when it changes) and is a memo dep, so toggling installed
   // sets re-derives the filter without relying on a coincidental re-render.
-  const activeHoldSetsRaw = getActiveHoldSetsRaw(board.layoutId)
+  const activeHoldSetsRaw = getActiveHoldSetsRaw(instance)
   const context = useMemo<FilterContext>(() => {
     const { membership, active } = holdSetContext(board.membershipResource, activeHoldSetsRaw)
     return {

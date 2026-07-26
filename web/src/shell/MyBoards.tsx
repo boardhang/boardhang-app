@@ -8,7 +8,9 @@
 
 import { useRef, useState } from 'react'
 import { ScanQrCode, Settings2 } from 'lucide-react'
-import { BOARDS, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
+import { BOARDS, hasAngleChoice } from '../board/boards'
+import type { BoardInstance } from '../board/boardInstance'
+import { instanceName } from '../board/boardInstance'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { activeCsv, holdSetContext } from '../board/holdSetMembership'
 import { CatalogBoard } from '../board/CatalogBoard'
@@ -30,12 +32,12 @@ import { Toggle } from '@/components/ui/toggle'
 import { cn } from '@/lib/utils'
 
 interface MyBoardsProps {
-  /** Jump to the catalog after activating a board (given its layout id). */
-  onActivated: (layoutId: number) => void
+  /** Jump to the catalog after activating a board (given its instance id). */
+  onActivated: (instanceId: string) => void
 }
 
 export function MyBoards({ onActivated }: MyBoardsProps) {
-  const { addedBoards, activeBoard, addBoard, removeBoard, activateBoard, setAngle, setActiveHoldSetsRaw } =
+  const { instances, activeInstance, addBoard, removeBoard, activateBoard, setAngle, setActiveHoldSetsRaw } =
     useBoardStore()
   // Joining a session is a no-session action, so hide the scan affordance once one is active
   // (mirrors the catalog StartBar/ActiveBar swap). Signed-out users still see it — the join
@@ -46,7 +48,7 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   // adopt-and-navigate; MyBoards just renders the section.
   const { resumable, resumingId, endedNotice, onResume } = useResumableSessions()
 
-  const addedIds = new Set(addedBoards.map((b) => b.layoutId))
+  const addedIds = new Set(instances.map((i) => i.layoutId))
   const addable = BOARDS.filter((b) => !addedIds.has(b.layoutId))
 
   // Freeze the row order for this mount. "Set as active" promotes the board to
@@ -55,18 +57,18 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   // re-reads the MRU order (active board on top). Boards added this session
   // append; removed ones drop out — membership stays live, only order is frozen.
   // Seeded empty; the append loop below fills it in MRU order on first render.
-  const orderRef = useRef<number[]>([])
-  const byId = new Map(addedBoards.map((b) => [b.layoutId, b] as const))
-  const orderedBoards: CatalogBoardDef[] = []
+  const orderRef = useRef<string[]>([])
+  const byId = new Map(instances.map((i) => [i.instanceId, i] as const))
+  const orderedBoards: BoardInstance[] = []
   for (const id of orderRef.current) {
-    const b = byId.get(id)
-    if (b) {
-      orderedBoards.push(b)
+    const i = byId.get(id)
+    if (i) {
+      orderedBoards.push(i)
       byId.delete(id)
     }
   }
-  for (const b of addedBoards) if (byId.has(b.layoutId)) orderedBoards.push(b) // newly added this session
-  orderRef.current = orderedBoards.map((b) => b.layoutId)
+  for (const i of instances) if (byId.has(i.instanceId)) orderedBoards.push(i) // newly added this session
+  orderRef.current = orderedBoards.map((i) => i.instanceId)
 
   return (
     <div className="space-y-4">
@@ -99,7 +101,7 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
           Join a session
         </ScanToJoinButton>
       )}
-      {addedBoards.length === 0 ? (
+      {instances.length === 0 ? (
         <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
           <p className="mb-1 font-medium text-foreground">Add your first board</p>
           <p className="text-sm">Pick the MoonBoard you have to start browsing its problems.</p>
@@ -109,18 +111,18 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             My boards
           </h2>
-          {orderedBoards.map((board) => (
+          {orderedBoards.map((instance) => (
             <BoardCard
-              key={board.layoutId}
-              board={board}
-              active={board.layoutId === activeBoard.layoutId}
+              key={instance.instanceId}
+              instance={instance}
+              active={instance.instanceId === activeInstance.instanceId}
               // Active board → browse its catalog (already active, no switch).
-              onBrowse={() => onActivated(board.layoutId)}
+              onBrowse={() => onActivated(instance.instanceId)}
               // Inactive board → just switch the active board; stay on this list.
-              onSetActive={() => activateBoard(board.layoutId)}
-              onRemove={() => removeBoard(board.layoutId)}
-              onAngle={(angle) => setAngle(board.layoutId, angle)}
-              onHoldSets={(csv) => setActiveHoldSetsRaw(board.layoutId, csv)}
+              onSetActive={() => activateBoard(instance.instanceId)}
+              onRemove={() => removeBoard(instance.instanceId)}
+              onAngle={(angle) => setAngle(instance, angle)}
+              onHoldSets={(csv) => setActiveHoldSetsRaw(instance, csv)}
             />
           ))}
         </section>
@@ -146,7 +148,7 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
 }
 
 interface BoardCardProps {
-  board: CatalogBoardDef
+  instance: BoardInstance
   active: boolean
   onBrowse: () => void
   onSetActive: () => void
@@ -155,11 +157,12 @@ interface BoardCardProps {
   onHoldSets: (csv: string) => void
 }
 
-function BoardCard({ board, active, onBrowse, onSetActive, onRemove, onAngle, onHoldSets }: BoardCardProps) {
-  const angle = getAngle(board)
+function BoardCard({ instance, active, onBrowse, onSetActive, onRemove, onAngle, onHoldSets }: BoardCardProps) {
+  const board = instance.layout
+  const angle = getAngle(instance)
   const { filterable, active: installed } = holdSetContext(
     board.membershipResource,
-    getActiveHoldSetsRaw(board.layoutId),
+    getActiveHoldSetsRaw(instance),
   )
   const holdSummary =
     installed.size >= filterable.length ? 'All hold sets' : `${installed.size} of ${filterable.length} sets`
@@ -170,7 +173,7 @@ function BoardCard({ board, active, onBrowse, onSetActive, onRemove, onAngle, on
       <CardContent className="flex items-center gap-2 px-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="truncate font-medium">{board.name}</span>
+            <span className="truncate font-medium">{instanceName(instance)}</span>
             {active && (
               <Badge className="shrink-0 bg-accent text-accent-foreground">Active</Badge>
             )}
@@ -187,7 +190,7 @@ function BoardCard({ board, active, onBrowse, onSetActive, onRemove, onAngle, on
           </Button>
         )}
         <BoardConfigDrawer
-          board={board}
+          instance={instance}
           angle={angle}
           onAngle={onAngle}
           onHoldSets={onHoldSets}
@@ -199,17 +202,18 @@ function BoardCard({ board, active, onBrowse, onSetActive, onRemove, onAngle, on
 }
 
 interface BoardConfigDrawerProps {
-  board: CatalogBoardDef
+  instance: BoardInstance
   angle: number
   onAngle: (angle: number) => void
   onHoldSets: (csv: string) => void
   onRemove: () => void
 }
 
-function BoardConfigDrawer({ board, angle, onAngle, onHoldSets, onRemove }: BoardConfigDrawerProps) {
+function BoardConfigDrawer({ instance, angle, onAngle, onHoldSets, onRemove }: BoardConfigDrawerProps) {
+  const board = instance.layout
   const { membership, filterable, active: installed, visible } = holdSetContext(
     board.membershipResource,
-    getActiveHoldSetsRaw(board.layoutId),
+    getActiveHoldSetsRaw(instance),
   )
   const [confirmRemove, setConfirmRemove] = useState(false)
   const setName = (id: number) => membership.sets.find((s) => s.id === id)?.name ?? `Set ${id}`
@@ -225,14 +229,14 @@ function BoardConfigDrawer({ board, angle, onAngle, onHoldSets, onRemove }: Boar
   return (
     <Drawer showSwipeHandle>
       <DrawerTrigger
-        aria-label={`Configure ${board.name}`}
+        aria-label={`Configure ${instanceName(instance)}`}
         className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
         <Settings2 className="size-4" />
       </DrawerTrigger>
       <DrawerContent>
         <DrawerHeader>
-          <DrawerTitle>{board.name}</DrawerTitle>
+          <DrawerTitle>{instanceName(instance)}</DrawerTitle>
         </DrawerHeader>
         <div className="space-y-5 px-4 pb-8">
           {/* Live board preview: the installed hold sets' overlay art, so toggling

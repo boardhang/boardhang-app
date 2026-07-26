@@ -13,6 +13,7 @@ import { isConfigured, supabase } from '../supabase/client'
 import { syncListsIdentity } from '../lists/listsStore'
 import { syncSessionsIdentity } from '../sessions/sessionsStore'
 import { syncBetaIdentity } from '../beta/betaStore'
+import { syncBoardsIdentity } from '../board/boardStore'
 import { normalizeHandle } from './handle'
 import { profileFromRow, type AuthStatus, type Profile, type ProfileRow } from './types'
 import { isAvatarPath } from './avatarStorage'
@@ -128,6 +129,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Beta clips carry a per-viewer "isMine" flag, so drop the beta cache on an identity change
       // to force ownership re-resolution on the next problem open. Sync + in-memory only.
       syncBetaIdentity(session?.user.id ?? null)
+      // Shared board instances carry another account's board, role, and definition, so a
+      // *different* account signing in must not inherit them. Signing out deliberately keeps
+      // them: an adopted board has to survive sign-out and the owner deleting their account.
+      // Purely local boards are never touched. Sync + localStorage-only.
+      syncBoardsIdentity(session?.user.id ?? null)
       if (!session) {
         applyProfile(null)
         setStatus('signedOut')

@@ -40,7 +40,7 @@ import { MAX_LIST_NAME, boardShortLabel, trimListName, type SavedList } from './
 export function ListsScreen() {
   const { status, isRestoring } = useAuth()
   const { status: dataStatus, lists, error } = useSavedLists()
-  const { activeBoard } = useBoardStore()
+  const { activeInstance } = useBoardStore()
   const signedIn = status !== 'signedOut'
 
   const [counts, setCounts] = useState<Map<string, number>>(new Map())
@@ -88,7 +88,7 @@ export function ListsScreen() {
     // Scope the list to the board the user sees as active (the resolved snapshot
     // board, always one they own) — not the raw stored id, which can lag behind
     // for legacy state and would orphan the list to an un-owned board.
-    const boardId = activeBoard.layoutId
+    const boardId = activeInstance.layoutId
     try {
       await createList(name, boardId)
     } catch (e) {

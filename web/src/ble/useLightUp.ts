@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { bleClient, connectBoard, isConnected, setBleError, useBle } from './useBle'
 import { describeBleError } from './moonboard'
-import { getFlipped } from '../board/boardStore'
+import { getFlipped, instanceForLayout } from '../board/boardStore'
 import { reportProblemLit } from '../sessions/sessionsStore'
 import type { CatalogBoardDef } from '../board/boards'
 import type { CatalogHold } from '../catalog/catalogSync'
@@ -68,7 +68,7 @@ export function useLightUp(board: CatalogBoardDef, resetKey: string): UseLightUp
     try {
       await bleClient.send(toHoldAssignments(holds), {
         rows: board.geometry.numRows,
-        flipped: getFlipped(board.layoutId),
+        flipped: getFlipped(instanceForLayout(board).instanceId),
         showBeta: true,
       })
       if (targetRef.current === target) {

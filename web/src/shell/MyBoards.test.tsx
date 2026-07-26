@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getActiveBoardId } from '../board/boardStore'
+import { getActiveInstanceId } from '../board/boardStore'
 
 const h = vi.hoisted(() => ({
   activeSession: null as unknown,
@@ -82,11 +82,11 @@ describe('MyBoards', () => {
     const onActivated = vi.fn()
     render(<MyBoards onActivated={onActivated} />)
     addBoard('MoonBoard Masters 2019') // first owned board → becomes active
-    expect(getActiveBoardId()).toBe(5)
+    expect(getActiveInstanceId()).toBe('5')
     const myBoards = screen.getByText('My boards').closest('section')!
     fireEvent.click(within(myBoards).getByRole('button', { name: 'Browse' }))
-    expect(onActivated).toHaveBeenCalledWith(5)
-    expect(getActiveBoardId()).toBe(5) // Browse doesn't switch the active board
+    expect(onActivated).toHaveBeenCalledWith('5')
+    expect(getActiveInstanceId()).toBe('5') // Browse doesn't switch the active board
   })
 
   it('Set as active switches the active board without leaving the list', () => {
@@ -103,7 +103,7 @@ describe('MyBoards', () => {
       .map((el) => el.textContent)
     fireEvent.click(within(myBoards).getByRole('button', { name: 'Set as active' }))
 
-    expect(getActiveBoardId()).toBe(4) // switched
+    expect(getActiveInstanceId()).toBe('4') // switched
     expect(onActivated).not.toHaveBeenCalled() // stayed on the list, no navigation
     // The row order does not reshuffle on activate — the badge/button swap in place.
     const orderAfter = within(myBoards)

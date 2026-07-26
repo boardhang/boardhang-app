@@ -6,7 +6,7 @@
 // HoldFilter.isSelectable). The predicate (superset match) lives in filters.ts.
 
 import { useMemo, type CSSProperties } from 'react'
-import { getActiveHoldSetsRaw } from '../board/boardStore'
+import { getActiveHoldSetsRaw, instanceForLayout } from '../board/boardStore'
 import type { CatalogBoardDef } from '../board/boards'
 import { CatalogBoard } from '../board/CatalogBoard'
 import { columnLabel } from '../board/geometry'
@@ -38,7 +38,7 @@ interface HoldFilterPickerProps {
 export function HoldFilterPicker({ board, open, onOpenChange, value, onChange }: HoldFilterPickerProps) {
   const g = board.geometry
   const { membership, active, visible } = useMemo(
-    () => holdSetContext(board.membershipResource, getActiveHoldSetsRaw(board.layoutId)),
+    () => holdSetContext(board.membershipResource, getActiveHoldSetsRaw(instanceForLayout(board))),
     [board],
   )
 
