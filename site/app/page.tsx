@@ -90,7 +90,7 @@ export default function Home() {
         <p className="mt-3 text-[var(--muted)]">
           So we built the app we wished we had: filters that stay how you set them, sessions
           that show what everyone has sent and tried, what’s lit on the wall right now, and a
-          recently-viewed list for the one before.
+          recently-viewed list to look back through everything you had up before.
         </p>
       </section>
 
