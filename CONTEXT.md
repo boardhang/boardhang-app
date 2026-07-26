@@ -34,6 +34,7 @@ fully offline; sign-in and the first catalog sync need network.
 | Dir | What |
 | --- | --- |
 | `ios/` | **Primary app** — native SwiftUI + CoreBluetooth + SwiftData. Multi-board catalog, logbook, accounts. The live Xcode project is **`ios/MoonBoardLED.xcodeproj`**. |
+| `site/` | **Content site** (Next.js App Router, static) on the apex `boardhang.app` — the only *indexable* web surface (landing page + `/guides`); the PWA on www is deliberately noindexed. See [docs/content-site.md](docs/content-site.md); deploys as its own Vercel project (`boardhang-site`, runbook in `site/CLAUDE.md`). |
 | `web/` | Companion **Web Bluetooth PWA** (Vite + React 19 + TS + shadcn/ui). Authoring (connect → build → light/clear) plus a multi-board **catalog browser** (`src/catalog/`, `src/shell/`): My Boards, filter/sort, board render, detail pager + light-up, over the server-distributed catalog (`src/catalog/catalogSync.ts`), a logbook (`src/logbook/`), and Supabase accounts (`src/auth/`). **URL routing** via TanStack Router (`src/router.tsx`): the URL is the source of truth for the catalog — filters, search, angle, and the open problem are all deep-linkable (see [navigation-and-ui-flows.md](docs/navigation-and-ui-flows.md#web-pwa-routing)). |
 | `shared/spec/` | **Markdown specs only** (BLE, geometry, data model). Not shared code — `web/` reimplements them in TS. |
 | `supabase/` | Postgres migrations backing accounts/profiles, the logbook, and the **catalog** (`0006_catalog_problems.sql`). |
@@ -103,6 +104,7 @@ needs a secure context — desktop Chrome/Edge, Android Chrome, or iPhone via Bl
 | Tabs, navigation, Home board management, Settings | [docs/navigation-and-ui-flows.md](docs/navigation-and-ui-flows.md) |
 | Accounts, Supabase setup, Google/email auth, profiles | [docs/social-accounts-login-SETUP.md](docs/social-accounts-login-SETUP.md) |
 | The web PWA + monorepo plan | [docs/pwa-monorepo-plan.md](docs/pwa-monorepo-plan.md) |
+| The content site, SEO/noindex posture, apex→www redirects | [docs/content-site.md](docs/content-site.md) |
 
 ## Deferred / open
 

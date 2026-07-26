@@ -1,0 +1,3 @@
+# www.boardhang.app is the app origin — every response carries X-Robots-Tag: noindex.
+User-agent: *
+Allow: /

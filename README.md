@@ -7,9 +7,13 @@ them on a MoonBoard LED system running the
 The Arduino firmware is treated as fixed — this app speaks its Nordic-UART protocol correctly
 and does not modify the firmware.
 
+The web app is live at [www.boardhang.app](https://www.boardhang.app) —
+[boardhang.app](https://boardhang.app) is the project site.
+
 > **Contributing / picking this up?** Read [`CONTEXT.md`](CONTEXT.md) first — it's the
 > orientation doc (repo map, build, gotchas, and links into [`docs/`](docs/README.md)). This
-> README is just the user-facing run guide.
+> README is just the user-facing run guide. Bug reports and feature ideas are welcome as
+> [issues](https://github.com/boardhang/boardhang-app/issues); pull requests too.
 
 ## What it does
 
@@ -65,3 +69,7 @@ Android Chrome, or iPhone via Bluefy. See [web/README.md](web/README.md).
 
 See [`CONTEXT.md`](CONTEXT.md) for the repo map and [`docs/`](docs/README.md) for subsystem
 deep dives.
+
+## License
+
+[MIT](LICENSE).

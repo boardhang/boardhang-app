@@ -1,0 +1,46 @@
+@import 'tailwindcss';
+
+/* Brand tokens (brand/README.md): hold blue, LED green, dark tile background. */
+@theme {
+  --color-brand: #3b82f6;
+  --color-led: #34d97b;
+  --color-tile: #0e1116;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #1c2128;
+  --muted: #57606a;
+  --border: #d0d7de;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0e1116;
+    --foreground: #e6e9ee;
+    --muted: #9aa4b2;
+    --border: #2b3138;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--color-brand);
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  text-decoration: underline;
+}

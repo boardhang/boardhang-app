@@ -26,7 +26,9 @@ export default defineConfig({
         // detectSessionInUrl still sees it. Hashed build assets are excluded so
         // they resolve to the real file, not index.html.
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/assets\//],
+        // robots.txt / sitemap.xml must resolve to the real static files (crawlers
+        // expect text/XML, not the app shell), same as the hashed build assets.
+        navigateFallbackDenylist: [/^\/assets\//, /^\/robots\.txt$/, /^\/sitemap\.xml$/],
         // The ~433 kB QR-decoder WASM is fetched on demand when the scanner opens,
         // never precached — it would bloat every install for a feature most users
         // rarely touch. A CacheFirst runtime route keeps repeat scans decodable

@@ -1,0 +1,236 @@
+import { JsonLd } from '@/components/json-ld'
+import { og } from '@/lib/og'
+
+export const title = 'MoonBoard website not working? Where to browse problems'
+export const description =
+  'moonboard.com’s problem pages no longer load. Here is every place you can still browse MoonBoard problems in 2026 — in the browser or in the official app.'
+export const url = '/guides/moonboard-website-not-working'
+export const published = '2026-07-25'
+
+export const metadata = {
+  title: { absolute: title },
+  description,
+  alternates: { canonical: url },
+  openGraph: og({
+    title,
+    description,
+    type: 'article',
+    url,
+    publishedTime: published,
+    modifiedTime: published,
+    authors: ['Boardhang'],
+  }),
+}
+
+export const faqs = [
+  {
+    q: 'Why is the MoonBoard website not working?',
+    a: 'Moon Climbing has wound down problem browsing on moonboard.com. The problem pages now sit behind a security challenge and return errors, and the site’s remaining stated purpose is account login and board management. Problem browsing has moved into the official MoonBoard mobile app.',
+  },
+  {
+    q: 'Can I browse MoonBoard problems online without the app?',
+    a: 'Yes, through community-built sites. Boardhang offers around 12,000 curated problems across five MoonBoard layouts, free and without an account. Boardsesh covers Kilter, Tension and MoonBoard, and MoonBoard Guidebook is a benchmarks-only browser. None of these are official, and none carry every problem ever set.',
+  },
+  {
+    q: 'What happened to my MoonBoard favorites and saved lists after the app update?',
+    a: 'The June 2026 migration required a full uninstall and reinstall of the MoonBoard app. Climbers reported that favorites and saved lists stored only on the device did not survive the reinstall.',
+  },
+  {
+    q: 'Is Boardhang an official MoonBoard app?',
+    a: 'No. Boardhang is an unofficial, community-built project and is not affiliated with Moon Climbing. Its catalog is a curated subset built on community-mirrored data. The official MoonBoard app remains the only sanctioned, complete source of problems.',
+  },
+  {
+    q: 'Does the old MoonBoard app still work?',
+    a: 'Not for long. Moon Climbing announced that the old app and its API would stop working about six weeks after the June 2026 migration finished rolling out, so the new app is the only supported option going forward.',
+  },
+]
+
+<JsonLd
+  data={{
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: title,
+    description,
+    image: 'https://boardhang.app/opengraph-image.png',
+    datePublished: published,
+    dateModified: published,
+    isAccessibleForFree: true,
+    author: {
+      '@type': 'Organization',
+      name: 'Boardhang',
+      url: 'https://boardhang.app',
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: 'Boardhang',
+      url: 'https://boardhang.app',
+      logo: {
+        '@type': 'ImageObject',
+        url: 'https://boardhang.app/opengraph-image.png',
+      },
+    },
+    mainEntityOfPage: {
+      '@type': 'WebPage',
+      '@id': `https://boardhang.app${url}`,
+    },
+  }}
+/>
+
+<JsonLd
+  data={{
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntityOfPage: `https://boardhang.app${url}`,
+    mainEntity: faqs.map((f) => ({
+      '@type': 'Question',
+      name: f.q,
+      acceptedAnswer: { '@type': 'Answer', text: f.a },
+    })),
+  }}
+/>
+
+# MoonBoard website not working — where to browse problems now
+
+<p className="mt-2 text-sm text-[var(--muted)]">Last updated: July 25, 2026</p>
+
+You can no longer browse MoonBoard problems on moonboard.com — the problem pages
+now sit behind a security challenge and return errors. Moon Climbing has moved
+everything into the official MoonBoard mobile app. To browse problems in a web
+browser today, the community-built options are [Boardhang](https://www.boardhang.app),
+Boardsesh, and MoonBoard Guidebook.
+
+## What happened to moonboard.com?
+
+For years, moonboard.com let anyone open a problem page (the
+moonboard.com/Problems/View/… URLs) in a browser. Those pages are no longer
+reachable: they sit behind a security challenge and return errors, even though
+thousands of them are still listed in Google. If you arrived here from one of
+those dead search results, that is why.
+
+This is not an outage. Moon Climbing's stated direction is that everything —
+browsing, logging, benchmarks — lives in the MoonBoard mobile app. The
+website's remaining stated purpose is account login and board management.
+Problem browsing on the open web is effectively gone from the official side.
+
+## Where can I browse MoonBoard problems now?
+
+Four realistic options. Full disclosure before the list: we build Boardhang, so
+we are biased — here is the honest comparison anyway.
+
+### 1. Boardhang — free, in the browser, no account
+
+[Boardhang](/) is a curated MoonBoard catalog that runs
+in any browser: roughly 12,000 problems (benchmarks plus problems with 10 or
+more repeats), including 2,832 official benchmarks, across MoonBoard 2016,
+MoonBoard 2024, Masters 2017, Masters 2019 and Mini 2025. You get filters,
+search, favorites and a logbook without installing anything or creating an
+account, and if you have a DIY LED board it can light problems directly over
+Web Bluetooth.
+
+The honest limits: it is a curated subset, not every problem ever set; the data
+is community-mirrored; and it is unofficial, with no affiliation to Moon
+Climbing.
+
+[Open Boardhang in your browser](https://www.boardhang.app) — no install, no
+account.
+
+### 2. The official MoonBoard app — complete, but app-only
+
+The MoonBoard app is the only sanctioned, complete source of problems. If you
+want every problem, official benchmark updates and an official logbook, this is
+it. The trade-off is that it requires installing the app and signing in with a
+Moon account, and there is no way to browse from a web browser or share a
+problem as a normal web link.
+
+### 3. Boardsesh — multi-board community project
+
+[Boardsesh](https://www.boardsesh.com) is a community web and app project that
+covers Kilter, Tension and MoonBoard. Its public data mirror is the foundation
+many community tools — including Boardhang — build on. A good pick if you
+climb on several board brands and want one tool for all of them.
+
+### 4. MoonBoard Guidebook — benchmarks only
+
+[MoonBoard Guidebook](https://moonboard.simonchase.com) is a community
+benchmark browser. It is benchmarks-only, and its data snapshot is a couple of
+years old — fine for working through a classic tick list, less useful for
+anything recent.
+
+<div className="mt-4 overflow-x-auto">
+  <table className="w-full border-collapse text-left text-sm">
+    <thead>
+      <tr className="border-b border-[var(--border)]">
+        <th className="py-2 pr-4 font-semibold">Option</th>
+        <th className="py-2 pr-4 font-semibold">Where it runs</th>
+        <th className="py-2 pr-4 font-semibold">Coverage</th>
+        <th className="py-2 font-semibold">Good to know</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr className="border-b border-[var(--border)]">
+        <td className="py-2 pr-4">Boardhang</td>
+        <td className="py-2 pr-4">Any browser</td>
+        <td className="py-2 pr-4">~12,000 curated problems, 5 layouts</td>
+        <td className="py-2">Free, no account; unofficial, community-mirrored data</td>
+      </tr>
+      <tr className="border-b border-[var(--border)]">
+        <td className="py-2 pr-4">MoonBoard app</td>
+        <td className="py-2 pr-4">iOS / Android</td>
+        <td className="py-2 pr-4">Everything, official</td>
+        <td className="py-2">Requires app and Moon account; no web browsing</td>
+      </tr>
+      <tr className="border-b border-[var(--border)]">
+        <td className="py-2 pr-4">Boardsesh</td>
+        <td className="py-2 pr-4">Browser + app</td>
+        <td className="py-2 pr-4">Kilter, Tension, MoonBoard</td>
+        <td className="py-2">Community project; the data mirror many tools build on</td>
+      </tr>
+      <tr>
+        <td className="py-2 pr-4">MoonBoard Guidebook</td>
+        <td className="py-2 pr-4">Any browser</td>
+        <td className="py-2 pr-4">Benchmarks only</td>
+        <td className="py-2">Data snapshot is a couple of years old</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+## What happened to my favorites and saved lists?
+
+In June 2026, Moon Climbing rolled out an app migration that required a full
+uninstall and reinstall of the MoonBoard app. Climbers reported that favorites
+and saved lists stored only on the device did not survive that step, and that
+they opened the new app to find years of saved problems and carefully built
+lists gone. Moon also announced that the old app and its API would stop working
+about six weeks after the migration finished rolling out, so staying on the old
+version is not a way out.
+
+There is no undo for favorites or lists that were only stored on the device. If
+you are rebuilding from memory, browsing by grade and benchmark status in a
+catalog like Boardhang or the official app is the fastest way to find the
+problems you remember. It is also a good argument for keeping your ticks
+somewhere that survives an app migration — an account-synced logbook, an
+export, even a spreadsheet.
+
+## Which option should I use?
+
+- **You want every problem and an official logbook:** use the official
+  MoonBoard app. Nothing else is complete or sanctioned.
+- **You want to browse quickly in a browser, share problems as links, or look
+  things up without an account:** use Boardhang.
+- **You climb on Kilter or Tension too:** use Boardsesh and get all your boards
+  in one place.
+- **You just want the classic benchmark tick list:** MoonBoard Guidebook still
+  does that fine.
+
+These are not exclusive — plenty of climbers browse and share in a web catalog
+and log official ascents in the app.
+
+## Frequently asked questions
+
+{faqs.map((f) => (
+  <section key={f.q}>
+    <h3 className="mt-6 text-lg font-semibold">{f.q}</h3>
+    <p className="mt-2 leading-relaxed">{f.a}</p>
+  </section>
+))}
