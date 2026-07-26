@@ -98,9 +98,17 @@ day's tries into an explicit send instead of leaving two rows for the day:
 
 - "Log ascent" seeds the sheet's tries with *(today's unsent-attempt tries) + (pending stepper
   tries) + 1* — the stepper counts **failed** goes; the `+1` is the successful one. The sheet
-  shows the breakdown ("Includes N tries from earlier today" / "Tried on N earlier days").
+  shows the breakdown ("N tries from earlier today **+ this send**" / "Tried on N earlier days"),
+  so the auto-added send is explicit and the seeded total never reads as a silent off-by-one.
 - On save, the send row carries the total and today's unsent attempt row is **soft-deleted**
   (`LogTarget.absorb`), so a day of tries + a send lands as **one** logbook entry.
+- **Only while the send stays dated today.** Re-dating the send off today unfolds the absorb:
+  the day's earlier tries belong to *today*, not the backdated send, so the send drops back to
+  its own tries (`tries − earlierTriesToday`), today's persisted attempt row is left in place,
+  and any inline-stepper tries that were folded into the seed but never written are flushed onto
+  today's row (`addAttemptTries`) so they aren't lost. The sheet reflects this live — the count
+  and Flash label update, the "+ this send" line hides, and a note says "Today's N tries stay as
+  a separate entry". This is what keeps a backdated send from double-counting the day's tries.
 - Attempt rows from earlier days are untouched history — a send never rewrites a past day.
   Tries logged *after* a send revive a fresh attempt row for that day (deterministic-id
   semantics), which then shows as its own entry.

@@ -11,6 +11,7 @@ const ascentsMock = vi.hoisted(() => ({
   deleteAscent: vi.fn(async () => {}),
   updateAscent: vi.fn(async () => {}),
   absorbAttemptRow: vi.fn(async () => {}),
+  addAttemptTries: vi.fn(async () => {}),
 }))
 vi.mock('./ascents', () => ({
   useAscents: () => ({ status: 'loaded', ascents: ascentsMock.rows, error: null }),
@@ -18,6 +19,7 @@ vi.mock('./ascents', () => ({
   deleteAscent: ascentsMock.deleteAscent,
   updateAscent: ascentsMock.updateAscent,
   absorbAttemptRow: ascentsMock.absorbAttemptRow,
+  addAttemptTries: ascentsMock.addAttemptTries,
 }))
 
 function ascent(over: Partial<Ascent> = {}): Ascent {
@@ -87,17 +89,43 @@ describe('LogAscentSheet — absorb on save', () => {
     expect(ascentsMock.absorbAttemptRow).not.toHaveBeenCalled()
   })
 
-  it('skips the absorb delete when the send is re-dated off today', async () => {
+  it('re-dated off today: keeps the attempt row and drops its tries from the send', async () => {
+    // Seed = 3 earlier-today tries (all on the persisted attempt row) + this send.
     renderSheet(createTarget({ tries: 4, absorb: { id: 'att-1', tries: 3 }, earlierTriesToday: 3 }))
 
-    // Backdate to yesterday: the absorb target belongs to TODAY's local day, so the
-    // save must keep today's attempt row instead of erasing it. (The drawer portals
-    // to document.body, so query the document, not the render container.)
+    // Backdate to a past day: those 3 tries belong to TODAY, so the save must keep
+    // today's attempt row AND not carry its tries onto the backdated send (no double
+    // count). (The drawer portals to document.body — query the document.)
     const dateInput = document.querySelector('input[type="datetime-local"]') as HTMLInputElement
     fireEvent.change(dateInput, { target: { value: '2026-07-23T10:00' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(ascentsMock.createAscent).toHaveBeenCalledTimes(1))
+    // The send carries only its own try (4 − 3 earlier), not the folded-in total.
+    expect(ascentsMock.createAscent).toHaveBeenCalledWith(expect.objectContaining({ tries: 1 }))
+    // Today's persisted attempt row is untouched (all 3 tries already live on it).
+    expect(ascentsMock.absorbAttemptRow).not.toHaveBeenCalled()
+    expect(ascentsMock.addAttemptTries).not.toHaveBeenCalled()
+  })
+
+  it('re-dated off today: flushes the inline-only tries onto today, not the send', async () => {
+    // Seed = 3 earlier-today tries, but only 1 is on a persisted attempt row; the other
+    // 2 are inline-stepper tries that were folded into the seed but never written.
+    renderSheet(createTarget({ tries: 4, absorb: { id: 'att-1', tries: 1 }, earlierTriesToday: 3 }))
+
+    const dateInput = document.querySelector('input[type="datetime-local"]') as HTMLInputElement
+    fireEvent.change(dateInput, { target: { value: '2026-07-23T10:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(ascentsMock.createAscent).toHaveBeenCalledTimes(1))
+    // Send keeps only its own try (4 − 3 earlier).
+    expect(ascentsMock.createAscent).toHaveBeenCalledWith(expect.objectContaining({ tries: 1 }))
+    // The 2 never-persisted inline tries land on today's attempt row so they aren't lost.
+    await waitFor(() =>
+      expect(ascentsMock.addAttemptTries).toHaveBeenCalledWith(
+        expect.objectContaining({ addTries: 2, sourceCatalogId: 'cat-1' }),
+      ),
+    )
     expect(ascentsMock.absorbAttemptRow).not.toHaveBeenCalled()
   })
 })
@@ -118,10 +146,25 @@ describe('LogAscentSheet — labels and breakdown', () => {
     expect(screen.getByText('Session flash')).toBeInTheDocument()
   })
 
-  it('renders the earlier-tries and prior-days breakdown lines', () => {
+  it('renders the earlier-tries and prior-days breakdown lines, making the send explicit', () => {
     renderSheet(createTarget({ tries: 4, earlierTriesToday: 3, priorDays: 2 }))
     expect(
-      screen.getByText(/Includes 3 tries from earlier today · Tried on 2 earlier days/),
+      screen.getByText(/3 tries from earlier today \+ this send · Tried on 2 earlier days/),
     ).toBeInTheDocument()
+  })
+
+  it('re-dating off today drops the earlier tries from the display and notes they stay put', () => {
+    renderSheet(createTarget({ tries: 4, earlierTriesToday: 3, absorb: { id: 'att-1', tries: 3 } }))
+    // On today: total folds in the 3 earlier tries and says so.
+    expect(screen.getByText(/3 tries from earlier today \+ this send/)).toBeInTheDocument()
+
+    const dateInput = document.querySelector('input[type="datetime-local"]') as HTMLInputElement
+    fireEvent.change(dateInput, { target: { value: '2026-07-23T10:00' } })
+
+    // Off today: the earlier tries no longer ride along — the send shows as its own
+    // one-try Flash, and a note explains today's tries are kept separately.
+    expect(screen.queryByText(/from earlier today/)).not.toBeInTheDocument()
+    expect(screen.getByText('Flash')).toBeInTheDocument()
+    expect(screen.getByText(/Today's 3 tries stay as a separate entry/)).toBeInTheDocument()
   })
 })

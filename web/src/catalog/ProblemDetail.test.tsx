@@ -336,7 +336,7 @@ describe('ProblemDetail', () => {
       // No send today -> no confirm; the sheet opens directly with the folded seed.
       expect(await screen.findByText('Log send')).toBeInTheDocument()
       expect(screen.queryByText('Already sent today')).not.toBeInTheDocument()
-      expect(screen.getByText(/Includes 3 tries from earlier today/)).toBeInTheDocument()
+      expect(screen.getByText(/3 tries from earlier today \+ this send/)).toBeInTheDocument()
       expect(screen.getByText('4')).toBeInTheDocument()
     })
   })
