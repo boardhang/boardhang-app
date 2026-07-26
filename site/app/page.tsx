@@ -107,15 +107,6 @@ export default function Home() {
       </section>
 
       <section className="mt-14">
-        <h2 className="text-xl font-semibold">Works with your DIY build</h2>
-        <p className="mt-3 text-[var(--muted)]">
-          Boardhang is built for people who wired their own LED system instead of buying the
-          official kit — typically an Arduino running the open-source ArduinoMoonBoardLED
-          firmware. If your board speaks that protocol, Boardhang can drive it.
-        </p>
-      </section>
-
-      <section className="mt-14">
         <h2 className="text-xl font-semibold">Browser support</h2>
         <p className="mt-3 text-[var(--muted)]">
           Web Bluetooth needs Chrome or Edge on desktop or Android. On iPhone, use the Bluefy
