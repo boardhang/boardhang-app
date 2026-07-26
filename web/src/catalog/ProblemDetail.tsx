@@ -13,7 +13,7 @@
 // and desktop arrow keys.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, ListPlus, Repeat, Star } from 'lucide-react'
+import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, ListPlus, Loader2, Repeat, Star } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInDialog } from '../auth/SignInDialog'
 import { addAttemptTries, getAscentsSnapshot, settleAscents } from '../logbook/ascents'
@@ -99,9 +99,11 @@ export function ProblemDetail({
   // Logging on a problem already sent today — confirm before a duplicate send ('send')
   // or before starting to count more tries ('tries'); null = no dialog.
   const [sentTodayConfirm, setSentTodayConfirm] = useState<'send' | 'tries' | null>(null)
-  // A history read (settle + flush drain) is in flight — re-entrancy guard for the
-  // gate taps and the Log ascent button's disabled state.
-  const [logBusy, setLogBusy] = useState(false)
+  // Which log control's history read (settle + flush drain) is in flight, if any — a
+  // re-entrancy guard AND the busy affordance: the tapped control shows a spinner
+  // ('tries' → the stepper's +, 'send' → the Log ascent button) so a slow-wifi gate
+  // tap registers visibly instead of greying out dead or silently no-opping.
+  const [pendingAction, setPendingAction] = useState<'tries' | 'send' | null>(null)
   // Inline "Log try" stepper state: session-local pending tries for the shown problem,
   // written (merged) to the unsent-attempt row only when leaving the problem (iOS parity).
   // The pending problem is held as the object so a leave-flush needs no list lookup.
@@ -258,15 +260,15 @@ export function ProblemDetail({
     // Starting to count tries on a problem already sent today asks first (working it
     // more vs a mis-tap). Only the FIRST tap gates — once counting, +/- flow freely.
     if (currentTries === 0) {
-      if (logBusy) return
-      setLogBusy(true)
+      if (pendingAction) return
+      setPendingAction('tries')
       try {
         if ((await resolveLogContext()).todaySend) {
           setSentTodayConfirm('tries')
           return
         }
       } finally {
-        setLogBusy(false)
+        setPendingAction(null)
       }
     }
     commitAddTry()
@@ -324,8 +326,8 @@ export function ProblemDetail({
       setSignInOpen(true)
       return
     }
-    if (logBusy) return
-    setLogBusy(true)
+    if (pendingAction) return
+    setPendingAction('send')
     try {
       const context = await resolveLogContext()
       if (context.todaySend) {
@@ -334,7 +336,7 @@ export function ProblemDetail({
       }
       openLogSheet(context)
     } finally {
-      setLogBusy(false)
+      setPendingAction(null)
     }
   }
 
@@ -466,9 +468,24 @@ export function ProblemDetail({
       </div>
 
       <div className="flex items-center gap-3">
-        <TryStepper count={currentTries} onRemove={removeTry} onAdd={() => void addTry()} />
-        <Button size="lg" className="flex-1" onClick={() => void logAscent()} disabled={logBusy}>
-          <CheckCircle2 className="size-5" />
+        <TryStepper
+          count={currentTries}
+          onRemove={removeTry}
+          onAdd={() => void addTry()}
+          busy={pendingAction === 'tries'}
+        />
+        <Button
+          size="lg"
+          className="flex-1"
+          onClick={() => void logAscent()}
+          disabled={pendingAction !== null}
+          aria-busy={pendingAction === 'send'}
+        >
+          {pendingAction === 'send' ? (
+            <Loader2 className="size-5 animate-spin" />
+          ) : (
+            <CheckCircle2 className="size-5" />
+          )}
           Log ascent
         </Button>
       </div>
