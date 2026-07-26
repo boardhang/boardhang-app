@@ -137,8 +137,12 @@ export default function Home() {
           </li>
           <li>
             <strong className="font-medium text-[var(--foreground)]">Log your ascents.</strong>{' '}
-            A local logbook tracks what you have climbed and shows an accurate grade
-            pyramid. And your logbook is yours — export it anytime.
+            A local logbook tracks what you have climbed and shows an accurate grade pyramid.
+          </li>
+          <li>
+            <strong className="font-medium text-[var(--foreground)]">Own your logbook.</strong>{' '}
+            Your ascents are yours — export your logbook anytime, so your climbing history is
+            never locked in or lost to an app migration.
           </li>
         </ul>
       </section>
