@@ -43,6 +43,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { cn } from '@/lib/utils'
 
 // SessionBar only ever renders under the board catalog route. The queue entry drives the shared
 // ?problem drawer through the pager opener CatalogScreen hands down (`onOpenProblem`), which
@@ -275,7 +276,16 @@ function ActiveBar({
 
   return (
     <>
-    <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-sm">
+    {/* The bottom border only earns its keep as a divider above the "on the wall" row.
+        With nothing lit, ActiveBar is the header's last row, so its border would double up
+        with the sticky header's own border-b — a hairline-bounded empty strip. Drop it then
+        and let the header border be the single separator. */}
+    <div
+      className={cn(
+        'flex items-center gap-2 px-3 py-2 text-sm',
+        activeSession.litProblemId && 'border-b border-border',
+      )}
+    >
       <SessionName board={board} name={activeSession.name} />
 
       {/* shadcn AvatarGroup: overlaps the avatars and applies the ring-2 ring-background
