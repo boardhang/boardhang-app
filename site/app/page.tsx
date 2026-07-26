@@ -44,7 +44,7 @@ const softwareApplicationJsonLd = {
     'Every problem is shareable as a normal web link',
     'Collaboration sessions: see what each climber in your crew has sent or tried, and what is lit on the wall right now',
     'Recently-viewed history of lit problems',
-    'Local logbook with a grade pyramid',
+    'Local logbook with a grade pyramid, exportable anytime — you own your data',
     'Runs in the browser with no install and no account',
   ],
 }
@@ -137,7 +137,8 @@ export default function Home() {
           </li>
           <li>
             <strong className="font-medium text-[var(--foreground)]">Log your ascents.</strong>{' '}
-            A local logbook tracks what you have climbed and shows an accurate grade pyramid.
+            A local logbook tracks what you have climbed and shows an accurate grade
+            pyramid. And your logbook is yours — export it anytime.
           </li>
         </ul>
       </section>
