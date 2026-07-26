@@ -11,7 +11,6 @@ const ascentsMock = vi.hoisted(() => ({
   deleteAscent: vi.fn(async () => {}),
   updateAscent: vi.fn(async () => {}),
   absorbAttemptRow: vi.fn(async () => {}),
-  addAttemptTries: vi.fn(async () => {}),
 }))
 vi.mock('./ascents', () => ({
   useAscents: () => ({ status: 'loaded', ascents: ascentsMock.rows, error: null }),
@@ -19,7 +18,6 @@ vi.mock('./ascents', () => ({
   deleteAscent: ascentsMock.deleteAscent,
   updateAscent: ascentsMock.updateAscent,
   absorbAttemptRow: ascentsMock.absorbAttemptRow,
-  addAttemptTries: ascentsMock.addAttemptTries,
 }))
 
 function ascent(over: Partial<Ascent> = {}): Ascent {
@@ -89,44 +87,32 @@ describe('LogAscentSheet — absorb on save', () => {
     expect(ascentsMock.absorbAttemptRow).not.toHaveBeenCalled()
   })
 
-  it('re-dated off today: keeps the attempt row and drops its tries from the send', async () => {
-    // Seed = 3 earlier-today tries (all on the persisted attempt row) + this send.
-    renderSheet(createTarget({ tries: 4, absorb: { id: 'att-1', tries: 3 }, earlierTriesToday: 3 }))
+  it('re-dated off today: drops the earlier tries from the send and keeps them with the caller', async () => {
+    // Seed = 3 earlier-today tries folded into the send.
+    const { onSaved } = renderSheet(
+      createTarget({ tries: 4, absorb: { id: 'att-1', tries: 3 }, earlierTriesToday: 3 }),
+    )
 
-    // Backdate to a past day: those 3 tries belong to TODAY, so the save must keep
-    // today's attempt row AND not carry its tries onto the backdated send (no double
-    // count). (The drawer portals to document.body — query the document.)
+    // Backdate to a past day: those 3 tries belong to TODAY, so the send must carry only
+    // its own try (no double count), today's attempt row must be left untouched, and the
+    // caller must keep its pending stepper so its own leave-flush persists the tries.
+    // (The drawer portals to document.body — query the document.)
     const dateInput = document.querySelector('input[type="datetime-local"]') as HTMLInputElement
     fireEvent.change(dateInput, { target: { value: '2026-07-23T10:00' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(ascentsMock.createAscent).toHaveBeenCalledTimes(1))
-    // The send carries only its own try (4 − 3 earlier), not the folded-in total.
     expect(ascentsMock.createAscent).toHaveBeenCalledWith(expect.objectContaining({ tries: 1 }))
-    // Today's persisted attempt row is untouched (all 3 tries already live on it).
     expect(ascentsMock.absorbAttemptRow).not.toHaveBeenCalled()
-    expect(ascentsMock.addAttemptTries).not.toHaveBeenCalled()
+    expect(onSaved).toHaveBeenCalledWith({ keptTodayTries: true })
   })
 
-  it('re-dated off today: flushes the inline-only tries onto today, not the send', async () => {
-    // Seed = 3 earlier-today tries, but only 1 is on a persisted attempt row; the other
-    // 2 are inline-stepper tries that were folded into the seed but never written.
-    renderSheet(createTarget({ tries: 4, absorb: { id: 'att-1', tries: 1 }, earlierTriesToday: 3 }))
-
-    const dateInput = document.querySelector('input[type="datetime-local"]') as HTMLInputElement
-    fireEvent.change(dateInput, { target: { value: '2026-07-23T10:00' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-
-    await waitFor(() => expect(ascentsMock.createAscent).toHaveBeenCalledTimes(1))
-    // Send keeps only its own try (4 − 3 earlier).
-    expect(ascentsMock.createAscent).toHaveBeenCalledWith(expect.objectContaining({ tries: 1 }))
-    // The 2 never-persisted inline tries land on today's attempt row so they aren't lost.
-    await waitFor(() =>
-      expect(ascentsMock.addAttemptTries).toHaveBeenCalledWith(
-        expect.objectContaining({ addTries: 2, sourceCatalogId: 'cat-1' }),
-      ),
+  it('on-today send consumes the pending tries (keptTodayTries false)', async () => {
+    const { onSaved } = renderSheet(
+      createTarget({ tries: 4, absorb: { id: 'att-1', tries: 3 }, earlierTriesToday: 3 }),
     )
-    expect(ascentsMock.absorbAttemptRow).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith({ keptTodayTries: false }))
   })
 })
 

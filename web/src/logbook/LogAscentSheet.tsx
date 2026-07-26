@@ -29,7 +29,6 @@ import {
 import { attemptId } from './attemptId'
 import {
   absorbAttemptRow,
-  addAttemptTries,
   createAscent,
   deleteAscent,
   updateAscent,
@@ -69,8 +68,11 @@ interface LogAscentSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   target: LogTarget | null
-  /** Called after a successful save (not on cancel), so a caller can clear pending state. */
-  onSaved?: () => void
+  /** Called after a successful save (not on cancel), so a caller can clear pending state.
+   *  `keptTodayTries` is true when a backdated send deliberately left the day's inline
+   *  tries with the caller (they belong to today, not the send) — the caller must NOT
+   *  clear its pending stepper in that case, so its own leave-flush persists them. */
+  onSaved?: (info: { keptTodayTries: boolean }) => void
 }
 
 /** ISO → local `YYYY-MM-DDTHH:mm` for <input type="datetime-local">. */
@@ -157,6 +159,7 @@ export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscen
     // it never renders a vote arrow (mirrors iOS).
     const resolvedGrade = sent ? votedGrade : problemGrade
     const dateIso = fromLocalInput(dateLocal)
+    const sendOnToday = localDayKey(new Date(dateIso)) === localDayKey(new Date())
     try {
       if (target.kind === 'edit') {
         await updateAscent(target.ascent.id, {
@@ -168,9 +171,8 @@ export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscen
           sent,
         })
       } else {
-        const sendOnToday = localDayKey(new Date(dateIso)) === localDayKey(new Date())
         // A send re-dated off today doesn't own the day's earlier tries — they stay on
-        // today (handled below), so the send carries only its own tries.
+        // today (kept in the caller's pending stepper), so the send carries only its own.
         const sendTries = sent && !sendOnToday ? Math.max(1, tries - earlierTriesToday) : tries
         const id = sent
           ? crypto.randomUUID()
@@ -195,27 +197,14 @@ export function LogAscentSheet({ open, onOpenChange, target, onSaved }: LogAscen
           // must still hold the folded tries) and best-effort: the send is already
           // saved, and surfacing a cleanup failure would invite a retry that duplicates.
           await absorbAttemptRow(target.absorb.id, target.absorb.tries).catch(() => {})
-        } else if (sent && !sendOnToday && earlierTriesToday > 0) {
-          // Backdated send: the day's earlier tries belong to TODAY, not this send. Any
-          // persisted attempt row already stays untouched; the inline-stepper portion
-          // that was only ever folded into the seed (never written as a row) is written
-          // onto today's attempt row now, so it isn't lost when the caller clears the
-          // pending stepper. Best-effort, mirroring the absorb cleanup.
-          const inlineOnly = earlierTriesToday - (target.absorb?.tries ?? 0)
-          if (inlineOnly > 0) {
-            await addAttemptTries({
-              sourceCatalogId: target.sourceCatalogId,
-              userProblemId: target.userProblemId ?? null,
-              problemName: target.problemName,
-              problemGrade: target.problemGrade,
-              boardLayoutId: target.boardLayoutId,
-              date: new Date().toISOString(),
-              addTries: inlineOnly,
-            }).catch(() => {})
-          }
         }
       }
-      onSaved?.()
+      // A backdated send didn't fold today's earlier tries into itself, so the caller
+      // must KEEP its pending inline stepper — its own deferred leave-flush writes those
+      // tries onto today's attempt row reliably (no fragile best-effort write here that
+      // could silently drop them). Every other save consumed the pending tries → clear.
+      const keptTodayTries = sent && !sendOnToday && earlierTriesToday > 0
+      onSaved?.({ keptTodayTries })
       onOpenChange(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

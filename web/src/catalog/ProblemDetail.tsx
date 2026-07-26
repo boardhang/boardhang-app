@@ -496,9 +496,12 @@ export function ProblemDetail({
         open={logOpen}
         onOpenChange={setLogOpen}
         target={logTarget}
-        onSaved={() => {
-          // The send consumed the pending tries — clear them so they aren't ALSO
-          // flushed as a separate unsent-attempt row.
+        onSaved={({ keptTodayTries }) => {
+          // An on-today send folded the pending tries into itself — clear them so they
+          // aren't ALSO flushed as a separate unsent-attempt row. A backdated send does
+          // NOT own today's tries, so keep the pending stepper: the normal leave-flush
+          // writes those tries onto today's attempt row reliably.
+          if (keptTodayTries) return
           setPendingProblem(null)
           setPendingTries(0)
         }}
