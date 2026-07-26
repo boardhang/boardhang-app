@@ -6,6 +6,7 @@ import type { CatalogProblem } from './catalogSync'
 import { isFavorite } from './favoritesStore'
 import { getRecentIds } from './recentsStore'
 import { ProblemDetail } from './ProblemDetail'
+import { settleAscents } from '../logbook/ascents'
 import { AuthProvider } from '../auth/AuthProvider'
 import * as ble from '../ble/useBle'
 import { useActiveQueueProblems } from '../sessions/useActiveQueueProblems'
@@ -338,6 +339,59 @@ describe('ProblemDetail', () => {
       expect(screen.queryByText('Already sent today')).not.toBeInTheDocument()
       expect(screen.getByText(/3 tries from earlier today \+ this send/)).toBeInTheDocument()
       expect(screen.getByText('4')).toBeInTheDocument()
+    })
+  })
+
+  describe('log-control busy affordance', () => {
+    // Hold the history read (settleAscents) open so we can observe the in-flight state
+    // the slow-wifi gate produces, then release it.
+    function heldGate() {
+      let release!: () => void
+      const gate = new Promise<void>((r) => {
+        release = r
+      })
+      vi.mocked(settleAscents).mockReturnValueOnce(gate)
+      return release
+    }
+
+    it('spins the stepper + while the gate resolves, swallows the tap, then logs the try', async () => {
+      const release = heldGate()
+      renderDetail('b') // not sent today
+      const addBtn = () => screen.getByRole('button', { name: 'Log a try' })
+      fireEvent.click(addBtn())
+
+      // In flight: the + is busy (disabled + aria-busy) and nothing has counted yet —
+      // no silent no-op, the press registered.
+      expect(addBtn()).toBeDisabled()
+      expect(addBtn()).toHaveAttribute('aria-busy', 'true')
+      expect(screen.getByText('Log try')).toBeInTheDocument()
+
+      await act(async () => {
+        release()
+      })
+
+      // Resolved: the try counted and the busy state cleared.
+      expect(await screen.findByText('1 try')).toBeInTheDocument()
+      expect(addBtn()).not.toBeDisabled()
+      expect(addBtn()).toHaveAttribute('aria-busy', 'false')
+    })
+
+    it('spins the Log ascent button while the gate resolves, then opens the sheet', async () => {
+      const release = heldGate()
+      renderDetail('b')
+      const logBtn = () => screen.getByRole('button', { name: 'Log ascent' })
+      fireEvent.click(logBtn())
+
+      expect(logBtn()).toBeDisabled()
+      expect(logBtn()).toHaveAttribute('aria-busy', 'true')
+
+      await act(async () => {
+        release()
+      })
+
+      // The sheet opening proves the resolve finished and pendingAction cleared (openLogSheet
+      // runs in the try; the finally nulls it). The button is now inert behind the modal.
+      expect(await screen.findByText('Log send')).toBeInTheDocument()
     })
   })
 

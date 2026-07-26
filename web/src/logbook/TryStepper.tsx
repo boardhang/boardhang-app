@@ -2,16 +2,20 @@
 // iOS `TryStepper`. Center label: 0 → "Log try", 1 → "1 try", n → "n tries". Minus is
 // disabled at 0 so the count never goes negative.
 
-import { Minus, Plus } from 'lucide-react'
+import { Loader2, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface TryStepperProps {
   count: number
   onRemove: () => void
   onAdd: () => void
+  /** The gated first tap is resolving (a history read is in flight before we know
+   *  whether to ask "already sent today?"). Show a spinner in the add slot and swallow
+   *  taps, so the press registers visibly instead of silently no-opping on slow wifi. */
+  busy?: boolean
 }
 
-export function TryStepper({ count, onRemove, onAdd }: TryStepperProps) {
+export function TryStepper({ count, onRemove, onAdd, busy = false }: TryStepperProps) {
   const label = count === 0 ? 'Log try' : count === 1 ? '1 try' : `${count} tries`
   const removeDisabled = count === 0
 
@@ -33,10 +37,15 @@ export function TryStepper({ count, onRemove, onAdd }: TryStepperProps) {
       <button
         type="button"
         aria-label="Log a try"
+        aria-busy={busy}
+        disabled={busy}
         onClick={onAdd}
-        className="flex size-9 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted"
+        className={cn(
+          'flex size-9 items-center justify-center rounded-lg text-foreground transition-colors',
+          busy ? 'cursor-default' : 'hover:bg-muted',
+        )}
       >
-        <Plus className="size-4" />
+        {busy ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
       </button>
     </div>
   )
