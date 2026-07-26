@@ -39,3 +39,17 @@ npx vercel deploy --cwd site --prod --yes
 ```
 
 Verify with `npx vercel inspect <url>` or `npx vercel logs <url>`.
+
+The project exists and owns the apex as of **2026-07-26**, so `link` now resolves an
+existing project instead of creating one. Answer **no** to "Customize settings?" — the
+detected Next.js defaults are right, and setting a Root Directory here fights
+`--cwd site` and resolves to `site/site`.
+
+### If you ever re-add the apex domain in the dashboard
+
+**Untick "Redirect apex domains to www (recommended)".** It is checked by default, and
+Vercel's recommendation assumes apex and www are one site picking a canonical. Here www
+is a *different project* — the PWA — so accepting it redirects the apex into the app and
+the content site becomes unreachable. Add `boardhang.app` to `boardhang-site` as
+**Connect to an environment → Production**, and remove it from `boardly` first; two
+projects cannot hold the same domain.

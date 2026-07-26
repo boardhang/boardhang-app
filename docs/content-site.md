@@ -8,6 +8,18 @@ surface**, served on the apex `https://boardhang.app` as its own Vercel project
 Deploy runbook: [`site/CLAUDE.md`](../site/CLAUDE.md) (do not confuse with the
 `boardly` runbook in [`web/CLAUDE.md`](../web/CLAUDE.md)).
 
+**Live since 2026-07-26.** Both hosts are deployed and verified: the apex serves the
+content site (200, `x-nextjs-prerender: 1`, no `X-Robots-Tag`), www still serves the
+PWA with `X-Robots-Tag: noindex` and an unchanged manifest `scope`/`start_url`. All
+apex→www deep-link redirects preserve query strings. Cloudflare's **Managed
+robots.txt** (AI Crawl Control → Overview) and its **Block AI bots** WAF scope
+(Security → Settings) are both **off** — with them on, Cloudflare injected a 64-line
+`robots.txt` that `Disallow`ed ClaudeBot, GPTBot, CCBot, Google-Extended,
+Applebot-Extended, Amazonbot and meta-externalagent on *both* hosts, overriding
+`robots.ts`. **If crawl traffic ever drops to zero, re-check those two settings
+first** — they are zone-level and outside the repo. Google Search Console is verified
+as a domain property via DNS TXT with the apex sitemap submitted.
+
 ## Two origins, one product
 
 | Host | Project | Role | Indexable? |
