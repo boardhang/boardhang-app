@@ -262,4 +262,23 @@ describe('SessionBar — "now on the wall" (#97)', () => {
     render(<SessionBar board={board} onOpenProblem={() => {}} />)
     expect(screen.queryByText(/On the wall:/)).not.toBeInTheDocument()
   })
+
+  it('drops the session-row divider with nothing lit, keeps it as the divider above the lit row', async () => {
+    // Nothing lit → ActiveBar is the sticky header's last row, so its own border-b would
+    // double with the header's border into an empty hairline strip. It's suppressed, and
+    // only reinstated once a lit row follows and the border earns its keep as a divider.
+    h.sessions = { activeSession: { id: 'S1', name: 'Crew', boardLayoutId: 7 }, roster: [], selfId: null }
+    const { rerender } = render(<SessionBar board={board} onOpenProblem={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Crew' }).parentElement).not.toHaveClass('border-b')
+
+    h.litCache = new Map([['p-lit', { source_catalog_id: 'p-lit', name: 'Mega Crimp', grade: '7A' }]])
+    h.sessions = {
+      activeSession: { id: 'S1', name: 'Crew', boardLayoutId: 7, litProblemId: 'p-lit', litBy: null },
+      roster: [],
+      selfId: null,
+    }
+    rerender(<SessionBar board={board} onOpenProblem={() => {}} />)
+    expect(await screen.findByText('Mega Crimp')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Crew' }).parentElement).toHaveClass('border-b')
+  })
 })
