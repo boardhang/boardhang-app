@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { og } from '@/lib/og'
+import { CONTACT_EMAIL } from '@/lib/urls'
 
 const description =
   'What Boardhang stores, what stays in your browser, and how to delete your account. No advertising, no analytics, no tracking.'
@@ -82,16 +83,19 @@ export default function Privacy() {
         session membership and your uploaded avatar. It cannot be undone, so export anything
         you want to keep first.
       </p>
+      <p className="mt-3 text-[var(--muted)]">
+        If you would rather we did it for you, or you want to know what we hold about you,
+        email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and we will sort it out.
+      </p>
 
       <h2 className="mt-10 text-xl font-semibold">Questions</h2>
       <p className="mt-3 text-[var(--muted)]">
-        Ask us by{' '}
-        <a href="https://github.com/boardhang/boardhang-app/issues">opening an issue</a>. If
-        you would rather not ask in public, say so in the issue and we will find another way.
-        Boardhang is <Link href="/about">an unofficial project built by two climbers</Link>,
-        and the whole app is{' '}
-        <a href="https://github.com/boardhang/boardhang-app">open source</a> — if you want to
-        check any of the above, you can read the code.
+        Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>, or{' '}
+        <a href="https://github.com/boardhang/boardhang-app/issues">open an issue</a> if it is
+        something other people would benefit from seeing answered. Boardhang is{' '}
+        <Link href="/about">an unofficial project built by two climbers</Link>, and the whole
+        app is <a href="https://github.com/boardhang/boardhang-app">open source</a> — if you
+        want to check any of the above, you can read the code.
       </p>
     </>
   )
