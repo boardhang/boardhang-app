@@ -187,8 +187,12 @@ the owner deleting their account. Purely local instances stay device-wide.
 `board_layout_id` on `lists`, `sessions`, and `ascents` still references the **layout**, so
 sibling instances of one layout share a logbook and saved lists by design.
 
-The Boards page (`web/src/shell/MyBoards.tsx`) leads with the active instance as a hero
-(`BoardHero.tsx`) and lists the rest in a switcher beneath it.
+The Boards page (`web/src/shell/MyBoards.tsx`) lists instances as rows, split into "My
+boards" and "Shared with me" — the split is what makes two instances of one layout legible,
+and it also signals what the viewer is allowed to configure. The shared section is hidden
+when empty. `BoardSetupFlow.tsx` owns both adding a board (guided, stepped, committing
+nothing until the last step) and configuring one (single screen, read-only for a board
+someone else owns).
 
 ## Gotchas summary
 

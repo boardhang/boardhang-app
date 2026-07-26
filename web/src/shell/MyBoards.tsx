@@ -1,28 +1,31 @@
-// "Boards": the boards the user holds, led by the active one as a hero. Below it a
-// compact switcher lists the others — tapping one promotes it into the hero. Session
-// controls are demoted to a strip that only appears when there is something to resume or
-// join, because a board you climb on is this page's subject and a session is an occasional
-// overlay on it. Also the first-run surface (zero instances).
+// "Boards": the boards the user holds, as clean rows (name + config summary) split into
+// the ones they set up themselves and the ones shared with them. The active board shows a
+// primary "Browse" action into its catalog; every other board shows a secondary "Set as
+// active" that just switches the active board (staying on this list). The config button
+// opens the setup flow to edit angle and installed hold sets, or remove it — mirroring
+// iOS, where board config lives behind a separate sheet. Also the first-run surface (zero
+// boards).
 //
-// Adding and configuring both go through BoardSetupFlow — this screen only decides which
-// board (if any) that flow opens on.
+// The two sections exist because one MoonBoard layout can back two boards at once — your
+// own 2019 in the garage and a shared 2019 at the gym — and which is which changes what
+// you're allowed to configure.
 
 import { useRef, useState } from 'react'
 import { Plus, ScanQrCode, Settings2 } from 'lucide-react'
 import { BOARDS, hasAngleChoice } from '../board/boards'
 import type { BoardInstance } from '../board/boardInstance'
-import { instanceName } from '../board/boardInstance'
+import { instanceName, isSharedInstance } from '../board/boardInstance'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { holdSetContext } from '../board/holdSetMembership'
-import { CatalogBoard } from '../board/CatalogBoard'
-import { BoardHero } from './BoardHero'
 import { BoardSetupFlow } from './BoardSetupFlow'
 import { useSessions } from '../sessions/sessionsStore'
 import { useResumableSessions } from '../sessions/useResumableSessions'
 import { ResumableSessionRow } from '../sessions/ResumableSessionRow'
 import { ScanToJoinButton } from '../sessions/ScanToJoin'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 
 /**
  * Whether the sharing loop exists yet. A single flag so every share entry point on this
@@ -46,7 +49,7 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   const { activeSession } = useSessions()
   // Cross-device resume: list this user's live sessions (across all boards on this surface) so
   // they can re-adopt one created/joined elsewhere. The hook owns the fetch, self-heal, and
-  // adopt-and-navigate; this screen just renders the section.
+  // adopt-and-navigate; MyBoards just renders the section.
   const { resumable, resumingId, endedNotice, onResume } = useResumableSessions()
 
   const [setUp, setSetUp] = useState<SetupTarget>(null)
@@ -54,12 +57,12 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   const addedIds = new Set(instances.map((i) => i.layoutId))
   const anythingLeftToAdd = BOARDS.some((b) => !addedIds.has(b.layoutId))
 
-  // Freeze the switcher order for this mount. Activating promotes the instance to the MRU
-  // front in the store, but the list must not reshuffle under the user's finger — the
-  // tapped instance and the outgoing hero exchange slots and nothing else moves. A fresh
-  // mount re-reads the MRU order. Instances added this session append; removed ones drop
-  // out — membership stays live, only order is frozen. Seeded empty; the append loop below
-  // fills it in MRU order on first render.
+  // Freeze the row order for this mount. "Set as active" promotes the board to the MRU
+  // front in the store, but the list must not reshuffle under the user's finger — only the
+  // Active badge / Browse button swap in place. A fresh mount re-reads the MRU order
+  // (active board on top). Boards added this session append; removed ones drop out —
+  // membership stays live, only order is frozen. Seeded empty; the append loop below fills
+  // it in MRU order on first render.
   const orderRef = useRef<string[]>([])
   const byId = new Map(instances.map((i) => [i.instanceId, i] as const))
   const ordered: BoardInstance[] = []
@@ -73,33 +76,27 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   for (const i of instances) if (byId.has(i.instanceId)) ordered.push(i) // newly added this session
   orderRef.current = ordered.map((i) => i.instanceId)
 
-  /**
-   * Promote an instance into the hero, exchanging frozen slots with the outgoing hero.
-   *
-   * The switcher renders the frozen order minus whichever instance is in the hero, so
-   * swapping the two ids here is what makes the outgoing hero land in exactly the slot the
-   * promoted one vacated. Without the swap, promoting anything other than the frozen
-   * front would shuffle every row between them.
-   */
-  function promote(instanceId: string) {
-    const order = orderRef.current
-    const from = order.indexOf(instanceId)
-    const to = order.indexOf(activeInstance.instanceId)
-    if (from !== -1 && to !== -1) {
-      order[from] = activeInstance.instanceId
-      order[to] = instanceId
-    }
-    activateBoard(instanceId)
-  }
+  // Partition the frozen order, so a board keeps its position within its own section.
+  const own = ordered.filter((i) => !isSharedInstance(i))
+  const shared = ordered.filter(isSharedInstance)
 
-  // Sessions, demoted: nothing renders while one is active (the session pill and the
-  // catalog's own bar carry those controls), and only what exists renders otherwise. It
-  // stays available at first-run on purpose — resuming a session started on another device
-  // adds its board, which is exactly what someone with no boards here needs.
-  const sessionStrip = !activeSession && (
-    <section aria-label="Sessions" className="space-y-2">
-      {resumable.length > 0 && (
-        <>
+  const renderRow = (instance: BoardInstance) => (
+    <BoardCard
+      key={instance.instanceId}
+      instance={instance}
+      active={instance.instanceId === activeInstance.instanceId}
+      // Active board → browse its catalog (already active, no switch).
+      onBrowse={() => onActivated(instance.instanceId)}
+      // Inactive board → just switch the active board; stay on this list.
+      onSetActive={() => activateBoard(instance.instanceId)}
+      onSetUp={() => setSetUp(instance)}
+    />
+  )
+
+  return (
+    <div className="space-y-4">
+      {!activeSession && resumable.length > 0 && (
+        <section className="space-y-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Resume session
           </h2>
@@ -111,9 +108,9 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
               onResume={(sess) => void onResume(sess)}
             />
           ))}
-        </>
+        </section>
       )}
-      {endedNotice && resumable.length === 0 && (
+      {!activeSession && endedNotice && resumable.length === 0 && (
         <p
           role="status"
           className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
@@ -121,121 +118,101 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
           That session has ended.
         </p>
       )}
-      <ScanToJoinButton variant="outline" className="w-full">
-        <ScanQrCode className="size-4" />
-        Join a session
-      </ScanToJoinButton>
-    </section>
-  )
+      {!activeSession && (
+        <ScanToJoinButton variant="outline" className="w-full">
+          <ScanQrCode className="size-4" />
+          Join a session
+        </ScanToJoinButton>
+      )}
 
-  const setupFlow = setUp !== null && (
-    <BoardSetupFlow
-      instance={setUp === 'add' ? undefined : setUp}
-      sharingAvailable={SHARING_AVAILABLE}
-      onClose={() => setSetUp(null)}
-    />
-  )
-
-  if (instances.length === 0) {
-    return (
-      <div className="space-y-4">
+      {instances.length === 0 ? (
         <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
           <p className="mb-1 font-medium text-foreground">Add your first board</p>
           <p className="mb-4 text-sm">Pick the MoonBoard you have to start browsing its problems.</p>
           <Button onClick={() => setSetUp('add')}>Add a board</Button>
         </div>
-        {sessionStrip}
-        {setupFlow}
-      </div>
-    )
-  }
-
-  const others = ordered.filter((i) => i.instanceId !== activeInstance.instanceId)
-
-  return (
-    <div className="space-y-5">
-      <BoardHero
-        instance={activeInstance}
-        onBrowse={() => onActivated(activeInstance.instanceId)}
-        onSetUp={() => setSetUp(activeInstance)}
-        sharingAvailable={SHARING_AVAILABLE}
-      />
-
-      {sessionStrip}
-
-      {others.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            My boards
-          </h2>
-          {others.map((instance) => (
-            <SwitcherRow
-              key={instance.instanceId}
-              instance={instance}
-              onSetActive={() => promote(instance.instanceId)}
-              onSetUp={() => setSetUp(instance)}
-            />
-          ))}
-        </section>
+      ) : (
+        <>
+          {own.length > 0 && (
+            <BoardSection title="My boards">{own.map(renderRow)}</BoardSection>
+          )}
+          {/* Hidden until a shared board exists, rather than an empty section advertising a
+              feature that isn't wired up yet. */}
+          {shared.length > 0 && (
+            <BoardSection title="Shared with me">{shared.map(renderRow)}</BoardSection>
+          )}
+          {anythingLeftToAdd && (
+            <Button variant="outline" className="w-full" onClick={() => setSetUp('add')}>
+              <Plus className="size-4" />
+              Add a board
+            </Button>
+          )}
+        </>
       )}
 
-      {anythingLeftToAdd && (
-        <Button variant="outline" className="w-full" onClick={() => setSetUp('add')}>
-          <Plus className="size-4" />
-          Add a board
-        </Button>
+      {setUp !== null && (
+        <BoardSetupFlow
+          instance={setUp === 'add' ? undefined : setUp}
+          sharingAvailable={SHARING_AVAILABLE}
+          onClose={() => setSetUp(null)}
+        />
       )}
-
-      {setupFlow}
     </div>
   )
 }
 
-/**
- * One non-active instance. Compact by design: its whole job is to become the hero, so it
- * carries a thumbnail, its name and config summary, and the switch action. Two instances
- * of one layout are told apart by the owner-set name a shared board carries.
- */
-function SwitcherRow({
-  instance,
-  onSetActive,
-  onSetUp,
-}: {
+function BoardSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h2>
+      {children}
+    </section>
+  )
+}
+
+interface BoardCardProps {
   instance: BoardInstance
+  active: boolean
+  onBrowse: () => void
   onSetActive: () => void
   onSetUp: () => void
-}) {
+}
+
+function BoardCard({ instance, active, onBrowse, onSetActive, onSetUp }: BoardCardProps) {
   const board = instance.layout
   const angle = getAngle(instance)
-  const { filterable, active: installed, visible } = holdSetContext(
+  const { filterable, active: installed } = holdSetContext(
     board.membershipResource,
     getActiveHoldSetsRaw(instance),
   )
   const holdSummary =
     installed.size >= filterable.length ? 'All hold sets' : `${installed.size} of ${filterable.length} sets`
   const subtitle = [hasAngleChoice(board) ? `${angle}°` : null, holdSummary].filter(Boolean).join(' · ')
+  // A shared board carries its owner's name for it, which is what tells two boards of the
+  // same layout apart. Its section already says it is shared, so the row needs no marker.
   const name = instanceName(instance)
 
   return (
-    <Card className="bg-transparent py-3">
-      <CardContent className="flex items-center gap-1 px-3">
-        {/* The row itself switches. A "Set as active" button here would eat the width the
-            name needs, and on a phone the name is the only thing telling two instances of
-            the same layout apart — so it gets the room instead. */}
-        <button
-          type="button"
-          aria-label={`Switch to ${name}`}
-          onClick={onSetActive}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 pr-1 text-left transition-colors hover:bg-accent/50"
-        >
-          <span className="w-10 shrink-0">
-            <CatalogBoard board={board} holds={[]} visibleHoldSetIds={visible} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">{name}</span>
-            <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>
-          </span>
-        </button>
+    <Card className={cn('py-3', active ? 'border-primary/60 bg-primary/5' : 'bg-transparent')}>
+      <CardContent className="flex items-center gap-2 px-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-medium">{name}</span>
+            {active && <Badge className="shrink-0 bg-accent text-accent-foreground">Active</Badge>}
+          </div>
+          <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
+        </div>
+        {active ? (
+          <Button size="sm" onClick={onBrowse}>
+            Browse
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={onSetActive}>
+            Set as active
+          </Button>
+        )}
         <button
           type="button"
           aria-label={`Configure ${name}`}
