@@ -5,9 +5,9 @@ import { og } from '@/lib/og'
 import { APP_URL, SITE_URL } from '@/lib/urls'
 
 export const metadata: Metadata = {
-  title: { absolute: 'Boardhang — free web app for DIY LED MoonBoards' },
+  title: { absolute: 'Boardhang — free web app for LED MoonBoards' },
   description:
-    'Boardhang lights MoonBoard problems on DIY LED boards over Web Bluetooth — no install, no account. Browse ~12,000 curated problems across 5 layouts, including 2,832 official benchmarks.',
+    'Boardhang lights MoonBoard problems on your board over Web Bluetooth — no install, no account. Browse ~12,000 curated problems across 5 layouts, including 2,832 official benchmarks.',
   alternates: { canonical: '/' },
   openGraph: og({ url: '/' }),
 }
@@ -53,10 +53,10 @@ export default function Home() {
 
       <section className="pt-8">
         <h1 className="text-3xl font-semibold leading-tight">
-          Light MoonBoard problems on your DIY LED board
+          Light MoonBoard problems on your LED board
         </h1>
         <p className="mt-4 text-lg text-[var(--muted)]">
-          Boardhang is a free web app for DIY LED MoonBoards. Open it in the browser — no
+          Boardhang is a free web app for LED MoonBoards. Open it in the browser — no
           install, no account — and it connects to your board over Web Bluetooth and lights
           problems on the wall.
         </p>
