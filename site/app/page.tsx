@@ -41,6 +41,7 @@ const softwareApplicationJsonLd = {
     'Covers 5 layouts: MoonBoard 2016, 2024, Masters 2017, Masters 2019 and Mini MoonBoard 2025',
     'Search, grade filters and favorites',
     'Remembers filter and sort settings per board between visits',
+    'Every problem is shareable as a normal web link',
     'Collaboration sessions: see what each climber in your crew has sent or tried, and what is lit on the wall right now',
     'Recently-viewed history of lit problems',
     'Local logbook with a grade pyramid',
@@ -80,8 +81,9 @@ export default function Home() {
         <p className="mt-3 text-[var(--muted)]">
           Boardhang started with two climbers, one board and a growing list of annoyances
           with the official app. The default sorting never made sense, and nothing was
-          saved — every trip into the catalog began with setting the same filters again.
-          Climbing together meant constant cross-checking: “have you done this one?”, “what
+          saved — every trip into the catalog began with setting the same filters again. The
+          grade pyramid didn’t add up. Climbing together meant constant cross-checking:
+          “have you done this one?”, “what
           can we both try?”. And every time someone changed the problem, the same questions
           from across the room: “which problem is that?” and “what was the one before?”.
         </p>
@@ -107,7 +109,8 @@ export default function Home() {
               Keep your filters.
             </strong>{' '}
             Sort and filter the catalog once — Boardhang remembers your setup per board, so
-            every visit starts where you left off, not from scratch.
+            every visit starts where you left off, not from scratch. We also user-tested the
+            filter UX with climbers and rebuilt the parts everyone griped about.
           </li>
           <li>
             <strong className="font-medium text-[var(--foreground)]">
@@ -119,6 +122,13 @@ export default function Home() {
           </li>
           <li>
             <strong className="font-medium text-[var(--foreground)]">
+              Share problems as links.
+            </strong>{' '}
+            Every problem in Boardhang has a web address — send it to a friend and it opens
+            in their browser, no install needed. Something the official app can’t do.
+          </li>
+          <li>
+            <strong className="font-medium text-[var(--foreground)]">
               Browse a curated catalog.
             </strong>{' '}
             Around 12,000 curated MoonBoard problems, including 2,832 official benchmarks,
@@ -127,7 +137,7 @@ export default function Home() {
           </li>
           <li>
             <strong className="font-medium text-[var(--foreground)]">Log your ascents.</strong>{' '}
-            A local logbook tracks what you have climbed and shows your grade pyramid.
+            A local logbook tracks what you have climbed and shows an accurate grade pyramid.
           </li>
         </ul>
       </section>
