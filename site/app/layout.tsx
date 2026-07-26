@@ -54,9 +54,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <a href="https://github.com/boardhang/boardhang-app">issues and pull requests
             welcome</a>.
           </p>
-          <p className="mt-3 flex gap-4">
+          <p className="mt-3 flex flex-wrap gap-4">
             <a href="https://www.boardhang.app">Open the app</a>
-            <Link href="/guides">Guides</Link>
+            <Link href="/guides">MoonBoard guides</Link>
+            <Link href="/about">About</Link>
+            <Link href="/privacy">Privacy</Link>
             <a href="https://github.com/boardhang/boardhang-app">GitHub</a>
           </p>
         </footer>

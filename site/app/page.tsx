@@ -25,6 +25,11 @@ const organizationJsonLd = {
   description:
     'Boardhang is an unofficial, community-built free web app for MoonBoards, made by two climbers with a DIY LED board. Not affiliated with Moon Climbing Ltd.',
   sameAs: [GITHUB_URL],
+  contactPoint: {
+    '@type': 'ContactPoint',
+    contactType: 'customer support',
+    url: `${GITHUB_URL}/issues`,
+  },
 }
 
 const softwareApplicationJsonLd = {
