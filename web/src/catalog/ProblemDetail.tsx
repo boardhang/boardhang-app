@@ -25,7 +25,7 @@ import { CatalogBoard } from '../board/CatalogBoard'
 // there's more below (and names it) without a separate affordance.
 const BETA_PEEK = 34
 import type { CatalogBoardDef } from '../board/boards'
-import { getActiveHoldSetsRaw } from '../board/boardStore'
+import { getActiveHoldSetsRaw, instanceForLayout } from '../board/boardStore'
 import { holdSetContext } from '../board/holdSetMembership'
 import type { CatalogProblem } from './catalogSync'
 import { recordRecent } from './recentsStore'
@@ -207,7 +207,10 @@ export function ProblemDetail({
   )
 
   const pos = displayed.findIndex((p) => p.source_catalog_id === currentId)
-  const { visible } = holdSetContext(board.membershipResource, getActiveHoldSetsRaw(board.layoutId))
+  const { visible } = holdSetContext(
+    board.membershipResource,
+    getActiveHoldSetsRaw(instanceForLayout(board)),
+  )
   const isFav = favoriteIds.has(currentId)
   const isSent = sentIds.has(currentId)
 

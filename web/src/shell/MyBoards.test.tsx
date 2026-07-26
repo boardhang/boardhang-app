@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getActiveBoardId } from '../board/boardStore'
+import { getActiveInstanceId } from '../board/boardStore'
 
 const h = vi.hoisted(() => ({
   activeSession: null as unknown,
@@ -46,25 +46,47 @@ beforeEach(() => {
   window.dispatchEvent(new StorageEvent('storage')) // reset boardStore snapshot
 })
 
-/** Add a board by name from the "Add a board" list. */
+/** Add a board by name, driving the guided setup flow to completion. */
 function addBoard(name: string) {
-  const addRow = screen.getByText(name).closest('div')!
-  fireEvent.click(within(addRow).getByRole('button', { name: 'Add' }))
+  fireEvent.click(screen.getByRole('button', { name: /Add a board/ }))
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(name) }))
+  // Multi-angle boards get an angle step; single-angle ones skip straight to hold sets.
+  const next = screen.queryByRole('button', { name: 'Next' })
+  if (next) fireEvent.click(next)
+  fireEvent.click(screen.getByRole('button', { name: 'Add board' }))
 }
 
-/** Open a board's config drawer. */
+/** A board section by its heading ("My boards" / "Shared with me"). */
+const section = (title: string) => screen.getByText(title).closest('section')!
+
+/** Board names in a section's rendered order, for asserting the frozen order. */
+const namesIn = (title: string) =>
+  within(section(title))
+    .getAllByRole('button', { name: /^Configure / })
+    .map((b) => b.getAttribute('aria-label')!.replace('Configure ', ''))
+
+/** Open a board's config from its row. */
 function openConfig(name: string) {
   fireEvent.click(screen.getByRole('button', { name: `Configure ${name}` }))
 }
 
-/** Hold-set / angle toggles in the open drawer (the aria-pressed buttons). */
-const toggles = () => screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed'))
-
 describe('MyBoards', () => {
-  it('shows the first-run prompt and every addable board when none are added', () => {
+  it('shows the first-run prompt with a single way in', () => {
     render(<MyBoards onActivated={() => {}} />)
     expect(screen.getByText('Add your first board')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(5)
+    expect(screen.getByRole('button', { name: 'Add a board' })).toBeInTheDocument()
+  })
+
+  it('offers every unheld board in the flow’s first step, and drops one once held', () => {
+    render(<MyBoards onActivated={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add a board' }))
+    expect(screen.getByText('Which board do you have?')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /MoonBoard/ })).toHaveLength(5)
+    fireEvent.click(screen.getByRole('button', { name: /Mini MoonBoard 2025/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add board' }))
+
+    fireEvent.click(screen.getByRole('button', { name: /Add a board/ }))
+    expect(screen.getAllByRole('button', { name: /MoonBoard/ })).toHaveLength(4)
   })
 
   it('offers Join a session with no active session (including first-run)', () => {
@@ -82,11 +104,11 @@ describe('MyBoards', () => {
     const onActivated = vi.fn()
     render(<MyBoards onActivated={onActivated} />)
     addBoard('MoonBoard Masters 2019') // first owned board → becomes active
-    expect(getActiveBoardId()).toBe(5)
-    const myBoards = screen.getByText('My boards').closest('section')!
-    fireEvent.click(within(myBoards).getByRole('button', { name: 'Browse' }))
-    expect(onActivated).toHaveBeenCalledWith(5)
-    expect(getActiveBoardId()).toBe(5) // Browse doesn't switch the active board
+    expect(getActiveInstanceId()).toBe('5')
+
+    fireEvent.click(within(section('My boards')).getByRole('button', { name: 'Browse' }))
+    expect(onActivated).toHaveBeenCalledWith('5')
+    expect(getActiveInstanceId()).toBe('5') // Browse doesn't switch the active board
   })
 
   it('Set as active switches the active board without leaving the list', () => {
@@ -94,58 +116,110 @@ describe('MyBoards', () => {
     render(<MyBoards onActivated={onActivated} />)
     addBoard('MoonBoard Masters 2019') // active (id 5)
     addBoard('MoonBoard Masters 2017') // owned but not active (id 4)
-    const myBoards = screen.getByText('My boards').closest('section')!
+    const list = () => section('My boards')
 
     // Exactly one Browse (the active board) and one Set as active (the other).
-    expect(within(myBoards).getAllByRole('button', { name: 'Browse' })).toHaveLength(1)
-    const orderBefore = within(myBoards)
-      .getAllByText(/MoonBoard Masters 20\d\d/)
-      .map((el) => el.textContent)
-    fireEvent.click(within(myBoards).getByRole('button', { name: 'Set as active' }))
+    expect(within(list()).getAllByRole('button', { name: 'Browse' })).toHaveLength(1)
+    const orderBefore = namesIn('My boards')
+    fireEvent.click(within(list()).getByRole('button', { name: 'Set as active' }))
 
-    expect(getActiveBoardId()).toBe(4) // switched
+    expect(getActiveInstanceId()).toBe('4') // switched
     expect(onActivated).not.toHaveBeenCalled() // stayed on the list, no navigation
     // The row order does not reshuffle on activate — the badge/button swap in place.
-    const orderAfter = within(myBoards)
-      .getAllByText(/MoonBoard Masters 20\d\d/)
-      .map((el) => el.textContent)
-    expect(orderAfter).toEqual(orderBefore)
-    // The Browse button (active board) is now on the board that was switched to.
-    expect(within(myBoards).getAllByRole('button', { name: 'Browse' })).toHaveLength(1)
+    expect(namesIn('My boards')).toEqual(orderBefore)
+    expect(within(list()).getAllByRole('button', { name: 'Browse' })).toHaveLength(1)
   })
 
-  it('configures the angle from the board drawer', () => {
+  describe('own vs shared sections', () => {
+    /** Seed a shared board alongside whatever else is held. */
+    function seedShared(name = 'Gym wall') {
+      localStorage.setItem(
+        'sharedBoard__S:b1',
+        JSON.stringify({
+          boardId: 'b1',
+          role: 'member',
+          name,
+          layoutId: 5,
+          angleMode: 'fixed',
+          canonicalAngle: 25,
+          canonicalHoldSetsRaw: '',
+        }),
+      )
+    }
+
+    it('hides the shared section entirely when nothing is shared with you', () => {
+      render(<MyBoards onActivated={() => {}} />)
+      addBoard('MoonBoard Masters 2019')
+      expect(screen.getByText('My boards')).toBeInTheDocument()
+      expect(screen.queryByText('Shared with me')).toBeNull()
+    })
+
+    it('splits a local and a shared board of the SAME layout across the two sections', () => {
+      // The case the instance model exists for: your own 2019 and a shared 2019 at once.
+      seedShared()
+      localStorage.setItem('addedBoards', '5|S:b1')
+      localStorage.setItem('activeBoardId', '5')
+      window.dispatchEvent(new StorageEvent('storage'))
+      render(<MyBoards onActivated={() => {}} />)
+
+      expect(namesIn('My boards')).toEqual(['MoonBoard Masters 2019'])
+      expect(namesIn('Shared with me')).toEqual(['Gym wall'])
+    })
+
+    it('shows each board its own config, so sibling instances do not blur together', () => {
+      seedShared()
+      localStorage.setItem('addedBoards', '5|S:b1')
+      localStorage.setItem('activeBoardId', '5')
+      localStorage.setItem('angle_5', '40')
+      window.dispatchEvent(new StorageEvent('storage'))
+      render(<MyBoards onActivated={() => {}} />)
+
+      expect(within(section('My boards')).getByText(/40°/)).toBeInTheDocument()
+      expect(within(section('Shared with me')).getByText(/25°/)).toBeInTheDocument()
+    })
+
+    it('keeps the Active badge on whichever section holds the active board', () => {
+      seedShared()
+      localStorage.setItem('addedBoards', '5|S:b1')
+      localStorage.setItem('activeBoardId', 'S:b1')
+      window.dispatchEvent(new StorageEvent('storage'))
+      render(<MyBoards onActivated={() => {}} />)
+
+      expect(within(section('Shared with me')).getByText('Active')).toBeInTheDocument()
+      expect(within(section('My boards')).queryByText('Active')).toBeNull()
+      expect(within(section('Shared with me')).getByRole('button', { name: 'Browse' })).toBeInTheDocument()
+    })
+
+    it('drops the shared section when its last board is detached to local', () => {
+      seedShared()
+      localStorage.setItem('addedBoards', 'S:b1')
+      localStorage.setItem('activeBoardId', 'S:b1')
+      window.dispatchEvent(new StorageEvent('storage'))
+      render(<MyBoards onActivated={() => {}} />)
+      expect(screen.getByText('Shared with me')).toBeInTheDocument()
+
+      openConfig('Gym wall')
+      fireEvent.click(screen.getByRole('button', { name: /Make this my own board/ }))
+      fireEvent.click(screen.getByRole('button', { name: /Confirm — stop following/ }))
+
+      expect(screen.queryByText('Shared with me')).toBeNull()
+      expect(namesIn('My boards')).toEqual(['MoonBoard Masters 2019'])
+    })
+  })
+
+  it('renders no board sections or share affordance at first run', () => {
+    render(<MyBoards onActivated={() => {}} />)
+    expect(screen.queryByText('My boards')).toBeNull()
+    expect(screen.queryByText('Shared with me')).toBeNull()
+    expect(screen.queryByRole('button', { name: /share/i })).toBeNull()
+  })
+
+  it('renders no share affordance anywhere while sharing is unavailable', () => {
     render(<MyBoards onActivated={() => {}} />)
     addBoard('MoonBoard Masters 2019')
-    openConfig('MoonBoard Masters 2019')
-    expect(screen.getByRole('button', { name: '40°' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(screen.getByRole('button', { name: '25°' }))
-    expect(screen.getByRole('button', { name: '25°' })).toHaveAttribute('aria-pressed', 'true')
-  })
-
-  it('toggles installed hold sets and blocks removing the last one', () => {
-    render(<MyBoards onActivated={() => {}} />)
-    addBoard('Mini MoonBoard 2025') // 4 hold sets, no angle choice
-    openConfig('Mini MoonBoard 2025')
-    expect(toggles()).toHaveLength(4)
-
-    fireEvent.click(toggles()[0])
-    fireEvent.click(toggles()[1])
-    fireEvent.click(toggles()[2])
-    const stillOn = toggles().filter((t) => t.getAttribute('aria-pressed') === 'true')
-    expect(stillOn).toHaveLength(1)
-    expect(stillOn[0]).toBeDisabled()
-  })
-
-  it('removes a board from its drawer after a confirm click', () => {
-    render(<MyBoards onActivated={() => {}} />)
-    addBoard('MoonBoard Masters 2019')
-    expect(screen.getByText('My boards')).toBeInTheDocument()
-
-    openConfig('MoonBoard Masters 2019')
-    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
-    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
-    expect(screen.queryByText('My boards')).toBeNull() // back to first-run
+    addBoard('MoonBoard Masters 2017')
+    expect(screen.queryByRole('button', { name: /share/i })).toBeNull()
+    expect(screen.queryByText(/^Share/)).toBeNull()
   })
 
   // ── U3: cross-device "Resume session" surface ──

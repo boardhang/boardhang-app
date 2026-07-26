@@ -40,7 +40,7 @@ const Q_DEBOUNCE_MS = 250
 export function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const matchRoute = useMatchRoute()
-  const { addedBoards, activeBoard } = useBoardStore()
+  const { instances, activeInstance } = useBoardStore()
   const { status: authStatus } = useAuth()
 
   const catalogMatch = matchRoute({ to: '/board/$layoutId/catalog' })
@@ -169,10 +169,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
     else if (next === 'lists') void navigate({ to: '/lists' })
     else {
       // Search button → the active board's catalog (falls back to the MRU front).
-      const board = addedBoards.some((b) => b.layoutId === activeBoard.layoutId)
-        ? activeBoard
-        : addedBoards[0]
-      if (board) void navigate(catalogNavTarget(board))
+      const instance = instances.some((i) => i.instanceId === activeInstance.instanceId)
+        ? activeInstance
+        : instances[0]
+      if (instance) void navigate(catalogNavTarget(instance))
     }
   }
 
@@ -231,7 +231,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <Navigation
           view={view}
           origin={origin}
-          disabled={addedBoards.length === 0 ? ['catalog'] : []}
+          disabled={instances.length === 0 ? ['catalog'] : []}
           query={field}
           onQueryChange={onQueryChange}
           onClear={onClear}

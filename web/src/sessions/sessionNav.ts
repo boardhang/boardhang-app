@@ -4,7 +4,7 @@
 // shape.
 
 import { useNavigate } from '@tanstack/react-router'
-import { activateBoard } from '../board/boardStore'
+import { activateBoard, addBoard, instanceForLayout } from '../board/boardStore'
 import { boardByLayoutId } from '../board/boards'
 import { catalogNavTarget } from '../catalog/catalogNav'
 import type { Session } from './sessionsTypes'
@@ -19,21 +19,24 @@ type NavigateFn = ReturnType<typeof useNavigate>
  * `/boards` rather than a dead no-op (never route a session tap through a fallback-less handler
  * like the board-browse `onActivated`).
  *
- * **Side effect — `activateBoard` mutates My Boards.** `activateBoard` writes the ACTIVE_KEY
- * pointer AND promotes the board to the head of the added-boards list, so resuming/joining a
- * session for a board the user hasn't added on this device WILL add it to their My Boards.
- * This is deliberate: MyBoards derives its "Active" badge from `addedBoards.find(activeId)`
- * with fallback to `addedBoards[0]`, so setting active-only-without-adding would leave MyBoards
- * lying about which board is active while the user is browsing a session on that board. The
- * add matches user intent — they are actively using this board — and the user can remove it
- * from MyBoards after the session ends. The `/boards` fallback stays honest because it never
- * calls activateBoard.
+ * **Side effect — this mutates My Boards.** It adds a local instance of the session's board
+ * when the device holds none, then activates it, so resuming/joining a session for a board the
+ * user hasn't added on this device WILL add it to their My Boards. This is deliberate: MyBoards
+ * derives its "Active" badge from the held instances with fallback to the MRU front, so setting
+ * active-only-without-adding would leave MyBoards lying about which board is active while the
+ * user is browsing a session on that board. The add matches user intent — they are actively
+ * using this board — and the user can remove it after the session ends. The `/boards` fallback
+ * stays honest because it never adds or activates.
  */
 export function navigateToSessionBoard(navigate: NavigateFn, session: Session): void {
   const board = boardByLayoutId(session.boardLayoutId)
   if (board) {
-    activateBoard(board.layoutId)
-    void navigate(catalogNavTarget(board))
+    // A session names a *layout*, not an instance, so land on whichever instance of it
+    // this device holds — adding one first if none, per the side-effect note above.
+    addBoard(board.layoutId)
+    const instance = instanceForLayout(board)
+    activateBoard(instance.instanceId)
+    void navigate(catalogNavTarget(instance))
   } else {
     void navigate({ to: '/boards' })
   }

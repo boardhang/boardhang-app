@@ -28,16 +28,19 @@ const routeApi = getRouteApi('/logbook')
 
 export function LogbookScreen() {
   const { status, isRestoring } = useAuth()
-  const { addedBoards, activeBoard } = useBoardStore()
+  const { instances, activeInstance } = useBoardStore()
+  // Ascents reference a layout, so the logbook stays layout-scoped: sibling instances of
+  // one layout share a logbook by design.
+  const activeBoard = activeInstance.layout
   // Loads on sign-in / clears on sign-out (the shared auth-gated lifecycle).
   const { status: dataStatus, ascents, error } = useEnsureAscentsLoaded()
   // Route-bound so the drawer's `search` reducer types against /logbook's params.
   const navigate = routeApi.useNavigate()
   const signedIn = status !== 'signedOut'
-  // The store defaults `activeBoard` to Mini 2025 even when it isn't among the added
-  // boards (adding a board doesn't activate it), so gate on membership — not just count —
-  // or the logbook would leak the default board for a user who added only a different one.
-  const activeBoardAdded = addedBoards.some((b) => b.layoutId === activeBoard.layoutId)
+  // The store falls back to a synthetic Mini 2025 instance when none is held, so gate on
+  // membership — not just count — or the logbook would leak the default board for a user
+  // who added only a different one.
+  const activeBoardAdded = instances.some((i) => i.instanceId === activeInstance.instanceId)
 
   const [target, setTarget] = useState<LogTarget | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)

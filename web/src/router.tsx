@@ -37,7 +37,7 @@ import { ListDetailScreen } from './lists/ListDetailScreen'
 import { CatalogScreen } from './catalog/CatalogScreen'
 import { JoinSession } from './sessions/JoinSession'
 import { boardByLayoutId } from './board/boards'
-import { getActiveBoardId, getAddedBoardIds } from './board/boardStore'
+import { getActiveInstanceId, getAddedInstanceIds, instanceById } from './board/boardStore'
 import { catalogNavTarget } from './catalog/catalogNav'
 import { CATALOG_SEARCH_DEFAULTS, validateCatalogSearch } from './catalog/catalogSearch'
 import { LOGBOOK_SEARCH_DEFAULTS, validateLogbookSearch } from './logbook/logbookSearch'
@@ -47,9 +47,9 @@ function BoardsRoute() {
   const navigate = useNavigate()
   return (
     <MyBoards
-      onActivated={(layoutId) => {
-        const board = boardByLayoutId(layoutId)
-        if (board) void navigate(catalogNavTarget(board))
+      onActivated={(instanceId) => {
+        const instance = instanceById(instanceId)
+        if (instance) void navigate(catalogNavTarget(instance))
       }}
     />
   )
@@ -69,12 +69,17 @@ function buildRouteTree() {
     getParentRoute: () => rootRoute,
     path: '/',
     beforeLoad: () => {
-      const added = getAddedBoardIds()
+      const added = getAddedInstanceIds()
       if (added.length === 0) throw redirect({ to: '/boards' })
-      // Prefer the active board when it's actually added, else the MRU front.
-      const activeId = getActiveBoardId()
+      // Prefer the active instance when it's actually held, else the MRU front. Resolve
+      // through the store rather than the registry: an adopted instance's id carries no
+      // layout, so `boardByLayoutId(id)` has nothing to look up and a non-null assertion
+      // there would crash cold launch outright instead of degrading.
+      const activeId = getActiveInstanceId()
       const targetId = added.includes(activeId) ? activeId : added[0]
-      throw redirect(catalogNavTarget(boardByLayoutId(targetId)!))
+      const target = instanceById(targetId)
+      if (target === undefined) throw redirect({ to: '/boards' })
+      throw redirect(catalogNavTarget(target))
     },
   })
 

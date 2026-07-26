@@ -9,7 +9,18 @@ import { boardByLayoutId } from '../board/boards'
 // LogbookScreen leans on several stores/hooks. We mock them so each test can pin a
 // precise state (signed in?, boards added?, ascents present?) and assert what renders.
 const authState = { status: 'signedIn' as string, isRestoring: false }
-const boardState = { addedBoards: [] as unknown[], activeBoard: { layoutId: 7, name: 'Mini MoonBoard 2025' } }
+// The store speaks board *instances*: `instanceId` identifies which board is active, and
+// `layout` carries the registry definition the screen renders from.
+const asInstance = (layout: { layoutId: number; name: string }) => ({
+  instanceId: String(layout.layoutId),
+  layoutId: layout.layoutId,
+  layout,
+})
+const mini = { layoutId: 7, name: 'Mini MoonBoard 2025' }
+const boardState = {
+  instances: [] as ReturnType<typeof asInstance>[],
+  activeInstance: asInstance(mini),
+}
 const ascentsState = { status: 'loaded' as string, ascents: [] as unknown[], error: null as string | null }
 const back = vi.fn()
 const search = { problem: '' as string }
@@ -110,8 +121,8 @@ vi.mock('@tanstack/react-router', () => ({
 afterEach(() => {
   authState.status = 'signedIn'
   authState.isRestoring = false
-  boardState.addedBoards = []
-  boardState.activeBoard = { layoutId: 7, name: 'Mini MoonBoard 2025' }
+  boardState.instances = []
+  boardState.activeInstance = asInstance(mini)
   ascentsState.status = 'loaded'
   ascentsState.ascents = []
   ascentsState.error = null
@@ -126,7 +137,7 @@ afterEach(() => {
 
 describe('LogbookScreen — no board added', () => {
   it('shows the add-a-board empty state instead of any board name', () => {
-    boardState.addedBoards = []
+    boardState.instances = []
     render(<LogbookScreen />)
 
     expect(screen.getByText('Add a board to start your logbook')).toBeInTheDocument()
@@ -135,7 +146,7 @@ describe('LogbookScreen — no board added', () => {
   })
 
   it('routes to /boards from the CTA', () => {
-    boardState.addedBoards = []
+    boardState.instances = []
     render(<LogbookScreen />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Add a board' }))
@@ -145,7 +156,7 @@ describe('LogbookScreen — no board added', () => {
   it('the guard beats cloud ascents on the default board', () => {
     // A signed-in user can have cloud ascents on the default board (7) without
     // having added it here. The empty state must still win.
-    boardState.addedBoards = []
+    boardState.instances = []
     ascentsState.ascents = [
       { id: '1', boardLayoutId: 7, sent: true, sourceCatalogId: null, date: '2026-07-01' },
     ]
@@ -155,7 +166,7 @@ describe('LogbookScreen — no board added', () => {
   })
 
   it('shows the board name once the active board is added', () => {
-    boardState.addedBoards = [{ layoutId: 7, name: 'Mini MoonBoard 2025' }]
+    boardState.instances = [asInstance({ layoutId: 7, name: 'Mini MoonBoard 2025' })]
     render(<LogbookScreen />)
 
     expect(screen.queryByText('Add a board to start your logbook')).toBeNull()
@@ -166,8 +177,8 @@ describe('LogbookScreen — no board added', () => {
     // Adding a board doesn't activate it, so `activeBoard` can stay the store's
     // default (Mini 2025) while the added board is something else. The logbook must
     // gate on membership, not count — otherwise the default board leaks right back in.
-    boardState.addedBoards = [{ layoutId: 1, name: 'MoonBoard Masters 2019' }]
-    boardState.activeBoard = { layoutId: 7, name: 'Mini MoonBoard 2025' }
+    boardState.instances = [asInstance({ layoutId: 1, name: 'MoonBoard Masters 2019' })]
+    boardState.activeInstance = asInstance({ layoutId: 7, name: 'Mini MoonBoard 2025' })
     render(<LogbookScreen />)
 
     expect(screen.getByText('Add a board to start your logbook')).toBeInTheDocument()
@@ -177,7 +188,7 @@ describe('LogbookScreen — no board added', () => {
   it('shows the sign-in panel — not the add-a-board state — when signed out', () => {
     // The signed-out guard runs ahead of the no-board guard; ordering is load-bearing.
     authState.status = 'signedOut'
-    boardState.addedBoards = []
+    boardState.instances = []
     render(<LogbookScreen />)
 
     expect(screen.getByText('Sign in to see your logbook')).toBeInTheDocument()
@@ -189,7 +200,7 @@ describe('LogbookScreen — import-from-MoonBoard affordance', () => {
   const addedBoard = { layoutId: 7, name: 'Mini MoonBoard 2025' }
 
   it('offers Import from MoonBoard in the empty logbook and routes to /logbook/import', () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     ascentsState.ascents = []
     render(<LogbookScreen />)
 
@@ -199,7 +210,7 @@ describe('LogbookScreen — import-from-MoonBoard affordance', () => {
   })
 
   it('offers the import affordance when nothing is logged on the active board', () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     // Ascents exist, but on a different board → the active board's list is empty.
     ascentsState.ascents = [
       { id: 'x', boardLayoutId: 1, sent: true, sourceCatalogId: null, date: '2026-07-01' },
@@ -227,7 +238,7 @@ describe('LogbookScreen — import-from-MoonBoard affordance', () => {
   }
 
   it('shows a dismissable import banner in the populated logbook, linking to /logbook/import', () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     ascentsState.ascents = [populatedAscent]
     render(<LogbookScreen />)
 
@@ -238,7 +249,7 @@ describe('LogbookScreen — import-from-MoonBoard affordance', () => {
   })
 
   it('hides the import banner once dismissed and remembers it', () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     ascentsState.ascents = [populatedAscent]
     const first = render(<LogbookScreen />)
 
@@ -270,7 +281,7 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
   }
 
   it('opens the drawer via ?problem when a resolvable row is tapped', async () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     ascentsState.ascents = [{ ...baseAscent, sourceCatalogId: 'p-1' }]
     // Resolvable: the catalog entry is cached (holds omitted so no board thumbnail
     // renders — keeps the test off CatalogBoard's geometry).
@@ -289,9 +300,9 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
   })
 
   it('hides row thumbnails when the logbook previews toggle is off', async () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     // A real board object so CatalogBoard's geometry can render the thumbnail.
-    boardState.activeBoard = boardByLayoutId(7)!
+    boardState.activeInstance = asInstance(boardByLayoutId(7)!)
     ascentsState.ascents = [{ ...baseAscent, sourceCatalogId: 'p-1' }]
     // Holds present → AscentRow draws the board thumbnail while the toggle is on.
     catalogMap = new Map([
@@ -307,7 +318,7 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
   })
 
   it('does not make a user-created (unresolved) row tappable', () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     // sourceCatalogId null → no catalog entry → not tappable, but still shown + editable.
     ascentsState.ascents = [{ ...baseAscent, sourceCatalogId: null }]
 
@@ -319,7 +330,7 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
   })
 
   it('scopes the pager to the tapped row’s day-session, deduped', async () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     // Two sessions: Mon (1 problem) and Fri (3 problems, one logged twice → deduped).
     ascentsState.ascents = [
       { ...baseAscent, id: 'm1', date: '2026-07-06', problemName: 'STRETCHY PANTS', sourceCatalogId: 'p-mon' },
@@ -342,7 +353,7 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
   })
 
   it('gives a single-problem day no pager domain', async () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     ascentsState.ascents = [
       { ...baseAscent, id: 'm1', date: '2026-07-06', problemName: 'STRETCHY PANTS', sourceCatalogId: 'p-mon' },
     ]
@@ -357,7 +368,7 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
   })
 
   it('closes a tap-opened drawer with Back (stays on the tab)', async () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     ascentsState.ascents = [{ ...baseAscent, sourceCatalogId: 'p-1' }]
     catalogMap = new Map([['p-1', { source_catalog_id: 'p-1', angle: 40 } as CatalogProblem]])
 
@@ -370,7 +381,7 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
   })
 
   it('closes a cold deep-linked drawer by clearing ?problem in place', async () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     ascentsState.ascents = [{ ...baseAscent, sourceCatalogId: 'p-1' }]
     catalogMap = new Map([['p-1', { source_catalog_id: 'p-1', angle: 40 } as CatalogProblem]])
     // Deep-link: ?problem set on first render, no tap → `pushed` stays false.
@@ -387,7 +398,7 @@ describe('LogbookScreen — row tap-through to problem detail', () => {
   })
 
   it('pages within the session via replace navigation, keeping the domain', async () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     ascentsState.ascents = [
       { ...baseAscent, id: 'f1', date: '2026-07-03', problemName: 'ULTIMATE', sourceCatalogId: 'p-1' },
       { ...baseAscent, id: 'f2', date: '2026-07-03', problemName: 'WILLOW', sourceCatalogId: 'p-2' },
@@ -426,7 +437,7 @@ describe('LogbookScreen — Session flash badge wiring', () => {
   }
 
   it('badges a later 1-try send as Session flash when an earlier row exists for the problem', () => {
-    boardState.addedBoards = [addedBoard]
+    boardState.instances = [asInstance(addedBoard)]
     ascentsState.ascents = [
       { ...baseAscent, id: 'earlier', sent: false, tries: 2, date: '2026-07-01T10:00:00' },
       { ...baseAscent, id: 'later', sent: true, tries: 1, date: '2026-07-06T10:00:00' },

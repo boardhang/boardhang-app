@@ -1,8 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithRouter } from './test/renderWithRouter'
-import { addBoard, getAddedBoardIds, getAngle } from './board/boardStore'
-import { boardByLayoutId } from './board/boards'
+import { addBoard, getAddedInstanceIds, getAngle, instanceById } from './board/boardStore'
 import { resetLastOpened } from './catalog/lastOpenedStore'
 import { loadSeed } from './catalog/filterSeed'
 import type { CatalogProblem } from './catalog/catalogSync'
@@ -50,6 +49,41 @@ describe('bare-/ redirect', () => {
     expect(await screen.findByText('Alpha')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Search problems' })).toBeInTheDocument()
   })
+
+  it('cold-launches with an adopted instance active, resolving its layout from the mirror', async () => {
+    // An adopted instance's id carries no layout, so the redirect has to resolve it
+    // through the store. Looking it up in the registry instead would assert non-null on
+    // undefined and crash the launch outright.
+    localStorage.setItem('addedBoards', 'S:board-uuid-1')
+    localStorage.setItem('activeBoardId', 'S:board-uuid-1')
+    localStorage.setItem(
+      'sharedBoard__S:board-uuid-1',
+      JSON.stringify({
+        boardId: 'board-uuid-1',
+        role: 'member',
+        name: 'Gym wall',
+        layoutId: 7,
+        angleMode: 'fixed',
+        canonicalAngle: 40,
+        canonicalHoldSetsRaw: '',
+      }),
+    )
+    window.dispatchEvent(new StorageEvent('storage'))
+
+    renderWithRouter('/')
+    expect(await screen.findByText('Alpha')).toBeInTheDocument()
+  })
+
+  it('cold-launches to My Boards when the only added instance is an unresolvable orphan', async () => {
+    // A half-written adoption: referenced in the list, no mirror. It must degrade to the
+    // boards page rather than redirect into a layout-less catalog.
+    localStorage.setItem('addedBoards', 'S:board-uuid-1')
+    localStorage.setItem('activeBoardId', 'S:board-uuid-1')
+    window.dispatchEvent(new StorageEvent('storage'))
+
+    renderWithRouter('/')
+    expect(await screen.findByText('Add your first board')).toBeInTheDocument()
+  })
 })
 
 describe('catalog route guards', () => {
@@ -71,7 +105,7 @@ describe('catalog route guards', () => {
     addBoard(7)
     renderWithRouter('/board/5/catalog')
     fireEvent.click(await screen.findByRole('button', { name: 'Add this board' }))
-    await waitFor(() => expect(getAddedBoardIds()).toContain(5))
+    await waitFor(() => expect(getAddedInstanceIds()).toContain('5'))
     expect(screen.queryByText('Add this board')).toBeNull()
   })
 })
@@ -117,7 +151,7 @@ describe('URL is the source of truth', () => {
     addBoard(5) // board 5 supports [40, 25]
     renderWithRouter('/board/5/catalog?angle=25')
     await screen.findByText('Alpha')
-    await waitFor(() => expect(getAngle(boardByLayoutId(5)!)).toBe(25))
+    await waitFor(() => expect(getAngle(instanceById('5')!)).toBe(25))
   })
 })
 
