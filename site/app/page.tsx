@@ -93,16 +93,6 @@ export default function Home() {
       </section>
 
       <section className="mt-14">
-        <h2 className="text-xl font-semibold">Why not the official app?</h2>
-        <p className="mt-3 text-[var(--muted)]">
-          The official MoonBoard app truncates Bluetooth writes longer than 20 bytes. Official
-          hardware works around that, but DIY LED systems receive cut-off messages, so longer
-          problems light up half-finished or not at all. Boardhang splits every message into
-          chunks the board can handle, so each hold lights the way it should.
-        </p>
-      </section>
-
-      <section className="mt-14">
         <h2 className="text-xl font-semibold">What you can do</h2>
         <ul className="mt-3 space-y-4 text-[var(--muted)]">
           <li>
@@ -140,6 +130,16 @@ export default function Home() {
             A local logbook tracks what you have climbed and shows your grade pyramid.
           </li>
         </ul>
+      </section>
+
+      <section className="mt-14">
+        <h2 className="text-xl font-semibold">Why not the official app?</h2>
+        <p className="mt-3 text-[var(--muted)]">
+          The official MoonBoard app truncates Bluetooth writes longer than 20 bytes. Official
+          hardware works around that, but DIY LED systems receive cut-off messages, so longer
+          problems light up half-finished or not at all. Boardhang splits every message into
+          chunks the board can handle, so each hold lights the way it should.
+        </p>
       </section>
 
       <section className="mt-14">
