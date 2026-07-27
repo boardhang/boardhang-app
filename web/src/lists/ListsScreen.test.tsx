@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithRouter } from '../test/renderWithRouter'
 import type { ListsState } from './listsStore'
@@ -61,8 +61,18 @@ function savedList(id: string, name: string, createdAt: string): SavedList {
   }
 }
 
+/** Own the Mini 2025 (layout 7) — lists are only shown for boards in My Boards. */
+function ownBoards(ids: number[]): void {
+  localStorage.setItem('addedBoards', ids.join('|'))
+  // boardStore caches its snapshot; a storage event makes it re-read (it listens for
+  // cross-tab writes, which is exactly the recompute we need here).
+  window.dispatchEvent(new StorageEvent('storage'))
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
+  ownBoards([7])
   authState.status = 'signedInWithProfile'
   storeState = { status: 'loaded', lists: [], error: null }
   counts.mockResolvedValue(new Map<string, number>())
@@ -102,6 +112,61 @@ describe('ListsScreen', () => {
     storeState = { status: 'loaded', lists: [], error: null }
     renderWithRouter('/lists')
     expect(await screen.findByText('Create your first list')).toBeInTheDocument()
+  })
+
+  it('hides lists whose board is not in My Boards, and keeps the ones that are', async () => {
+    ownBoards([5]) // Mini 2025 (7) removed; another board still owned.
+    storeState = {
+      status: 'loaded',
+      lists: [
+        savedList('mini', 'Mini projects', '2026-07-06T02:00:00Z'),
+        { ...savedList('other', 'Still here', '2026-07-06T01:00:00Z'), boardLayoutId: 5 },
+      ],
+      error: null,
+    }
+    renderWithRouter('/lists')
+
+    expect(await screen.findByText('Still here')).toBeInTheDocument()
+    expect(screen.queryByText('Mini projects')).toBeNull()
+  })
+
+  it('all lists hidden by removed boards: says nothing was deleted, not "create your first"', async () => {
+    ownBoards([5])
+    storeState = {
+      status: 'loaded',
+      lists: [savedList('mini', 'Mini projects', '2026-07-06T02:00:00Z')],
+      error: null,
+    }
+    renderWithRouter('/lists')
+
+    expect(await screen.findByTestId('lists-all-hidden')).toBeInTheDocument()
+    expect(screen.getByText('Your list is on a board you removed')).toBeInTheDocument()
+    expect(screen.queryByText('Create your first list')).toBeNull()
+    // Not a deletion — the list comes back with the board.
+    expect(screen.getByRole('link', { name: 'My Boards' })).toBeInTheDocument()
+  })
+
+  it('re-adding the board brings its lists back', async () => {
+    ownBoards([])
+    storeState = {
+      status: 'loaded',
+      lists: [savedList('mini', 'Mini projects', '2026-07-06T02:00:00Z')],
+      error: null,
+    }
+    renderWithRouter('/lists')
+    expect(await screen.findByTestId('lists-all-hidden')).toBeInTheDocument()
+
+    act(() => ownBoards([7]))
+    expect(await screen.findByText('Mini projects')).toBeInTheDocument()
+  })
+
+  it('no boards added: hides the create form and points at My Boards', async () => {
+    ownBoards([])
+    storeState = { status: 'loaded', lists: [], error: null }
+    renderWithRouter('/lists')
+
+    expect(await screen.findByText('Add a board first')).toBeInTheDocument()
+    expect(screen.queryByLabelText('New list name')).toBeNull()
   })
 
   it('offline status: shows the cant-reach state with retry, NOT the empty state', async () => {

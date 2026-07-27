@@ -3,8 +3,12 @@
 // ladder (isRestoring → signed-out card → loading → empty/offline/error → content).
 // The list_problems counts come from the offline cache (countListProblems); the store
 // is cached-first, so a warm cache paints instantly and only an explicit refresh pulls.
+//
+// Only lists for boards in My Boards are shown. Removing a board is a local, reversible
+// "I don't have this wall anymore" — it never deletes list rows (they stay in Supabase
+// and keep syncing), so the lists reappear intact when the board is added back.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Check, Pencil, RefreshCw, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -13,7 +17,7 @@ import { SignInPanel } from '../auth/SignInPanel'
 import { boardByLayoutId } from '../board/boards'
 import { CatalogBoard } from '../board/CatalogBoard'
 import { useBoardStore } from '../board/boardStore'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -24,6 +28,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer'
+import { cn } from '@/lib/utils'
 import {
   createList,
   deleteList,
@@ -40,8 +45,17 @@ import { MAX_LIST_NAME, boardShortLabel, trimListName, type SavedList } from './
 export function ListsScreen() {
   const { status, isRestoring } = useAuth()
   const { status: dataStatus, lists, error } = useSavedLists()
-  const { activeBoard } = useBoardStore()
+  const { activeBoard, addedBoards } = useBoardStore()
   const signedIn = status !== 'signedOut'
+
+  // Hide lists whose board the user no longer owns — the rows stay in the DB and come
+  // back the moment the board is re-added (see the module header).
+  const visibleLists = useMemo(() => {
+    const owned = new Set(addedBoards.map((b) => b.layoutId))
+    return lists.filter((l) => owned.has(l.boardLayoutId))
+  }, [lists, addedBoards])
+  // Distinguishes "you have no lists" from "your lists belong to removed boards".
+  const hiddenCount = lists.length - visibleLists.length
 
   const [counts, setCounts] = useState<Map<string, number>>(new Map())
   const [newName, setNewName] = useState('')
@@ -159,25 +173,28 @@ export function ListsScreen() {
     <div className="flex flex-1 flex-col px-3" data-testid="lists-screen">
       {header}
 
-      {/* Create */}
-      <form
-        className="mb-4 flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void handleCreate()
-        }}
-      >
-        <Input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="New list name"
-          aria-label="New list name"
-          maxLength={MAX_LIST_NAME}
-        />
-        <Button type="submit" disabled={trimListName(newName).length === 0}>
-          Create
-        </Button>
-      </form>
+      {/* Create — a list is always scoped to a board you own, so with none added there
+          is nothing to create it against. */}
+      {addedBoards.length > 0 && (
+        <form
+          className="mb-4 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleCreate()
+          }}
+        >
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="New list name"
+            aria-label="New list name"
+            maxLength={MAX_LIST_NAME}
+          />
+          <Button type="submit" disabled={trimListName(newName).length === 0}>
+            Create
+          </Button>
+        </form>
+      )}
 
       {/* Offline (cold pull failed, nothing cached) — distinct from "no lists". */}
       {dataStatus === 'offline' ? (
@@ -193,16 +210,46 @@ export function ListsScreen() {
             Retry
           </Button>
         </div>
-      ) : lists.length === 0 ? (
-        <div className="mt-6 rounded-lg border border-dashed border-border p-6 text-center">
-          <h2 className="text-sm font-semibold">Create your first list</h2>
-          <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
-            Save catalog problems into named lists — projects, warmups, a session plan.
-          </p>
+      ) : visibleLists.length === 0 ? (
+        <div
+          className="mt-6 rounded-lg border border-dashed border-border p-6 text-center"
+          data-testid={hiddenCount > 0 ? 'lists-all-hidden' : 'lists-empty'}
+        >
+          {hiddenCount > 0 ? (
+            <>
+              <h2 className="text-sm font-semibold">
+                {hiddenCount === 1 ? 'Your list is on a board you removed' : 'Your lists are on boards you removed'}
+              </h2>
+              <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+                Nothing was deleted — add the board back in My Boards and{' '}
+                {hiddenCount === 1 ? 'it' : 'they'} will be here again.
+              </p>
+              <Link to="/boards" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}>
+                My Boards
+              </Link>
+            </>
+          ) : addedBoards.length === 0 ? (
+            <>
+              <h2 className="text-sm font-semibold">Add a board first</h2>
+              <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+                Lists belong to a board, so add the MoonBoard you have to start saving problems.
+              </p>
+              <Link to="/boards" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}>
+                My Boards
+              </Link>
+            </>
+          ) : (
+            <>
+              <h2 className="text-sm font-semibold">Create your first list</h2>
+              <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+                Save catalog problems into named lists — projects, warmups, a session plan.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-border">
-          {lists.map((list) => (
+          {visibleLists.map((list) => (
             <ListRowItem
               key={list.id}
               list={list}
