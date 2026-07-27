@@ -73,6 +73,16 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   it lives in volatile memory (creator) or is re-fetched via `session_invite_token`.
   `SESSION_COLUMNS` never selects `invite_token`. Identity-switch clear is wired from
   `AuthProvider.onAuthStateChange` (a shared device never inherits another user's session).
+- **Removing the board drops you out of its session.** A session is tied to one physical wall,
+  so removing a board in My Boards first calls `exitSessionOnBoard(layoutId)`
+  (`sessionsStore.ts`), which reuses the two actions SessionBar offers: an **owner who is alone**
+  ends the session (`endSession`), everyone else — a member, or an owner with company — only
+  **leaves** (`leaveSession`), and the session lives on for the others. An unloaded roster counts
+  as *not* alone: leaving is recoverable, ending someone else's session is not. A session on any
+  other board is untouched. The board removal is local and never blocks on the network — a failed
+  leave still retires the session on this device (`endActiveSessionLocally`), leaving the
+  membership row to expire server-side. The config drawer warns before the fact when the live
+  session is on the board being removed.
 - **`memberAscentsStore.ts`** — the projection: per-member `{ sentIds, loggedIds }` Set-pairs,
   seeded from the server-consistent snapshot (marker rows → empty Sets, so a zero-ascent
   member is never dropped from the AND-across predicate). Refetched on active-session change,

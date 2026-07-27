@@ -11,6 +11,9 @@ const h = vi.hoisted(() => ({
   resumeSession: vi.fn(),
   navigate: vi.fn(),
   navigateToSessionBoard: vi.fn(),
+  exitSessionOnBoard: vi.fn(),
+  endActiveSessionLocally: vi.fn(),
+  toast: vi.fn(),
 }))
 vi.mock('@tanstack/react-router', async (orig) => ({
   ...((await orig()) as Record<string, unknown>),
@@ -21,7 +24,10 @@ vi.mock('../sessions/sessionsStore', () => ({
   useSessions: () => ({ activeSession: h.activeSession }),
   listMyLiveSessions: (...a: unknown[]) => h.listMyLiveSessions(...a),
   resumeSession: (...a: unknown[]) => h.resumeSession(...a),
+  exitSessionOnBoard: (...a: unknown[]) => h.exitSessionOnBoard(...a),
+  endActiveSessionLocally: (...a: unknown[]) => h.endActiveSessionLocally(...a),
 }))
+vi.mock('sonner', () => ({ toast: (...a: unknown[]) => h.toast(...a) }))
 vi.mock('../sessions/sessionNav', () => ({
   navigateToSessionBoard: (...a: unknown[]) => h.navigateToSessionBoard(...a),
 }))
@@ -42,6 +48,9 @@ beforeEach(() => {
   h.resumeSession.mockReset().mockImplementation(async () => h.resumeResult)
   h.navigate.mockClear()
   h.navigateToSessionBoard.mockClear()
+  h.exitSessionOnBoard.mockReset().mockResolvedValue(null)
+  h.endActiveSessionLocally.mockClear()
+  h.toast.mockClear()
   localStorage.clear()
   window.dispatchEvent(new StorageEvent('storage')) // reset boardStore snapshot
 })
@@ -137,7 +146,7 @@ describe('MyBoards', () => {
     expect(stillOn[0]).toBeDisabled()
   })
 
-  it('removes a board from its drawer after a confirm click', () => {
+  it('removes a board from its drawer after a confirm click', async () => {
     render(<MyBoards onActivated={() => {}} />)
     addBoard('MoonBoard Masters 2019')
     expect(screen.getByText('My boards')).toBeInTheDocument()
@@ -145,7 +154,55 @@ describe('MyBoards', () => {
     openConfig('MoonBoard Masters 2019')
     fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
     fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
-    expect(screen.queryByText('My boards')).toBeNull() // back to first-run
+    await waitFor(() => expect(screen.queryByText('My boards')).toBeNull()) // back to first-run
+  })
+
+  it('removing the board you are mid-session on drops you out of that session', async () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 5 } // Masters 2019
+    h.exitSessionOnBoard.mockResolvedValue('left')
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() => expect(h.exitSessionOnBoard).toHaveBeenCalledWith(5))
+    await waitFor(() => expect(screen.queryByText('My boards')).toBeNull()) // board still removed
+    expect(h.toast).toHaveBeenCalledWith('Left the session on MoonBoard Masters 2019')
+  })
+
+  it('warns in the drawer before removing a board that has the live session', () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+    addBoard('Mini MoonBoard 2025')
+
+    openConfig('MoonBoard Masters 2019')
+    expect(screen.getByText('You’ll leave the session running on this board.')).toBeInTheDocument()
+  })
+
+  it('does not warn for a board the session is not on', () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 7 } // Mini 2025
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    expect(screen.queryByText('You’ll leave the session running on this board.')).toBeNull()
+  })
+
+  it('a failed leave still removes the board and retires the session on this device', async () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    h.exitSessionOnBoard.mockRejectedValue(new Error('offline'))
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() => expect(h.endActiveSessionLocally).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText('My boards')).toBeNull())
   })
 
   // ── U3: cross-device "Resume session" surface ──

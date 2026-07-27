@@ -422,6 +422,32 @@ export async function endSession(): Promise<void> {
 }
 
 /**
+ * Drop out of the active session when the user removes the board it runs on — a session is
+ * tied to one physical wall, so keeping it would leave them "climbing" on a board they just
+ * said they don't have. Mirrors the two actions SessionBar offers, so nothing happens here
+ * that the user couldn't do by hand: an owner who is alone ENDS it (no one is left to keep
+ * it going); everyone else — a member, or an owner with company — only LEAVES, and the
+ * session lives on for the others. A session on any other board is untouched.
+ *
+ * Returns what happened so the caller can say so; the server call can throw (offline), and
+ * the caller decides whether to retire it locally anyway.
+ */
+export async function exitSessionOnBoard(layoutId: number): Promise<'ended' | 'left' | null> {
+  const active = state.activeSession
+  if (!active || active.boardLayoutId !== layoutId) return null
+  const isOwner = !!state.selfId && active.ownerId === state.selfId
+  // Exactly SessionBar's `alone`. An unloaded roster (length 0) is NOT treated as alone:
+  // leaving is the recoverable choice, ending someone else's session is not.
+  const alone = state.roster.length === 1
+  if (isOwner && alone) {
+    await endSession()
+    return 'ended'
+  }
+  await leaveSession()
+  return 'left'
+}
+
+/**
  * Owner-only: remove another member from the session (KTD-11). Ejects a currently-unwanted
  * member; it does NOT rotate the invite token, so a holder of the link can rejoin until the
  * session is ended. Refreshes the roster on success.

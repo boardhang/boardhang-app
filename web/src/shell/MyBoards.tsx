@@ -8,11 +8,12 @@
 
 import { useRef, useState } from 'react'
 import { ScanQrCode, Settings2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { BOARDS, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { activeCsv, holdSetContext } from '../board/holdSetMembership'
 import { CatalogBoard } from '../board/CatalogBoard'
-import { useSessions } from '../sessions/sessionsStore'
+import { endActiveSessionLocally, exitSessionOnBoard, useSessions } from '../sessions/sessionsStore'
 import { useResumableSessions } from '../sessions/useResumableSessions'
 import { ResumableSessionRow } from '../sessions/ResumableSessionRow'
 import { ScanToJoinButton } from '../sessions/ScanToJoin'
@@ -48,6 +49,24 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
 
   const addedIds = new Set(addedBoards.map((b) => b.layoutId))
   const addable = BOARDS.filter((b) => !addedIds.has(b.layoutId))
+
+  // Removing a board you're mid-session on drops you out of that session first — you can't
+  // be on a wall you just said you don't have. The board goes either way: the removal is
+  // local and must not hang on the network, so a failed leave still retires the session
+  // locally (the membership row lingers until the session expires server-side).
+  async function handleRemove(board: CatalogBoardDef) {
+    try {
+      const exit = await exitSessionOnBoard(board.layoutId)
+      if (exit === 'ended') toast(`Ended your session on ${board.name}`)
+      else if (exit === 'left') toast(`Left the session on ${board.name}`)
+    } catch {
+      endActiveSessionLocally()
+      toast('Left the session on this device', {
+        description: 'You’re offline, so the others may still see you until the session ends.',
+      })
+    }
+    removeBoard(board.layoutId)
+  }
 
   // Freeze the row order for this mount. "Set as active" promotes the board to
   // the MRU front in the store, but the list must not reshuffle under the user's
@@ -118,7 +137,9 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
               onBrowse={() => onActivated(board.layoutId)}
               // Inactive board → just switch the active board; stay on this list.
               onSetActive={() => activateBoard(board.layoutId)}
-              onRemove={() => removeBoard(board.layoutId)}
+              onRemove={() => void handleRemove(board)}
+              // Warn before the fact: removing this board ends the session running on it.
+              hasActiveSession={activeSession?.boardLayoutId === board.layoutId}
               onAngle={(angle) => setAngle(board.layoutId, angle)}
               onHoldSets={(csv) => setActiveHoldSetsRaw(board.layoutId, csv)}
             />
@@ -148,6 +169,8 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
 interface BoardCardProps {
   board: CatalogBoardDef
   active: boolean
+  /** The device's live session runs on this board — removing it will drop out of it. */
+  hasActiveSession: boolean
   onBrowse: () => void
   onSetActive: () => void
   onRemove: () => void
@@ -155,7 +178,16 @@ interface BoardCardProps {
   onHoldSets: (csv: string) => void
 }
 
-function BoardCard({ board, active, onBrowse, onSetActive, onRemove, onAngle, onHoldSets }: BoardCardProps) {
+function BoardCard({
+  board,
+  active,
+  hasActiveSession,
+  onBrowse,
+  onSetActive,
+  onRemove,
+  onAngle,
+  onHoldSets,
+}: BoardCardProps) {
   const angle = getAngle(board)
   const { filterable, active: installed } = holdSetContext(
     board.membershipResource,
@@ -189,6 +221,7 @@ function BoardCard({ board, active, onBrowse, onSetActive, onRemove, onAngle, on
         <BoardConfigDrawer
           board={board}
           angle={angle}
+          hasActiveSession={hasActiveSession}
           onAngle={onAngle}
           onHoldSets={onHoldSets}
           onRemove={onRemove}
@@ -201,12 +234,20 @@ function BoardCard({ board, active, onBrowse, onSetActive, onRemove, onAngle, on
 interface BoardConfigDrawerProps {
   board: CatalogBoardDef
   angle: number
+  hasActiveSession: boolean
   onAngle: (angle: number) => void
   onHoldSets: (csv: string) => void
   onRemove: () => void
 }
 
-function BoardConfigDrawer({ board, angle, onAngle, onHoldSets, onRemove }: BoardConfigDrawerProps) {
+function BoardConfigDrawer({
+  board,
+  angle,
+  hasActiveSession,
+  onAngle,
+  onHoldSets,
+  onRemove,
+}: BoardConfigDrawerProps) {
   const { membership, filterable, active: installed, visible } = holdSetContext(
     board.membershipResource,
     getActiveHoldSetsRaw(board.layoutId),
@@ -278,14 +319,21 @@ function BoardConfigDrawer({ board, angle, onAngle, onHoldSets, onRemove }: Boar
               </div>
             </div>
           )}
-          <Button
-            variant={confirmRemove ? 'destructive' : 'outline'}
-            className="w-full"
-            onClick={() => (confirmRemove ? onRemove() : setConfirmRemove(true))}
-            onBlur={() => setConfirmRemove(false)}
-          >
-            {confirmRemove ? 'Confirm — remove this board' : 'Remove board'}
-          </Button>
+          <div className="space-y-1.5">
+            <Button
+              variant={confirmRemove ? 'destructive' : 'outline'}
+              className="w-full"
+              onClick={() => (confirmRemove ? onRemove() : setConfirmRemove(true))}
+              onBlur={() => setConfirmRemove(false)}
+            >
+              {confirmRemove ? 'Confirm — remove this board' : 'Remove board'}
+            </Button>
+            {hasActiveSession && (
+              <p className="text-center text-xs text-muted-foreground">
+                You’ll leave the session running on this board.
+              </p>
+            )}
+          </div>
         </div>
       </DrawerContent>
     </Drawer>

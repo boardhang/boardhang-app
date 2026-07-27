@@ -167,6 +167,7 @@ import {
   createSession,
   endActiveSessionLocally,
   endSession,
+  exitSessionOnBoard,
   getInviteToken,
   getSessionsSnapshot,
   initSessions,
@@ -342,6 +343,54 @@ describe('sessionsStore', () => {
     endActiveSessionLocally()
     expect(getSessionsSnapshot().activeSession).toBeNull()
     expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // no server call
+  })
+
+  it('exitSessionOnBoard ends an owner-alone session on the removed board', async () => {
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster() // roster = [user-A] → alone
+    expect(await exitSessionOnBoard(7)).toBe('ended')
+    expect(getSessionsSnapshot().activeSession).toBeNull()
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true)
+  })
+
+  it('exitSessionOnBoard only leaves when the owner has company — the session lives on', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    expect(await exitSessionOnBoard(7)).toBe('left')
+    expect(getSessionsSnapshot().activeSession).toBeNull()
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // still live for user-B
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(false)
+  })
+
+  it('exitSessionOnBoard leaves a session owned by someone else', async () => {
+    h.sessions.push({
+      id: 'S1',
+      owner_id: 'owner-x',
+      name: 'Crew',
+      board_layout_id: 7,
+      invite_token: 'tok-join',
+      expires_at: dayFromNow(1),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted: false,
+    })
+    await joinSession('tok-join')
+    expect(await exitSessionOnBoard(7)).toBe('left')
+    expect(h.sessions.find((r) => r.id === 'S1')?.deleted).toBeFalsy() // never end someone else's
+  })
+
+  it('exitSessionOnBoard ignores a session on a different board', async () => {
+    await createSession(7, 'Crew')
+    await reloadActiveRoster()
+    expect(await exitSessionOnBoard(5)).toBeNull()
+    expect(getSessionsSnapshot().activeSession).not.toBeNull()
+  })
+
+  it('exitSessionOnBoard with an unloaded roster leaves rather than ending for everyone', async () => {
+    const s = await createSession(7, 'Crew') // no reloadActiveRoster → roster is []
+    expect(await exitSessionOnBoard(7)).toBe('left')
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy()
   })
 
   it('reloadActiveRoster returns the joined/left delta vs the previous roster', async () => {
