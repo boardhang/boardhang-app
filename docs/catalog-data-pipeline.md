@@ -171,13 +171,16 @@ Three levels of repair, weakest first:
 | --- | --- | --- |
 | Delta | screen mount (`useSlab`) | pull rows newer than the cursor |
 | Re-pull | catalog pull-to-refresh (`resyncSlab`) | reset the cursor, re-`put` every row (additive) |
-| Rebuild | Settings → Catalog cache (`rebuildSlab`) | delete the slab's rows **and** cursor, then download it again |
+| Rebuild | Settings → Catalog cache (`rebuildSlab`) | delete one slab's rows **and** cursor, then download it again |
 
 Rebuild is the only one that can fix a cache the browser evicted, a first sync that half-wrote, or
 a full origin quota — pull-to-refresh is additive, so it can't free space or prune rows whose
 server-side tombstone predates the cursor. Settings shows each owned board+angle's cached row count
-(`countSlab`), which is how a short slab becomes visible at all. It is destructive-then-refetch:
-an interrupted rebuild leaves that board emptier than it started, hence the confirm dialog.
+(`countSlab`), which is how a short slab becomes visible at all, and rebuilds are **per slab** —
+one board+angle at a time, so repairing the 2019 40° board doesn't re-download the others (and two
+concurrent slab downloads can't re-create the exhaustion being undone). It is
+destructive-then-refetch: an interrupted rebuild leaves that board emptier than it started, hence
+the confirm dialog.
 
 ## Gotchas
 
