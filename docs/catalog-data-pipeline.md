@@ -151,6 +151,37 @@ python3 scripts/import_board_images.py [--src /path/to/boardsesh]
 `derive_holdset_membership.py` samples each hold-set overlay PNG's alpha channel (threshold ~60) to
 decide which grid positions a set owns; that's why it needs the imported board art present first.
 
+## PWA cache durability and repair
+
+`web/src/catalog/catalogSync.ts` pages a slab down 1000 rows at a time and **commits each page as
+it arrives** — one IndexedDB transaction per page, advancing the `catalogCursor.<layout>_<angle>`
+high-water mark to that page's newest `updated_at`. Consequences worth keeping:
+
+- A pull that dies partway (flaky radio, 5xx, timeout, storage quota) leaves a **shorter** slab,
+  never a gappy one: pages arrive oldest-first, so everything below the cursor is committed. The
+  next sync resumes from the cursor instead of re-downloading the whole board.
+- Individual pages are retried twice with a short backoff before the pull gives up, so one blip
+  in a 20-page board doesn't discard the 19 good pages.
+- `syncSlab` still never throws — it returns `{ synced: false, error }`. `error` is the message, so
+  a repeatable failure is diagnosable rather than showing up as a mysteriously short catalog.
+
+Three levels of repair, weakest first:
+
+| Level | Entry point | What it does |
+| --- | --- | --- |
+| Delta | screen mount (`useSlab`) | pull rows newer than the cursor |
+| Re-pull | catalog pull-to-refresh (`resyncSlab`) | reset the cursor, re-`put` every row (additive) |
+| Rebuild | Settings → Catalog cache (`rebuildSlab`) | delete one slab's rows **and** cursor, then download it again |
+
+Rebuild is the only one that can fix a cache the browser evicted, a first sync that half-wrote, or
+a full origin quota — pull-to-refresh is additive, so it can't free space or prune rows whose
+server-side tombstone predates the cursor. Settings shows each owned board+angle's cached row count
+(`countSlab`), which is how a short slab becomes visible at all, and rebuilds are **per slab** —
+one board+angle at a time, so repairing the 2019 40° board doesn't re-download the others (and two
+concurrent slab downloads can't re-create the exhaustion being undone). It is
+destructive-then-refetch: an interrupted rebuild leaves that board emptier than it started, hence
+the confirm dialog.
+
 ## Gotchas
 
 - **`Catalog.swift` decodes with `JSONSerialization`, not `Codable`**, because Codable is far
@@ -161,6 +192,9 @@ decide which grid positions a set owns; that's why it needs the imported board a
 - **First open of a board needs network.** The catalog is no longer bundled, so a board's first
   add/open fetches its slab from Supabase (cached after that, incl. offline). A cold offline
   first-run — or a clone with `Supabase.xcconfig` unset — shows an empty catalog until one sync.
+- **A board stuck at a fraction of its problems is a client-cache problem, not missing data.**
+  Check the count in the PWA's Settings → Catalog cache against the slab's real size before
+  suspecting the import; the fix is Rebuild there (see above), not a re-import.
 - **Benchmark detection is unreliable on boardsesh.** When both `--benchmarks-only` and
   `--min-ascents N` are passed, `fetch_boardsesh.py` **unions** the two result sets (deduped by
   uuid) because the benchmark flag misses popular problems. (See the recent commit history around

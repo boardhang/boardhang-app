@@ -16,6 +16,7 @@ import { Link } from '@tanstack/react-router'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { CatalogCacheSection } from '../catalog/CatalogCacheSection'
 import {
   setShowPreviews,
   useShowPreviews,
@@ -128,6 +129,8 @@ export function SettingsScreen() {
           ))}
         </CardContent>
       </Card>
+
+      <CatalogCacheSection />
 
       <LogbookExportSection />
 
