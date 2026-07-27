@@ -6,7 +6,7 @@ const h = vi.hoisted(() => ({
   navigate: vi.fn(),
   ensureDecoder: vi.fn(() => Promise.resolve<unknown>(undefined)),
   onScanRef: { current: null as null | ((codes: { rawValue: string }[]) => void) },
-  onErrorRef: { current: null as null | (() => void) },
+  onErrorRef: { current: null as null | ((error?: unknown) => void) },
   onOpenChange: vi.fn(),
 }))
 
@@ -18,10 +18,14 @@ vi.mock('@tanstack/react-router', async (orig) => {
 // The lazy decoder chunk is mocked so tests never touch getUserMedia or the WASM. The fake Scanner
 // captures its onScan/onError props so tests can drive a decode or a camera failure.
 vi.mock('./qrDecoder', () => ({
-  default: (props: { onScan: (c: { rawValue: string }[]) => void; onError: () => void }) => {
+  default: (props: {
+    onScan: (c: { rawValue: string }[]) => void
+    onError: (error?: unknown) => void
+    paused?: boolean
+  }) => {
     h.onScanRef.current = props.onScan
     h.onErrorRef.current = props.onError
-    return <div data-testid="fake-scanner" />
+    return <div data-testid="fake-scanner" data-paused={String(props.paused ?? false)} />
   },
   ensureDecoder: () => h.ensureDecoder(),
 }))
@@ -55,16 +59,20 @@ function Harness({
 }) {
   const [open, setOpen] = useState(initialOpen)
   return (
-    <ScanToJoin
-      open={open}
-      onOpenChange={(o) => {
-        h.onOpenChange(o)
-        setOpen(o)
-      }}
-      onStart={onStart}
-      starting={starting}
-      canStart={canStart}
-    />
+    <>
+      {/* The mock dialog renders no close control of its own, so drive `open` from outside. */}
+      <button onClick={() => setOpen((o) => !o)}>toggle dialog</button>
+      <ScanToJoin
+        open={open}
+        onOpenChange={(o) => {
+          h.onOpenChange(o)
+          setOpen(o)
+        }}
+        onStart={onStart}
+        starting={starting}
+        canStart={canStart}
+      />
+    </>
   )
 }
 
@@ -144,7 +152,7 @@ describe('ScanToJoin', () => {
     render(<Harness />)
     fireEvent.click(screen.getByRole('button', { name: /scan a qr code/i }))
 
-    expect(await screen.findByText(/camera unavailable/i)).toBeInTheDocument()
+    expect(await screen.findByText(/couldn’t start the camera/i)).toBeInTheDocument()
     // the paste field is still right there
     expect(screen.getByLabelText('Session link')).toBeInTheDocument()
     expect(screen.queryByTestId('fake-scanner')).not.toBeInTheDocument()
@@ -154,10 +162,108 @@ describe('ScanToJoin', () => {
     render(<Harness />)
     await enterScanning()
 
-    act(() => h.onErrorRef.current?.())
+    act(() => h.onErrorRef.current?.({ kind: 'unknown', message: 'boom', cause: null }))
 
     expect(await screen.findByLabelText('Session link')).toBeInTheDocument()
-    expect(screen.getByText(/camera unavailable/i)).toBeInTheDocument()
+    expect(screen.getByText(/couldn’t start the camera/i)).toBeInTheDocument()
+  })
+
+  it('guides the user to settings when the camera is denied, and keeps the panel up', async () => {
+    render(<Harness />)
+    await enterScanning()
+
+    act(() =>
+      h.onErrorRef.current?.({ kind: 'permission-denied', message: 'denied', cause: null }),
+    )
+
+    // named as a permission problem, with actionable steps — not a generic failure
+    expect(await screen.findByText(/camera access is (turned off|blocked)/i)).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem').length).toBeGreaterThan(1)
+
+    // persistent, unlike the transient scan hints: it stays through unrelated interaction so the
+    // user can leave for settings and come back to it
+    fireEvent.change(screen.getByLabelText('Session link'), { target: { value: 'x' } })
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+  })
+
+  it('does not fade the camera panel the way a scan hint does', async () => {
+    // The whole point of the panel is that the user can leave for OS Settings and come back to it.
+    // Advancing well past showHint's 2.5s window is what makes this fail if it ever regresses to a
+    // hint — the without-timers version passes either way.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      render(<Harness />)
+      await enterScanning()
+      act(() =>
+        h.onErrorRef.current?.({ kind: 'permission-denied', message: 'denied', cause: null }),
+      )
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+
+      act(() => void vi.advanceTimersByTime(10_000))
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores a late camera error from an attempt the user already abandoned', async () => {
+    render(<Harness />)
+    await enterScanning()
+    // Camera acquisition is slow (an unanswered permission prompt is unbounded) and the scanner
+    // library reports through a ref it never clears, so this callback outlives its attempt.
+    const stale = h.onErrorRef.current
+    fireEvent.click(screen.getByRole('button', { name: /back/i }))
+
+    act(() => stale?.({ kind: 'permission-denied', message: 'denied', cause: null }))
+
+    // no scary "camera is off" panel for a scan the user deliberately cancelled
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('does not carry a late error into the next time the dialog is opened', async () => {
+    render(<Harness />)
+    await enterScanning()
+    const stale = h.onErrorRef.current
+
+    fireEvent.click(screen.getByRole('button', { name: /toggle dialog/i })) // close
+    act(() => stale?.({ kind: 'permission-denied', message: 'denied', cause: null }))
+    fireEvent.click(screen.getByRole('button', { name: /toggle dialog/i })) // reopen
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /scan a qr code/i })).toBeInTheDocument()
+  })
+
+  it('starts the next scan unpaused after failing while backgrounded', async () => {
+    render(<Harness />)
+    await enterScanning()
+
+    // hidden -> the scanner is paused; the failure then drops us to the chooser, which unmounts the
+    // visibilitychange listener that would otherwise have unpaused on return.
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    act(() => h.onErrorRef.current?.({ kind: 'unknown', message: 'timed out', cause: null }))
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+
+    fireEvent.click(screen.getByRole('button', { name: /scan a qr code/i }))
+
+    // a scanner mounted with paused=true never starts its stream — a blank square under "Scanning…"
+    const scanner = await screen.findByTestId('fake-scanner')
+    expect(scanner).toHaveAttribute('data-paused', 'false')
+  })
+
+  it('clears the camera panel on the next scan attempt', async () => {
+    render(<Harness />)
+    await enterScanning()
+    act(() =>
+      h.onErrorRef.current?.({ kind: 'permission-denied', message: 'denied', cause: null }),
+    )
+    await screen.findByRole('alert')
+
+    fireEvent.click(screen.getByRole('button', { name: /scan a qr code/i }))
+
+    await waitFor(() => expect(screen.getByTestId('fake-scanner')).toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('recovers the scanner on a second scan attempt after a first failed load', async () => {
@@ -166,7 +272,7 @@ describe('ScanToJoin', () => {
 
     // first scan attempt fails → back on the chooser
     fireEvent.click(screen.getByRole('button', { name: /scan a qr code/i }))
-    await screen.findByText(/camera unavailable/i)
+    await screen.findByText(/couldn’t start the camera/i)
 
     // second attempt succeeds (proves a per-attempt loader, not a memoized rejection)
     fireEvent.click(screen.getByRole('button', { name: /scan a qr code/i }))

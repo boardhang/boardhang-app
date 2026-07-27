@@ -121,8 +121,8 @@ and the join RPC unchanged.
   so merely opening the launcher never triggers the OS camera-permission prompt (an earlier
   scanner-first variant did, for everyone including would-be hosts). Paste is a first-class peer of
   scanning — always visible on the chooser — which also makes it the natural fallback when the
-  camera is denied or the decoder can't load offline (scanning drops back to the chooser with a
-  "Camera unavailable" note). "Start your own session" sits below an "or" divider. `ScanToJoin`
+  camera is denied or the decoder can't load offline (scanning drops back to the chooser, which
+  explains what failed). "Start your own session" sits below an "or" divider. `ScanToJoin`
   takes an optional `onStart`/`starting`/`canStart`: the catalog's `+` button passes it; the boards
   overview (`shell/MyBoards.tsx`, via `ScanToJoinButton`, a "Join a session" button) omits it and
   is join-only, since there's no board context to host in. Joining works signed-out (`JoinSession`
@@ -137,10 +137,36 @@ and the join RPC unchanged.
   offline fetch clears its memo so a later retry recovers, rather than leaving the module record
   permanently errored. A load failure drops back to the chooser, whose paste field reuses the same
   `parseJoinUrl` — so a camera-less or offline joiner is never stuck.
+- **A denied camera is explained, not just reported** (`sessions/cameraError.ts`). The scanner
+  normalises `getUserMedia`'s `DOMException`s into an `IScannerError.kind`, so a failure carries its
+  reason; `classifyCameraError` collapses that (and a raw `DOMException.name`, for a direct
+  rejection) into `denied | no-camera | unsupported | in-use | insecure | unavailable`, and
+  `describeCameraIssue` turns it into copy. Two of those are **unrecoverable in-page**, which is the
+  whole reason the module exists: once the camera is off for the app (iOS Settings › *browser* ›
+  Camera — Bluefy, Safari, …) `getUserMedia` rejects immediately and no prompt can re-ask; and
+  `unsupported` means the *browser* has no `getUserMedia` at all — an in-app webview, which is how a
+  joiner often arrives from a messaging app. Both get numbered steps naming where to go (the
+  Settings app, or "open it in a real browser"); neither may be reported as "no camera found", which
+  would be a false claim about hardware that talks the user out of the fix that exists. The denied
+  panel is iOS-aware (Settings-app steps, naming *Boardhang* when installed to the home screen, the
+  browser otherwise; OS app-settings for an installed non-iOS PWA, address-bar site settings in a
+  plain browser) and **persists** in the chooser until the next scan attempt. Every other reason is
+  a one-line note pointing at paste. Transient scan hints ("Not a session code") keep their 2.5 s
+  fade; camera failures don't. Platform detection is `lib/pwa.ts`'s `isIosLike`/`isStandalone` — the
+  same helpers the install banners use, not a second copy.
 - The body branches on `phase` (`menu` / `scanning`); the camera mounts only in `scanning`, so
   leaving it (Back, close, or a failure) tears the stream down. Rear camera
   (`facingMode: 'environment'`); re-acquired on foreground (iOS standalone PWAs freeze the stream
   when backgrounded).
+- **`attempt` is the scan epoch, and every exit from scanning bumps it** (`leaveScanning`). Neither
+  failure source is synchronous: camera acquisition takes seconds and an unanswered permission
+  prompt is unbounded, and the scanner library reports through a ref it never clears on unmount — so
+  an abandoned attempt still calls back. Errors are stamped with the attempt they came from and
+  dropped if stale, or a cancelled scan would paint a persistent panel over a working one, or fire
+  after the dialog closed and greet the *next* open with a stale "camera is off". `leaveScanning`
+  also clears `paused`: the visibilitychange listener that would release it is only mounted while
+  scanning, so a failure that lands while backgrounded would otherwise latch the next attempt into a
+  camera that never streams.
 
 ## Cross-device resume
 
