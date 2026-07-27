@@ -5,7 +5,7 @@
 // /lists/$listId returns zero rows under RLS → a "list not found" state (KTD4).
 
 import { useEffect, useMemo, useState } from 'react'
-import { getRouteApi } from '@tanstack/react-router'
+import { Link, getRouteApi } from '@tanstack/react-router'
 import { Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '../auth/AuthProvider'
@@ -17,7 +17,7 @@ import { getCatalogProblemsByIds, type CatalogProblem } from '../catalog/catalog
 import { useFavorites } from '../catalog/favoritesStore'
 import { useShowPreviews } from '../catalog/previewsStore'
 import { useEnsureAscentsLoaded } from '../logbook/ascents'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { cn } from '@/lib/utils'
@@ -186,10 +186,16 @@ export function ListDetailScreen() {
             Removing a board only hides its lists — this one and its saved problems are still
             here.
           </p>
-          {board && (
+          {board ? (
             <Button className="mt-3" size="sm" onClick={() => addBoard(board.layoutId)}>
               Add {boardShortLabel(board.name)}
             </Button>
+          ) : (
+            // A layout id this build doesn't ship (a newer app made the list). No board to add,
+            // so send them somewhere they can act instead of dead-ending on the card.
+            <Link to="/boards" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}>
+              My Boards
+            </Link>
           )}
         </div>
       </div>

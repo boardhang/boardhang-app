@@ -74,15 +74,30 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   `SESSION_COLUMNS` never selects `invite_token`. Identity-switch clear is wired from
   `AuthProvider.onAuthStateChange` (a shared device never inherits another user's session).
 - **Removing the board drops you out of its session.** A session is tied to one physical wall,
-  so removing a board in My Boards first calls `exitSessionOnBoard(layoutId)`
-  (`sessionsStore.ts`), which reuses the two actions SessionBar offers: an **owner who is alone**
-  ends the session (`endSession`), everyone else — a member, or an owner with company — only
-  **leaves** (`leaveSession`), and the session lives on for the others. An unloaded roster counts
-  as *not* alone: leaving is recoverable, ending someone else's session is not. A session on any
-  other board is untouched. The board removal is local and never blocks on the network — a failed
-  leave still retires the session on this device (`endActiveSessionLocally`), leaving the
-  membership row to expire server-side. The config drawer warns before the fact when the live
-  session is on the board being removed.
+  so removing a board in My Boards also calls `exitSessionOnBoard(layoutId)` (`sessionsStore.ts`),
+  which reuses the two actions SessionBar offers: an **owner who is alone** ends the session
+  (`endSession`), everyone else — a member, or an owner with company — only **leaves**
+  (`leaveSession`), and the session lives on for the others. A session on any other board is
+  untouched.
+  - **Settle identity first.** `initSessions` resolves `selfId` without awaiting it, so a
+    cold-launch owner can read as a non-owner; `exitSessionOnBoard` awaits `ensureSelfId()` before
+    the ownership test, because an owner who "leaves" a solo session can never get back to it
+    (both `list_my_live_sessions` and `session_invite_token` are membership-gated).
+  - **Never decide the end branch from the cached roster.** `state.roster` is only written on
+    create/join/resume/manual-refresh plus best-effort realtime nudges, so a roster still reading
+    `[self]` while someone has since joined would end a session they are using — and ended is
+    gone. `exitSessionOnBoard` reloads the roster first and ends only on a server-confirmed
+    `length === 1`; `loadRoster` writes a **new array** on success and leaves the old reference
+    untouched on failure, so an unchanged reference means "unconfirmed" and falls through to the
+    recoverable leave.
+  - **The board goes first.** Removal is local state and must not wait on a network call that has
+    no timeout, so `MyBoards.handleRemove` removes the board and then runs the exit for its toast.
+    A failed exit retires the session on this device (`endActiveSessionLocally`) and reports which
+    exit failed via `SessionExitError.intent` — a failed *end* leaves a session that is still live
+    and still joinable through its invite token, which the user must be told; a failed *leave*
+    only means the others may still see them until expiry.
+  - The config drawer warns before the fact ("you'll drop out … and end it if you're the only one
+    in it") when the live session is on the board being removed.
 - **`memberAscentsStore.ts`** — the projection: per-member `{ sentIds, loggedIds }` Set-pairs,
   seeded from the server-consistent snapshot (marker rows → empty Sets, so a zero-ascent
   member is never dropped from the AND-across predicate). Refetched on active-session change,

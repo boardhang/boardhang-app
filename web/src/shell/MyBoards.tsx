@@ -13,7 +13,12 @@ import { BOARDS, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { activeCsv, holdSetContext } from '../board/holdSetMembership'
 import { CatalogBoard } from '../board/CatalogBoard'
-import { endActiveSessionLocally, exitSessionOnBoard, useSessions } from '../sessions/sessionsStore'
+import {
+  SessionExitError,
+  endActiveSessionLocally,
+  exitSessionOnBoard,
+  useSessions,
+} from '../sessions/sessionsStore'
 import { useResumableSessions } from '../sessions/useResumableSessions'
 import { ResumableSessionRow } from '../sessions/ResumableSessionRow'
 import { ScanToJoinButton } from '../sessions/ScanToJoin'
@@ -50,22 +55,30 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   const addedIds = new Set(addedBoards.map((b) => b.layoutId))
   const addable = BOARDS.filter((b) => !addedIds.has(b.layoutId))
 
-  // Removing a board you're mid-session on drops you out of that session first — you can't
-  // be on a wall you just said you don't have. The board goes either way: the removal is
-  // local and must not hang on the network, so a failed leave still retires the session
-  // locally (the membership row lingers until the session expires server-side).
-  async function handleRemove(board: CatalogBoardDef) {
-    try {
-      const exit = await exitSessionOnBoard(board.layoutId)
-      if (exit === 'ended') toast(`Ended your session on ${board.name}`)
-      else if (exit === 'left') toast(`Left the session on ${board.name}`)
-    } catch {
-      endActiveSessionLocally()
-      toast('Left the session on this device', {
-        description: 'You’re offline, so the others may still see you until the session ends.',
-      })
-    }
+  // Removing a board you're mid-session on drops you out of that session too — you can't be
+  // on a wall you just said you don't have. The board is local state and goes FIRST: the exit
+  // is a network call with no timeout, so awaiting it would leave a stalled connection holding
+  // the drawer open with nothing happening. `exitSessionOnBoard` reads only the sessions store,
+  // so it is unaffected by the board list changing under it.
+  function handleRemove(board: CatalogBoardDef) {
     removeBoard(board.layoutId)
+    void exitSessionOnBoard(board.layoutId)
+      .then((exit) => {
+        if (exit === 'ended') toast(`Ended your session on ${board.name}`)
+        else if (exit === 'left') toast(`Left the session on ${board.name}`)
+      })
+      .catch((e: unknown) => {
+        // This device is out either way; what differs is what is still true on the server, so
+        // say that instead of asserting "offline" for what may be any failure.
+        console.error('Could not exit the session on the removed board', e)
+        endActiveSessionLocally()
+        const endFailed = e instanceof SessionExitError && e.intent === 'ended'
+        toast(endFailed ? 'Couldn’t end the session' : 'Left the session on this device', {
+          description: endFailed
+            ? 'It’s still running and its invite link still works — end it from Resume session when you’re back online.'
+            : 'Couldn’t reach the server, so the others may still see you until the session ends.',
+        })
+      })
   }
 
   // Freeze the row order for this mount. "Set as active" promotes the board to
@@ -137,7 +150,7 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
               onBrowse={() => onActivated(board.layoutId)}
               // Inactive board → just switch the active board; stay on this list.
               onSetActive={() => activateBoard(board.layoutId)}
-              onRemove={() => void handleRemove(board)}
+              onRemove={() => handleRemove(board)}
               // Warn before the fact: removing this board ends the session running on it.
               hasActiveSession={activeSession?.boardLayoutId === board.layoutId}
               onAngle={(angle) => setAngle(board.layoutId, angle)}
@@ -330,7 +343,8 @@ function BoardConfigDrawer({
             </Button>
             {hasActiveSession && (
               <p className="text-center text-xs text-muted-foreground">
-                You’ll leave the session running on this board.
+                You’ll drop out of the session on this board — and end it if you’re the only one
+                in it.
               </p>
             )}
           </div>

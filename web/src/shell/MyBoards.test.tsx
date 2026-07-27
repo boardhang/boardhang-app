@@ -26,6 +26,15 @@ vi.mock('../sessions/sessionsStore', () => ({
   resumeSession: (...a: unknown[]) => h.resumeSession(...a),
   exitSessionOnBoard: (...a: unknown[]) => h.exitSessionOnBoard(...a),
   endActiveSessionLocally: (...a: unknown[]) => h.endActiveSessionLocally(...a),
+  // Same class object the component imports, so its `instanceof` check holds.
+  SessionExitError: class SessionExitError extends Error {
+    intent: 'ended' | 'left'
+    constructor(intent: 'ended' | 'left', _reason: unknown) {
+      super('exit failed')
+      this.name = 'SessionExitError'
+      this.intent = intent
+    }
+  },
 }))
 vi.mock('sonner', () => ({ toast: (...a: unknown[]) => h.toast(...a) }))
 vi.mock('../sessions/sessionNav', () => ({
@@ -37,6 +46,7 @@ vi.mock('../sessions/ScanToJoin', () => ({
   ),
 }))
 
+import { SessionExitError } from '../sessions/sessionsStore'
 import { MyBoards } from './MyBoards'
 
 beforeEach(() => {
@@ -51,6 +61,8 @@ beforeEach(() => {
   h.exitSessionOnBoard.mockReset().mockResolvedValue(null)
   h.endActiveSessionLocally.mockClear()
   h.toast.mockClear()
+  // The failed-exit paths log the real error on purpose; keep it out of the test output.
+  vi.spyOn(console, 'error').mockImplementation(() => {})
   localStorage.clear()
   window.dispatchEvent(new StorageEvent('storage')) // reset boardStore snapshot
 })
@@ -172,6 +184,54 @@ describe('MyBoards', () => {
     expect(h.toast).toHaveBeenCalledWith('Left the session on MoonBoard Masters 2019')
   })
 
+  it('ends the session instead when the store reports the owner was alone', async () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    h.exitSessionOnBoard.mockResolvedValue('ended')
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith('Ended your session on MoonBoard Masters 2019'),
+    )
+  })
+
+  it('removes the board immediately, without waiting on the session call', async () => {
+    // The exit is a network call with no timeout; a stalled connection must not hold the
+    // removal (or the drawer) hostage. A never-settling promise pins that.
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    h.exitSessionOnBoard.mockReturnValue(new Promise(() => {}))
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    expect(screen.queryByText('My boards')).toBeNull() // gone on the same tick
+  })
+
+  it('tells the user the session is still live when an END fails', async () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    h.exitSessionOnBoard.mockRejectedValue(new SessionExitError('ended', new Error('offline')))
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Couldn’t end the session',
+        expect.objectContaining({ description: expect.stringContaining('invite link still works') }),
+      ),
+    )
+  })
+
   it('warns in the drawer before removing a board that has the live session', () => {
     h.activeSession = { id: 'S1', boardLayoutId: 5 }
     render(<MyBoards onActivated={() => {}} />)
@@ -179,7 +239,9 @@ describe('MyBoards', () => {
     addBoard('Mini MoonBoard 2025')
 
     openConfig('MoonBoard Masters 2019')
-    expect(screen.getByText('You’ll leave the session running on this board.')).toBeInTheDocument()
+    // The copy has to cover both outcomes — removal ends the session when you're alone in it.
+    expect(screen.getByText(/drop out of the session on this board/)).toBeInTheDocument()
+    expect(screen.getByText(/end it if you’re the only one/)).toBeInTheDocument()
   })
 
   it('does not warn for a board the session is not on', () => {
@@ -188,7 +250,7 @@ describe('MyBoards', () => {
     addBoard('MoonBoard Masters 2019')
 
     openConfig('MoonBoard Masters 2019')
-    expect(screen.queryByText('You’ll leave the session running on this board.')).toBeNull()
+    expect(screen.queryByText(/drop out of the session on this board/)).toBeNull()
   })
 
   it('a failed leave still removes the board and retires the session on this device', async () => {

@@ -146,6 +146,22 @@ describe('ListsScreen', () => {
     expect(screen.getByRole('link', { name: 'My Boards' })).toBeInTheDocument()
   })
 
+  it('says it in the plural when several lists are hidden', async () => {
+    ownBoards([5])
+    storeState = {
+      status: 'loaded',
+      lists: [
+        savedList('mini', 'Mini projects', '2026-07-06T02:00:00Z'),
+        savedList('warm', 'Warmups', '2026-07-06T01:00:00Z'),
+      ],
+      error: null,
+    }
+    renderWithRouter('/lists')
+
+    expect(await screen.findByText('Your lists are on boards you removed')).toBeInTheDocument()
+    expect(screen.getByText(/they will be here again/)).toBeInTheDocument()
+  })
+
   it('re-adding the board brings its lists back', async () => {
     ownBoards([])
     storeState = {

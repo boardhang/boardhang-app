@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
   selectCount: 0,
   clientNull: false,
   rpcError: false,
+  rosterReadError: false,
+  memberDeleteError: false,
   litCalls: [] as { session: string; problem: string | null }[],
 }))
 
@@ -58,10 +60,14 @@ vi.mock('../supabase/client', () => {
 
     if (table === 'session_members') {
       if (verb === 'delete') {
+        if (h.memberDeleteError) return { data: null, error: { message: 'delete failed' } }
         const m = steps.find((s) => s[0] === 'match')![1] as { session_id: string; user_id: string }
         h.members = h.members.filter((x) => !(x.session_id === m.session_id && x.user_id === m.user_id))
         return { data: null, error: null }
       }
+      // Roster reads can fail (offline, transient) — loadRoster then leaves the previous
+      // roster in place, which exitSessionOnBoard must read as "unconfirmed".
+      if (h.rosterReadError) return { data: null, error: { message: 'roster read failed' } }
       const sid = steps.find((s) => s[0] === 'eq')?.[2] as string
       const rows = h.members.filter((x) => x.session_id === sid).map((x) => ({ user_id: x.user_id, joined_at: x.joined_at }))
       return { data: rows, error: null }
@@ -199,6 +205,8 @@ beforeEach(() => {
   h.selectCount = 0
   h.clientNull = false
   h.rpcError = false
+  h.rosterReadError = false
+  h.memberDeleteError = false
   h.litCalls = []
   clearSessionsCache() // reset in-memory module state
   localStorage.clear() // clearSessionsCache may have re-touched keys
@@ -353,6 +361,39 @@ describe('sessionsStore', () => {
     expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true)
   })
 
+  it('exitSessionOnBoard never ends on a STALE roster — a member who joined since is honored', async () => {
+    // The cached roster still reads [user-A]; user-B joined server-side afterwards and no
+    // realtime nudge arrived. Ending here would destroy a session user-B is climbing in.
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster()
+    expect(getSessionsSnapshot().roster).toHaveLength(1) // stale snapshot says "alone"
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+
+    expect(await exitSessionOnBoard(7)).toBe('left')
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // still live for user-B
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(false)
+  })
+
+  it('exitSessionOnBoard leaves when the roster cannot be confirmed with the server', async () => {
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster() // roster = [user-A]
+    h.rosterReadError = true // the pre-end reload fails → unconfirmed
+    expect(await exitSessionOnBoard(7)).toBe('left')
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // never end on stale data
+  })
+
+  it('exitSessionOnBoard surfaces which exit failed via SessionExitError', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    h.memberDeleteError = true // the leave DELETE fails
+    await expect(exitSessionOnBoard(7)).rejects.toMatchObject({
+      name: 'SessionExitError',
+      intent: 'left',
+    })
+    expect(getSessionsSnapshot().activeSession).not.toBeNull() // not retired by the store
+  })
+
   it('exitSessionOnBoard only leaves when the owner has company — the session lives on', async () => {
     const s = await createSession(7, 'Crew')
     h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
@@ -387,10 +428,28 @@ describe('sessionsStore', () => {
     expect(getSessionsSnapshot().activeSession).not.toBeNull()
   })
 
-  it('exitSessionOnBoard with an unloaded roster leaves rather than ending for everyone', async () => {
+  it('exitSessionOnBoard settles identity first, so a cold-launch owner is not mistaken for a member', async () => {
+    // Rebuild the store's cold-launch state: an active session restored from localStorage with
+    // no selfId yet. Reading isOwner here without resolving identity would make the owner LEAVE
+    // their own solo session — unrecoverable, since resume and token re-fetch are both
+    // membership-gated.
+    const s = await createSession(7, 'Crew')
+    const persisted = localStorage.getItem(ACTIVE_KEY)!
+    clearSessionsCache() // drops selfId and the in-memory session
+    localStorage.setItem(ACTIVE_KEY, persisted)
+    initSessions()
+
+    expect(await exitSessionOnBoard(7)).toBe('ended')
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true)
+    expect(h.members.some((m) => m.session_id === s.id)).toBe(true) // ended, not abandoned
+  })
+
+  it('exitSessionOnBoard resolves an unloaded roster with the server instead of guessing', async () => {
+    // Roster never loaded. The pre-end reload answers the question, so an owner who really is
+    // alone ends their session instead of abandoning a live one they could never rejoin.
     const s = await createSession(7, 'Crew') // no reloadActiveRoster → roster is []
-    expect(await exitSessionOnBoard(7)).toBe('left')
-    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy()
+    expect(await exitSessionOnBoard(7)).toBe('ended')
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true)
   })
 
   it('reloadActiveRoster returns the joined/left delta vs the previous roster', async () => {
