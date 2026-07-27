@@ -156,15 +156,26 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   `clearAllMemberStatus()` (one store write + persist), because per-member status is **not** in
   `FilterState` — no `resetFilters`/`facetClearPatch` result can express it, which is why
   `FilterChip` is a union of `patch` and `onRemove`.
-- **Two questions, two selectors** (`useSessionFilterRows.ts`) — every header affordance derived
-  from per-member status goes through one of them, so none can drift from the predicate:
-  `activeStatusMemberCount()` answers *is it filtering?* and is gated on `state === 'ready'`,
-  mirroring `applyFilters`' own `ctx.session.ready` gate — with an unready projection the
-  per-member clause is skipped and the list is widened, so the pinned control, its chip and the
-  FAB badge must all read inactive or they would claim a filter the list is not applying (and
-  `paused` is routine — the projection has a 5-minute max-age). `hasStatusSelections()` answers
-  *is there anything to clear?*, deliberately **not** readiness-gated: paused selections survive
-  and reapply, so Clear stays reachable while the header correctly reports nothing is filtering.
+- **Two facts, one selector** — `sessionStatusFacet()` (`useSessionFilterRows.ts`) is the single
+  source every header affordance reads, so none can drift from the predicate. It returns
+  `members` (how many climbers you picked statuses for) and `applied` (whether the list is
+  actually using them, mirroring `applyFilters`' own `ctx.session.ready` gate). They are separate
+  because a selection can exist without being applied: with an unready projection the per-member
+  clause is skipped and the list is widened — routinely, since the projection has a **5-minute
+  max-age**. Collapsing the two produced both of this facet's bugs: count without `applied` and
+  the header claims a filter the list isn't running; drop the count when unapplied and a filter
+  you set vanishes with no trace.
+- **Three states, not two.** Selected **and** applied → the accent-filled control (or chip).
+  Selected but **not** applied → `facetPaused()`: same `Status (n)` label, rendered dashed and
+  dimmed, with "filtering paused, showing all problems" in the **accessible name** (dimming
+  reaches neither a screen reader nor a colour-blind user). Nothing selected → plainly off. The
+  FAB badge is the one exception — a bare number cannot express "paused", so it counts only
+  applied filters. Clear affordances key off `members > 0` alone, never `applied`: paused
+  selections still exist and reapply, so gating Clear on readiness would strand them.
+- **The context types are unions, not optional fields** (`FacetContext`, `ChipContext`) — in a
+  session, `sessionStatus` is required. As an optional field a new caller could pass
+  `inSession: true`, silently get "no status filter", and reintroduce the original bug with no
+  compiler complaint.
   `catalog/useMemberSenders.ts` (the **sends pill**: in a session, a row with ≥1 sender
   gains a third row — a neutral pill with a green "sent" check + an `AvatarGroup` of the crew
   who sent it, **self included** and first, capped at 3 + `+K`. The name-line self-check is

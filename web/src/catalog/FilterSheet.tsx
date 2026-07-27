@@ -8,11 +8,7 @@ import { SlidersHorizontal } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import type { SavedList } from '../lists/listsTypes'
 import { FilterControls } from './FilterControls'
-import {
-  activeStatusMemberCount,
-  hasStatusSelections,
-  useSessionFilterRows,
-} from './useSessionFilterRows'
+import { sessionStatusFacet, useSessionFilterRows } from './useSessionFilterRows'
 import { FabTrigger } from './FabTrigger'
 import { activeFilterCount, hasActiveFilters, resetFilters, type FilterState } from './filters'
 import { Button } from '@/components/ui/button'
@@ -45,9 +41,14 @@ export function FilterSheet({
   // Same readiness-gated selector the header uses — a badge that counts a paused (therefore
   // unapplied) filter would overstate what the list is showing.
   const session = useSessionFilterRows(board)
-  const sessionStatusActive = activeStatusMemberCount(session) > 0
-  // Clear keys off "are there selections", not "are they applied" — see hasStatusSelections.
-  const sessionStatusClearable = hasStatusSelections(session)
+  const status = sessionStatusFacet(session)
+  // The badge counts only APPLIED filters: it is a bare number with no room to express "set but
+  // paused", so counting a paused filter would overstate what the list is showing. (The pinned
+  // control and the chip can express it, and do — they render dashed and dimmed.)
+  const sessionStatusActive = status.members > 0 && status.applied
+  // Clear keys off "are there selections", not "are they applied": paused selections still exist
+  // and reapply on refresh, so Clear must stay reachable.
+  const sessionStatusClearable = status.members > 0
   const count = activeFilterCount(state, session ? false : statusReady) + (sessionStatusActive ? 1 : 0)
   // "Clear filters" must clear everything the badge counted — including per-member status, which
   // resetFilters can't touch (it returns a FilterState; that state lives in the sessions store).
