@@ -511,6 +511,97 @@ describe('sessionsStore', () => {
     expect(localStorage.getItem('sessionsPendingExit')).toContain('user-A')
   })
 
+  it('a queued end never replays against a session the user re-joined', async () => {
+    // The failure that queues the exit can happen while ONLINE, so the retry may not run until
+    // the next app start — by which time the user may have deliberately resumed that session and
+    // invited people into it. Replaying the end there would destroy a live session for everyone.
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster()
+    h.sessionUpdateError = true
+    await expect(exitSessionOnBoard(7)).rejects.toMatchObject({ intent: 'ended' })
+    h.sessionUpdateError = false
+
+    await resumeSession(fromSessionRow(h.sessions[0] as never)) // user changes their mind
+    await retryPendingExits()
+
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // still live
+    expect(localStorage.getItem('sessionsPendingExit')).toBeNull() // and the intent is gone
+  })
+
+  it('drops a queued exit older than the session lifetime', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    h.memberDeleteError = true
+    await expect(exitSessionOnBoard(7)).rejects.toThrow()
+
+    // Age the entry past the 24h backstop — the row it targets is gone server-side by then.
+    const aged = (JSON.parse(localStorage.getItem('sessionsPendingExit')!) as { queuedAt: string }[]).map(
+      (p) => ({ ...p, queuedAt: new Date(Date.now() - 25 * 3600_000).toISOString() }),
+    )
+    localStorage.setItem('sessionsPendingExit', JSON.stringify(aged))
+
+    h.memberDeleteError = false
+    await retryPendingExits()
+    expect(localStorage.getItem('sessionsPendingExit')).toBeNull()
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(true) // never replayed
+  })
+
+  it('the queue cap is per user — one account cannot evict another’s revocation', async () => {
+    const older = Array.from({ length: 5 }, (_, i) => ({
+      sessionId: `mine-${i}`,
+      intent: 'left' as const,
+      userId: 'user-A',
+      queuedAt: new Date().toISOString(),
+    }))
+    const theirs = {
+      sessionId: 'theirs-1',
+      intent: 'left' as const,
+      userId: 'user-B',
+      queuedAt: new Date().toISOString(),
+    }
+    localStorage.setItem('sessionsPendingExit', JSON.stringify([...older, theirs]))
+
+    const s = await createSession(7, 'Crew') // a sixth exit for user-A
+    h.memberDeleteError = true
+    await expect(leaveSession()).rejects.toThrow()
+
+    const queue = JSON.parse(localStorage.getItem('sessionsPendingExit')!) as typeof older
+    expect(queue.filter((p) => p.userId === 'user-A')).toHaveLength(5) // capped
+    expect(queue.some((p) => p.sessionId === s.id)).toBe(true) // newest kept
+    expect(queue.some((p) => p.sessionId === 'theirs-1')).toBe(true) // user-B untouched
+  })
+
+  it('exitSessionOnBoard bails out if the active session changes under its awaits', async () => {
+    // The awaits (identity, roster) are windows in which another tab can adopt a different
+    // session — and endSession/leaveSession act on whatever is active THEN.
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster()
+    const swap = { ...fromSessionRow(h.sessions[0] as never), id: 'other-9' }
+    // Swap the pointer the moment identity resolution yields.
+    void Promise.resolve().then(() => {
+      localStorage.setItem(ACTIVE_KEY, JSON.stringify(swap))
+      window.dispatchEvent(new StorageEvent('storage', { key: ACTIVE_KEY }))
+    })
+
+    const result = await exitSessionOnBoard(7)
+    expect(result).toBeNull() // nothing done to either session
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy()
+  })
+
+  it('ignores a malformed queue instead of throwing', async () => {
+    localStorage.setItem('sessionsPendingExit', JSON.stringify([{ nonsense: true }, 'garbage']))
+    await expect(retryPendingExits()).resolves.toBeUndefined()
+  })
+
+  it('a failed leave from any surface is queued, not just board removal', async () => {
+    // leaveSession owns the durability, so SessionBar / SessionPill inherit it.
+    const s = await createSession(7, 'Crew')
+    h.memberDeleteError = true
+    await expect(leaveSession()).rejects.toThrow()
+    expect(localStorage.getItem('sessionsPendingExit')).toContain(s.id)
+  })
+
   it('follows another tab retiring the session (cross-tab coherence)', async () => {
     await createSession(7, 'Crew')
     initSessions() // wires the storage listener

@@ -232,6 +232,26 @@ describe('MyBoards', () => {
     )
   })
 
+  it('tells the user only the others may still see them when a LEAVE fails', async () => {
+    // The other half of the intent split: a failed leave must NOT claim the session is still
+    // running under their name — that copy belongs to a failed end.
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    h.exitSessionOnBoard.mockRejectedValue(new SessionExitError('left', new Error('offline')))
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Left the session on this device',
+        expect.objectContaining({ description: expect.stringContaining('may still see you') }),
+      ),
+    )
+  })
+
   it('warns in the drawer before removing a board that has the live session', () => {
     h.activeSession = { id: 'S1', boardLayoutId: 5 }
     render(<MyBoards onActivated={() => {}} />)

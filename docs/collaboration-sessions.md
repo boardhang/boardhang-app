@@ -99,19 +99,30 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   - **A failed exit is queued, not forgotten** (`sessionsPendingExit` in localStorage). Retiring
     locally is not the whole story: the membership row survives, so the crew still sees the user's
     status and the session reappears under "Resume session" — where tapping it re-adds the very
-    board they removed (`sessionNav` activates the board deliberately). `retryPendingExits()`
-    finishes the write on app start and on the `online` event; entries are **per user id** so a
-    shared device never lets user B silently drop user A's revocation, a still-failing entry stays
-    queued, and the queue is capped at 5. Expiry remains the backstop for anything that never
-    lands.
+    board they removed (`sessionNav` activates the board deliberately). `leaveSession` /
+    `endSession` queue the unfinished write themselves, so **every** Leave affordance inherits the
+    guarantee, and `retryPendingExits()` finishes it on app start and on the `online` event.
+    The queue is dangerous if it outlives the intent, so: entries carry `queuedAt` and expire with
+    the 24h session backstop; `joinSession` / `resumeSession` **cancel** a queued exit for the
+    session being re-entered (otherwise a queued `ended` would soft-delete a session the user
+    deliberately came back to); entries are shape-checked on read (the key is user-writable); the
+    cap of 5 is **per user id**, so neither a global truncation nor another account's retry can
+    silently drop a user's revocation; one pass runs at a time and the closing write merges rather
+    than overwrites, so an exit queued mid-pass survives. Expiry remains the backstop for anything
+    that never lands.
+  - Every `await` in `exitSessionOnBoard` re-asserts that the active session is still the one it
+    captured — `endSession`/`leaveSession` act on whatever is active *then*, and a cross-tab adopt
+    or a resume could otherwise hand the destructive write to a different session.
 
 - **Cross-tab coherence.** `initSessions` wires a `storage` listener (and the `online` retry) —
   `boardStore` already followed the added/active board across tabs, and until sessions did the
   same, one tab could hold a session on a board another tab had removed. Another tab clearing the
-  pointer retires here; a different session id is adopted; a same-id rewrite (the lit pointer
-  re-persisting) is ignored, since the in-memory session is fresher. This also means the passive
-  tab retires from the local write rather than from the realtime member-left echo, so a
-  self-service exit is no longer announced to the user as "You were removed from the session".
+  pointer retires here; a different session id is adopted **on the same terms as `initSessions`**
+  (local expiry check + `refreshActiveSession`, so an adopt of a dead or unreadable pointer fails
+  closed); a same-id rewrite (the lit pointer re-persisting) is ignored, since the in-memory
+  session is fresher. Note the passive tab may still show "You were removed from the session"
+  first: the realtime member-left broadcast usually beats the local write, and suppressing that
+  properly needs a self-exit marker the acting tab writes *before* the DELETE — not done here.
   - The config drawer warns before the fact ("you'll drop out … and end it if you're the only one
     in it") when the live session is on the board being removed.
 - **`memberAscentsStore.ts`** — the projection: per-member `{ sentIds, loggedIds }` Set-pairs,
