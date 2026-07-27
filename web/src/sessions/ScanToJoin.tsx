@@ -38,7 +38,12 @@ type Phase = 'menu' | 'scanning'
 /** Loads the scanner chunk + WASM on mount (and on each `attempt`), then renders the camera. A
  *  chunk, WASM or camera failure calls `onError` with the underlying error so the parent can drop
  *  back to the chooser and explain it; bumping `attempt` re-runs the load, which recovers because
- *  ensureDecoder retries a previously-failed WASM fetch. */
+ *  ensureDecoder retries a previously-failed WASM fetch.
+ *
+ *  Every error is stamped with the `attempt` it belongs to, because neither failure source is
+ *  synchronous and both can outlive the attempt that started them: camera acquisition takes seconds
+ *  (a permission prompt is unbounded), and the scanner library keeps our callback in a ref it never
+ *  clears on unmount, so an abandoned attempt still reports. The parent drops anything stale. */
 function ScannerStage({
   attempt,
   paused,
@@ -48,7 +53,7 @@ function ScannerStage({
   attempt: number
   paused: boolean
   onDecode: (raw: string) => void
-  onError: (error: unknown) => void
+  onError: (error: unknown, forAttempt: number) => void
 }) {
   const [Scanner, setScanner] = useState<ScannerComponent | null>(null)
 
@@ -61,7 +66,7 @@ function ScannerStage({
         await mod.ensureDecoder()
         if (!cancelled) setScanner(() => mod.default)
       } catch (err) {
-        if (!cancelled) onError(err)
+        if (!cancelled) onError(err, attempt)
       }
     })()
     return () => {
@@ -86,7 +91,7 @@ function ScannerStage({
           const raw = (codes.find((c) => parseJoinUrl(c.rawValue)) ?? codes[0])?.rawValue
           if (raw) onDecode(raw)
         }}
-        onError={onError}
+        onError={(err) => onError(err, attempt)}
         paused={paused}
         constraints={{ facingMode: 'environment' }}
         formats={['qr_code']}
@@ -146,6 +151,13 @@ export function ScanToJoin({
   const [cameraIssue, setCameraIssue] = useState<CameraIssue | null>(null)
   const [pasteValue, setPasteValue] = useState('')
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // `attempt` doubles as the scan epoch, so a late error can be told apart from the attempt the
+  // user is actually on. Mirrored into a ref because the stale error arrives in a callback, not a
+  // render. Every exit from scanning bumps it — see leaveScanning.
+  const attemptRef = useRef(attempt)
+  useEffect(() => {
+    attemptRef.current = attempt
+  }, [attempt])
 
   const showHint = useCallback((msg: string) => {
     setHint(msg)
@@ -161,16 +173,25 @@ export function ScanToJoin({
     [navigate, onOpenChange],
   )
 
+  // Leaving the camera — Back, a failure, or the dialog closing. Bumping the epoch is what makes a
+  // late error from the attempt we're abandoning identifiable as stale; clearing `paused` keeps the
+  // hidden-while-backgrounded latch from outliving the phase whose listener is the only thing that
+  // would have released it (otherwise the next attempt mounts a camera that never streams).
+  const leaveScanning = useCallback(() => {
+    setPhase('menu')
+    setPaused(false)
+    setAttempt((a) => a + 1)
+  }, [])
+
   // Reset when the dialog closes, so the next open always starts on the chooser.
   useEffect(() => {
     if (!open) {
-      setPhase('menu')
-      setPaused(false)
+      leaveScanning()
       setHint(null)
       setCameraIssue(null)
       setPasteValue('')
     }
-  }, [open])
+  }, [open, leaveScanning])
 
   useEffect(() => () => void (hintTimer.current && clearTimeout(hintTimer.current)), [])
 
@@ -193,6 +214,8 @@ export function ScanToJoin({
   const startScanning = useCallback(() => {
     setHint(null)
     setCameraIssue(null)
+    setPaused(false)
+    setAttempt((a) => a + 1)
     setPhase('scanning')
   }, [])
 
@@ -208,11 +231,17 @@ export function ScanToJoin({
   // Camera couldn't start (denied / no camera / busy / offline decoder) — drop back to the chooser,
   // where the paste field is always available, and explain *this* failure. The panel is persistent
   // rather than a fading hint: a denied camera needs the user to leave for settings and come back.
-  const onScannerError = useCallback((error: unknown) => {
-    setPhase('menu')
+  //
+  // Errors from an abandoned attempt are dropped. They arrive seconds late (an unanswered
+  // permission prompt, a start that times out) and the scanner library reports them even after the
+  // instance is gone, so without the epoch check a cancelled scan could paint a persistent panel
+  // over a working one — or, firing after the dialog closed, greet the next open with a stale one.
+  const onScannerError = useCallback((error: unknown, forAttempt: number) => {
+    if (forAttempt !== attemptRef.current) return
+    leaveScanning()
     setHint(null)
     setCameraIssue(classifyCameraError(error))
-  }, [])
+  }, [leaveScanning])
 
   const submitPaste = useCallback(() => {
     const token = parseJoinUrl(pasteValue)
@@ -222,7 +251,9 @@ export function ScanToJoin({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-5">
+      {/* The denied panel (title + detail + four steps) is the tallest thing this dialog renders;
+          cap it and scroll rather than clipping the paste field it points the user at. */}
+      <DialogContent className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto">
         <DialogHeader className="text-left">
           <DialogTitle>Session with friends</DialogTitle>
           <DialogDescription>
@@ -253,7 +284,7 @@ export function ScanToJoin({
               className="self-start"
               onClick={() => {
                 setHint(null)
-                setPhase('menu')
+                leaveScanning()
               }}
             >
               <ChevronLeft className="size-4" />
