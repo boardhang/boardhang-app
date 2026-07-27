@@ -69,8 +69,8 @@ export function MemberStatusRow({
             aria-describedby={rowState === 'signed-out' ? hintId : undefined}
             pressed={selected.includes(k)}
             onPressedChange={(active) => onToggle(k, active)}
-            // Compact wording so the three options hold one line, matching the per-member session
-            // rows; the canonical label stays reachable as the title and is what the chip says.
+            // Shared picker wording (see STATUS_SHORT_LABELS) so this row and the per-member
+            // session rows never word an option differently; canonical form on the title.
             title={STATUS_LABELS[k]}
           >
             {STATUS_SHORT_LABELS[k]}

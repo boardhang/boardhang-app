@@ -93,9 +93,8 @@ describe('FilterControls', () => {
 
   it('toggles status chips (multi-select) when signed in', () => {
     const { onChange } = setup({ statusFilters: ['sent'] })
-    // 'Sent' already pressed; add 'Not logged' — shown compactly as "Unlogged", like the session
-    // rows and the pinned control's solo body (all three share STATUS_SHORT_LABELS).
-    fireEvent.click(screen.getByRole('button', { name: 'Unlogged' }))
+    // 'Sent' already pressed; add 'Not logged'.
+    fireEvent.click(screen.getByRole('button', { name: 'Not logged' }))
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ statusFilters: ['sent', 'unlogged'] }),
     )
@@ -103,7 +102,6 @@ describe('FilterControls', () => {
 
   it('keeps the canonical wording on each status option’s title', () => {
     setup()
-    expect(screen.getByRole('button', { name: 'Unlogged' })).toHaveAttribute('title', 'Not logged')
     expect(screen.getByRole('button', { name: 'Tried' })).toHaveAttribute('title', 'Attempted')
   })
 
@@ -166,16 +164,16 @@ describe('FilterControls — per-member session status (U5)', () => {
   it('welds each member’s three statuses into one segmented control, labelled to fit one line', () => {
     sessionSetup()
     const you = screen.getByRole('group', { name: 'Your ascent status' })
-    // Short segment labels are what keeps a member on a single line; the canonical wording stays
-    // reachable as the title (and is unchanged everywhere else — chips, the pinned control).
+    // The shared picker wording — identical in the sheet's single-user row and the pinned
+    // control's solo body, with the canonical form on each option's title.
     expect(within(you).getAllByRole('button').map((b) => b.textContent)).toEqual([
       'Sent',
       'Tried',
-      'Unlogged',
-    ])
-    expect(within(you).getByRole('button', { name: 'Unlogged' })).toHaveAttribute(
-      'title',
       'Not logged',
+    ])
+    expect(within(you).getByRole('button', { name: 'Tried' })).toHaveAttribute(
+      'title',
+      'Attempted',
     )
   })
 
@@ -201,7 +199,7 @@ describe('FilterControls — per-member session status (U5)', () => {
     // must still report per-KEY toggles, so the sessions store stays the single source of truth.
     const { rows } = sessionSetup()
     const you = screen.getByRole('group', { name: 'Your ascent status' })
-    fireEvent.click(within(you).getByRole('button', { name: 'Unlogged' }))
+    fireEvent.click(within(you).getByRole('button', { name: 'Not logged' }))
     expect(rows[0].onToggle).toHaveBeenCalledWith('unlogged', true)
   })
 

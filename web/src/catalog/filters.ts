@@ -34,20 +34,20 @@ export const STATUS_LABELS: Record<StatusKey, string> = {
 }
 
 /**
- * The compact wording, used by every three-across STATUS PICKER — the sheet's single-user row,
- * the per-member session rows, and the pinned control's solo body. All three squeeze three
- * options onto one line (beside an avatar and a name, in the session case), which the canonical
- * labels cannot do without wrapping; they share this map so no two pickers word it differently.
+ * The wording used by every three-across STATUS PICKER — the sheet's single-user row, the
+ * per-member session rows, and the pinned control's solo body. All three fit three options on one
+ * line (beside an avatar and a name, in the session case), so they share this map rather than each
+ * deciding for itself.
  *
- * "Attempted" → "Tried" is the word climbers actually use. "Not logged" → "Unlogged" collapses
- * two words into one so the option can never wrap — deliberately NOT "None", which would read as
- * "nothing selected" rather than "no ascent recorded". The canonical form stays reachable on each
- * option's `title`, and is what the resulting chip says.
+ * It differs from STATUS_LABELS in exactly one place: "Attempted" → "Tried", the word climbers
+ * actually use, which is also the shortest of the three to give up. "Not logged" deliberately
+ * stays as it is — a picker gains nothing from a coinage ("Unlogged") that reads worse, and the
+ * ~25px it costs comes out of the session rows' name column, not out of a wrapped line.
  */
 export const STATUS_SHORT_LABELS: Record<StatusKey, string> = {
   sent: 'Sent',
   attempted: 'Tried',
-  unlogged: 'Unlogged',
+  unlogged: 'Not logged',
 }
 
 /** UI labels for the boolean toggles — shared by the filter sheet toggles and the header

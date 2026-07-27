@@ -219,8 +219,8 @@ function FacetBody({
                       : filters.statusFilters.filter((x) => x !== k),
                   })
                 }
-                // Compact wording, shared with the sheet's rows — this popover is w-64, the
-                // tightest of the three status pickers, so the canonical labels wrap here worst.
+                // Shared picker wording (see STATUS_SHORT_LABELS); the canonical form stays on the
+                // title, which is also what this facet's chip and collapsed label say.
                 title={STATUS_LABELS[k as StatusKey]}
               >
                 {STATUS_SHORT_LABELS[k as StatusKey]}
