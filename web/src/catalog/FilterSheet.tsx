@@ -41,6 +41,12 @@ export function FilterSheet({
   const session = useSessionFilterRows(board)
   const sessionStatusActive = session?.rows.some((r) => r.selected.length > 0) ?? false
   const count = activeFilterCount(state, session ? false : statusReady) + (sessionStatusActive ? 1 : 0)
+  // "Clear filters" must clear everything the badge counted — including per-member status, which
+  // resetFilters can't touch (it returns a FilterState; that state lives in the sessions store).
+  const clearAll = () => {
+    onChange(resetFilters(state))
+    session?.onClearAll()
+  }
   return (
     <Drawer showSwipeHandle>
       {/* Positioned by the parent's shared FAB column (CatalogScreen). */}
@@ -55,8 +61,8 @@ export function FilterSheet({
       <DrawerContent>
         <DrawerHeader className="flex flex-row items-center justify-between gap-2">
           <DrawerTitle>Filters</DrawerTitle>
-          {hasActiveFilters(state, statusReady) && (
-            <Button variant="ghost" size="sm" onClick={() => onChange(resetFilters(state))}>
+          {(hasActiveFilters(state, session ? false : statusReady) || sessionStatusActive) && (
+            <Button variant="ghost" size="sm" onClick={clearAll}>
               Clear filters
             </Button>
           )}

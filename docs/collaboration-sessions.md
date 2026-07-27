@@ -87,9 +87,13 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   shared verbatim by the Filters sheet's `FilterControls` and — when the user has **pinned**
   the Ascent-status facet — the header's nav control, so the two surfaces can't drift). The
   pinned control is *not* suppressed in a session: it swaps its single-user chips for the same
-  member rows, is labelled by how many **members** are filtered (`Status (2)`), and its Clear
-  writes `setMemberStatus(uid, [])` per member rather than a `FilterState` patch (per-member
-  status lives in the sessions store — see `facetClearPatch`'s note in `pinnableFacets.ts`).
+  member rows and is labelled by how many **members** are filtered (`Status (2)`). Unpinned, the
+  facet still leaves a trace — `describeActiveFilters` emits one collapsed `Status (n)` chip in
+  the same slot, with the same label, so pinning changes only the affordance, not the reading.
+  Removing that chip, the control's Clear, and the sheet's "Clear filters" all route to
+  `clearAllMemberStatus()` (one store write + persist), because per-member status is **not** in
+  `FilterState` — no `resetFilters`/`facetClearPatch` result can express it, which is why
+  `FilterChip` is a union of `patch` and `onRemove`.
   `catalog/useMemberSenders.ts` (the **sends pill**: in a session, a row with ≥1 sender
   gains a third row — a neutral pill with a green "sent" check + an `AvatarGroup` of the crew
   who sent it, **self included** and first, capped at 3 + `+K`. The name-line self-check is

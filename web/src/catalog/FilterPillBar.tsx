@@ -59,19 +59,20 @@ export function FilterPillBar({
   // member rows rather than FilterState (see pinnableFacets). Read directly from the store hook,
   // mirroring FilterSheet's badge arithmetic — no prop drilling.
   const session = useSessionFilterRows(board)
-  const ctx: FacetContext = {
-    inSession,
-    statusReady,
-    // Members with ≥1 chip selected — the same "is status filtering?" arithmetic the sheet's
-    // FAB badge does, so the control and the badge can never disagree.
-    sessionStatusMembers: session?.rows.filter((r) => r.selected.length > 0).length ?? 0,
-  }
+  // Members with ≥1 chip selected — the same "is status filtering?" arithmetic the sheet's FAB
+  // badge does, so the control, the chip and the badge can never disagree.
+  const sessionStatusMembers = session?.rows.filter((r) => r.selected.length > 0).length ?? 0
+  const ctx: FacetContext = { inSession, statusReady, sessionStatusMembers }
   const [listSheetOpen, setListSheetOpen] = useState(false)
 
   // Chips only for active facets that are NOT pinned (a pinned facet shows as its control).
-  const chips = describeActiveFilters(filters, { inSession, statusReady }).filter(
-    (chip) => !pinned.includes(chipFacetId(chip.id)),
-  )
+  const chips = describeActiveFilters(filters, {
+    inSession,
+    statusReady,
+    // Unpinned status in a session still needs a trace in the collapsed header; its removal is
+    // a store write, so the chip carries onRemove instead of a FilterState patch.
+    sessionStatus: session && { members: sessionStatusMembers, onClearAll: session.onClearAll },
+  }).filter((chip) => !pinned.includes(chipFacetId(chip.id)))
 
   // Does any pinned control actually render? (Lists is hidden with no lists; Status is hidden
   // when signed out.) The divider only shows when there's a left group AND chips to divide.
@@ -181,7 +182,7 @@ export function FilterPillBar({
         <button
           key={chip.id}
           type="button"
-          onClick={() => onChange({ ...filters, ...chip.patch })}
+          onClick={() => (chip.onRemove ? chip.onRemove() : onChange({ ...filters, ...chip.patch }))}
           aria-label={`Remove ${chip.label} filter`}
           // Outlined gray tag: the border defines the shape (a muted FILL would vanish into the
           // near-white frosted header in light mode). Reads as secondary to the accent-filled

@@ -6,8 +6,10 @@
 //
 // Ordering and gating deliberately mirror activeFilterCount/applyFilters so a pill never
 // appears for a filter the list isn't actually applying:
-//   - status only when `statusReady` (signed in + ascents loaded) AND not in a session
-//     (in a session applyFilters ignores `statusFilters`, using the per-member path).
+//   - status is one chip per selected key when solo and `statusReady` (signed in + ascents
+//     loaded). In a session applyFilters takes the per-member path instead, so the status slot
+//     emits ONE collapsed "Status (n)" chip counting the MEMBERS filtered — supplied by the
+//     caller via ctx.sessionStatus, since that state lives in the sessions store, not here.
 //   - grade only for a real sub-range (`gradeRange` non-null; null = full span).
 
 import { FONT_GRADES } from '../board/grades'
@@ -20,21 +22,33 @@ import {
   type FilterState,
 } from './filters'
 
-export interface FilterChip {
+interface ChipBase {
   /** Stable key so React never reshuffles pills on removal. */
   id: string
   label: string
-  /** Applied over the current FilterState to remove this filter. */
-  patch: Partial<FilterState>
 }
+
+/**
+ * A removable pill. Almost every facet lives in FilterState and so carries a `patch` the
+ * component applies. The one exception is per-member session status, whose state lives in the
+ * sessions store — it carries an `onRemove` callback instead. The union (rather than two
+ * optional fields) keeps "exactly one removal mechanism" checked by the compiler.
+ */
+export type FilterChip =
+  | (ChipBase & { patch: Partial<FilterState>; onRemove?: never })
+  | (ChipBase & { patch?: never; onRemove: () => void })
 
 export interface ChipContext {
   /** A collab session targets this board — status is filtered per-member, not via
-   *  `statusFilters`, so status pills are suppressed. */
+   *  `statusFilters`. */
   inSession: boolean
   /** Signed in AND ascents loaded — gates the status dimension exactly like
    *  activeFilterCount. */
   statusReady: boolean
+  /** In a session only: how many members have ≥1 status chip selected, and how to clear them
+   *  all. Supplied by the caller (which reads the sessions store) so this module stays a pure
+   *  function of FilterState. Omitted/zero → the status slot emits nothing. */
+  sessionStatus?: { members: number; onClearAll: () => void }
 }
 
 /**
@@ -82,8 +96,19 @@ export function describeActiveFilters(state: FilterState, ctx: ChipContext): Fil
     }
   }
 
-  // Status: only when it's actually filtering the list (see module note).
-  if (ctx.statusReady && !ctx.inSession) {
+  // Status: only when it's actually filtering the list (see module note). In a session that
+  // means the per-member rows, collapsed to one chip — the same "Status (n)" the pinned control
+  // shows, so unpinning the facet doesn't change what the header reads.
+  if (ctx.inSession) {
+    const members = ctx.sessionStatus?.members ?? 0
+    if (members > 0) {
+      chips.push({
+        id: 'status',
+        label: `Status (${members})`,
+        onRemove: ctx.sessionStatus!.onClearAll,
+      })
+    }
+  } else if (ctx.statusReady) {
     for (const key of STATUS_KEYS) {
       if (state.statusFilters.includes(key)) {
         chips.push({

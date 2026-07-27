@@ -180,3 +180,39 @@ describe('FilterPillBar — pinned Status inside a session', () => {
     expect(screen.queryByRole('button', { name: 'Ascent status' })).toBeNull()
   })
 })
+
+describe('FilterPillBar — UNpinned Status inside a session', () => {
+  it('shows an active per-member filter as a removable chip, not nothing', () => {
+    localStorage.setItem('catalogPinnedFilters_120', JSON.stringify([]))
+    h.session = sessionUI({ rows: rowsWithSelections(2) })
+    renderBar({ layoutId: 120, inSession: true })
+    expect(screen.getByRole('button', { name: 'Remove Status (2) filter' })).toBeInTheDocument()
+  })
+
+  it('removing the chip clears every member via the store, not onChange', () => {
+    localStorage.setItem('catalogPinnedFilters_121', JSON.stringify([]))
+    const onClearAll = vi.fn()
+    const onChange = vi.fn()
+    h.session = sessionUI({ rows: rowsWithSelections(1), onClearAll })
+    renderBar({ layoutId: 121, inSession: true, onChange })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Status (1) filter' }))
+    expect(onClearAll).toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('shows no status chip when no member row is selected', () => {
+    localStorage.setItem('catalogPinnedFilters_122', JSON.stringify([]))
+    h.session = sessionUI({ rows: rowsWithSelections(0) })
+    // statusFilters set but inert in a session — it must not surface as a chip either.
+    renderBar({ layoutId: 122, inSession: true, filters: state({ statusFilters: ['sent'] }) })
+    expect(screen.queryByRole('button', { name: /^Remove Status/ })).toBeNull()
+  })
+
+  it('does not duplicate status as both the pinned control and a chip', () => {
+    localStorage.setItem('catalogPinnedFilters_123', JSON.stringify(['status']))
+    h.session = sessionUI({ rows: rowsWithSelections(2) })
+    renderBar({ layoutId: 123, inSession: true })
+    expect(screen.getByRole('button', { name: 'Status (2)' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove Status (2) filter' })).toBeNull()
+  })
+})
