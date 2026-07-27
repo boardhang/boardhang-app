@@ -6,8 +6,12 @@ import { FilterSheet } from './FilterSheet'
 import type { SessionFilterUI } from './useSessionFilterRows'
 
 // The sheet reads session rows from the store hook (badge count + Clear); control them here.
+// Only the HOOK is replaced — the real selectors run, so the readiness gate is exercised.
 const h = vi.hoisted(() => ({ session: undefined as SessionFilterUI | undefined }))
-vi.mock('./useSessionFilterRows', () => ({ useSessionFilterRows: () => h.session }))
+vi.mock('./useSessionFilterRows', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./useSessionFilterRows')>()),
+  useSessionFilterRows: () => h.session,
+}))
 
 beforeEach(() => {
   h.session = undefined
@@ -70,6 +74,31 @@ describe('FilterSheet — Clear filters in a session', () => {
     fireEvent.click(screen.getByRole('button', { name: /clear filters/i }))
     expect(onClearAll).toHaveBeenCalled()
     expect(onChange).toHaveBeenCalled()
+  })
+
+  it('does not count a paused per-member filter in the badge, but still offers Clear', async () => {
+    // Paused → applyFilters skips the per-member clause, so the badge must not count it. The
+    // selections still exist, so Clear must stay reachable. Two different questions.
+    const onClearAll = vi.fn()
+    h.session = { rows: [sessionRow('me', ['sent'])], state: 'paused', onRefresh: vi.fn(), onClearAll }
+    render(
+      <FilterSheet
+        state={DEFAULT_FILTERS}
+        onChange={vi.fn()}
+        board={board}
+        gradeSpan={[3, 15]}
+        statusReady
+        signedOut={false}
+        boardLists={[]}
+      />,
+    )
+    // Assert the badge BEFORE opening — the drawer is modal, so the FAB leaves the a11y tree.
+    const fab = screen.getByRole('button', { name: 'Filters' })
+    expect(fab).not.toHaveTextContent('1')
+    fireEvent.click(fab)
+    await screen.findByRole('dialog')
+    fireEvent.click(screen.getByRole('button', { name: /clear filters/i }))
+    expect(onClearAll).toHaveBeenCalled()
   })
 
   it('hides Clear filters when only the inert single-user statusFilters is set in a session', async () => {

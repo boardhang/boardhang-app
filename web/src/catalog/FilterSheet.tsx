@@ -8,7 +8,11 @@ import { SlidersHorizontal } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import type { SavedList } from '../lists/listsTypes'
 import { FilterControls } from './FilterControls'
-import { useSessionFilterRows } from './useSessionFilterRows'
+import {
+  activeStatusMemberCount,
+  hasStatusSelections,
+  useSessionFilterRows,
+} from './useSessionFilterRows'
 import { FabTrigger } from './FabTrigger'
 import { activeFilterCount, hasActiveFilters, resetFilters, type FilterState } from './filters'
 import { Button } from '@/components/ui/button'
@@ -37,9 +41,13 @@ export function FilterSheet({
   boardLists,
 }: FilterSheetProps) {
   // In a session the single-user statusFilters dimension is inert (self is a member row),
-  // so count it only when solo; add 1 when any member row has a selection.
+  // so count it only when solo; add 1 when per-member status is actually narrowing the list.
+  // Same readiness-gated selector the header uses — a badge that counts a paused (therefore
+  // unapplied) filter would overstate what the list is showing.
   const session = useSessionFilterRows(board)
-  const sessionStatusActive = session?.rows.some((r) => r.selected.length > 0) ?? false
+  const sessionStatusActive = activeStatusMemberCount(session) > 0
+  // Clear keys off "are there selections", not "are they applied" — see hasStatusSelections.
+  const sessionStatusClearable = hasStatusSelections(session)
   const count = activeFilterCount(state, session ? false : statusReady) + (sessionStatusActive ? 1 : 0)
   // "Clear filters" must clear everything the badge counted — including per-member status, which
   // resetFilters can't touch (it returns a FilterState; that state lives in the sessions store).
@@ -61,7 +69,7 @@ export function FilterSheet({
       <DrawerContent>
         <DrawerHeader className="flex flex-row items-center justify-between gap-2">
           <DrawerTitle>Filters</DrawerTitle>
-          {(hasActiveFilters(state, session ? false : statusReady) || sessionStatusActive) && (
+          {(hasActiveFilters(state, session ? false : statusReady) || sessionStatusClearable) && (
             <Button variant="ghost" size="sm" onClick={clearAll}>
               Clear filters
             </Button>

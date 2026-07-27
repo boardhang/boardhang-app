@@ -104,6 +104,15 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   `clearAllMemberStatus()` (one store write + persist), because per-member status is **not** in
   `FilterState` — no `resetFilters`/`facetClearPatch` result can express it, which is why
   `FilterChip` is a union of `patch` and `onRemove`.
+- **Two questions, two selectors** (`useSessionFilterRows.ts`) — every header affordance derived
+  from per-member status goes through one of them, so none can drift from the predicate:
+  `activeStatusMemberCount()` answers *is it filtering?* and is gated on `state === 'ready'`,
+  mirroring `applyFilters`' own `ctx.session.ready` gate — with an unready projection the
+  per-member clause is skipped and the list is widened, so the pinned control, its chip and the
+  FAB badge must all read inactive or they would claim a filter the list is not applying (and
+  `paused` is routine — the projection has a 5-minute max-age). `hasStatusSelections()` answers
+  *is there anything to clear?*, deliberately **not** readiness-gated: paused selections survive
+  and reapply, so Clear stays reachable while the header correctly reports nothing is filtering.
   `catalog/useMemberSenders.ts` (the **sends pill**: in a session, a row with ≥1 sender
   gains a third row — a neutral pill with a green "sent" check + an `AvatarGroup` of the crew
   who sent it, **self included** and first, capped at 3 + `+K`. The name-line self-check is

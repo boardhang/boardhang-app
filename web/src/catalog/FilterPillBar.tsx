@@ -20,14 +20,15 @@ import { ListFilterSheet } from './ListFilterSheet'
 import { BENCHMARK_LABEL, FAVORITES_LABEL, type FilterState } from './filters'
 import { CANONICAL_ORDER, chipFacetId, type FacetContext } from './pinnableFacets'
 import { usePinnedFacets } from './pinnedFiltersStore'
-import { useSessionFilterRows } from './useSessionFilterRows'
+import { activeStatusMemberCount, useSessionFilterRows } from './useSessionFilterRows'
 import type { SavedList } from '../lists/listsTypes'
 import { Toggle } from '@/components/ui/toggle'
 
 interface FilterPillBarProps {
   filters: FilterState
   onChange: (next: FilterState) => void
-  /** A collab session targets this board → status is per-member; status controls suppressed. */
+  /** A collab session targets this board → status is per-member: the Status control and chip
+   *  read and write the sessions store, not `statusFilters` (which applyFilters ignores here). */
   inSession: boolean
   /** Signed in AND ascents loaded → status actually filters; gates status. */
   statusReady: boolean
@@ -59,9 +60,9 @@ export function FilterPillBar({
   // member rows rather than FilterState (see pinnableFacets). Read directly from the store hook,
   // mirroring FilterSheet's badge arithmetic — no prop drilling.
   const session = useSessionFilterRows(board)
-  // Members with ≥1 chip selected — the same "is status filtering?" arithmetic the sheet's FAB
-  // badge does, so the control, the chip and the badge can never disagree.
-  const sessionStatusMembers = session?.rows.filter((r) => r.selected.length > 0).length ?? 0
+  // One shared selector (readiness-gated — see activeStatusMemberCount) so the pinned control,
+  // its chip and the sheet's FAB badge can never disagree with each other or with applyFilters.
+  const sessionStatusMembers = activeStatusMemberCount(session)
   const ctx: FacetContext = { inSession, statusReady, sessionStatusMembers }
   const [listSheetOpen, setListSheetOpen] = useState(false)
 

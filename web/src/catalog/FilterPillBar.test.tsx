@@ -7,9 +7,14 @@ import type { SessionFilterUI } from './useSessionFilterRows'
 import type { SavedList } from '../lists/listsTypes'
 
 // The bar (and the Status control it renders) read session rows from the store hook; control
-// them here so the session cases don't need a live sessions/projection store.
+// them here so the session cases don't need a live sessions/projection store. Only the HOOK is
+// replaced — activeStatusMemberCount / hasStatusSelections keep their real implementations, so
+// the readiness gate these tests assert is the one that actually ships.
 const h = vi.hoisted(() => ({ session: undefined as SessionFilterUI | undefined }))
-vi.mock('./useSessionFilterRows', () => ({ useSessionFilterRows: () => h.session }))
+vi.mock('./useSessionFilterRows', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./useSessionFilterRows')>()),
+  useSessionFilterRows: () => h.session,
+}))
 
 beforeEach(() => {
   h.session = undefined
@@ -206,6 +211,41 @@ describe('FilterPillBar — UNpinned Status inside a session', () => {
     // statusFilters set but inert in a session — it must not surface as a chip either.
     renderBar({ layoutId: 122, inSession: true, filters: state({ statusFilters: ['sent'] }) })
     expect(screen.queryByRole('button', { name: /^Remove Status/ })).toBeNull()
+  })
+
+  // applyFilters skips the per-member clause unless the projection is ready (filters.ts:
+  // `ctx.session.ready && !matchesSessionStatus(...)`), so while it is paused or loading the list
+  // shows EVERYTHING. The header must not claim a filter the list is not applying — and paused is
+  // routine, not exceptional: the projection carries a 5-minute max-age.
+  it.each(['paused', 'loading'] as const)(
+    'reports status inactive while the projection is %s, even with selections',
+    (state) => {
+      localStorage.setItem('catalogPinnedFilters_130', JSON.stringify(['status']))
+      h.session = sessionUI({ rows: rowsWithSelections(2), state })
+      renderBar({ layoutId: 130, inSession: true })
+      // Bare facet name, not "Status (2)" — and no accent-filled "on" control.
+      expect(screen.getByRole('button', { name: 'Ascent status' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Status (2)' })).toBeNull()
+    },
+  )
+
+  it('emits no status chip while the projection is paused, even with selections', () => {
+    localStorage.setItem('catalogPinnedFilters_131', JSON.stringify([]))
+    h.session = sessionUI({ rows: rowsWithSelections(2), state: 'paused' })
+    renderBar({ layoutId: 131, inSession: true })
+    expect(screen.queryByRole('button', { name: /^Remove Status/ })).toBeNull()
+  })
+
+  it('keeps Clear reachable in the paused popover — selections exist even though nothing filters', () => {
+    // The two questions differ: "is it filtering?" (no, paused) vs "is there something to clear?"
+    // (yes). Gating Clear on the former would strand selections the user can see in the rows.
+    localStorage.setItem('catalogPinnedFilters_132', JSON.stringify(['status']))
+    const onClearAll = vi.fn()
+    h.session = sessionUI({ rows: rowsWithSelections(1), state: 'paused', onClearAll })
+    renderBar({ layoutId: 132, inSession: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Ascent status' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(onClearAll).toHaveBeenCalled()
   })
 
   it('does not duplicate status as both the pinned control and a chip', () => {

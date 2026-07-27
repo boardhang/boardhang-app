@@ -49,6 +49,35 @@ export interface SessionFilterUI {
 }
 
 /**
+ * How many members are actually narrowing the list right now — the one place the header's
+ * "is per-member status filtering?" question is answered, so the pinned control, its chip and
+ * the sheet's badge can't drift apart.
+ *
+ * Gated on `state === 'ready'` because that is exactly the gate applyFilters uses: with an
+ * unready projection it skips the per-member clause entirely (`ctx.session.ready && ...` in
+ * filters.ts) and widens the list to everything. Counting selections while paused would make the
+ * header claim a filter the list is not applying — and `paused` is normal, not exceptional: the
+ * projection carries a 5-minute max-age, so any session left open long enough reaches it.
+ */
+export function activeStatusMemberCount(session: SessionFilterUI | undefined): number {
+  if (!session || session.state !== 'ready') return 0
+  return session.rows.filter((r) => r.selected.length > 0).length
+}
+
+/**
+ * Whether any member has a selection AT ALL, ignoring readiness — the separate question of "is
+ * there something to clear?".
+ *
+ * Deliberately not the same predicate as activeStatusMemberCount: while the projection is paused
+ * the selections still exist and reapply the moment it returns, so a Clear affordance must stay
+ * reachable even though the header correctly reports nothing is being filtered. Gating Clear on
+ * readiness would strand a user with selections they can see in the rows and cannot clear.
+ */
+export function hasStatusSelections(session: SessionFilterUI | undefined): boolean {
+  return session?.rows.some((r) => r.selected.length > 0) ?? false
+}
+
+/**
  * The per-member rows for `board`'s active session, or undefined when no session targets this
  * board. Self is ordered first and labeled "You"; the rendered member set is keyed off the
  * server-consistent projection snapshot (roster supplies labels only) so the rows shown and

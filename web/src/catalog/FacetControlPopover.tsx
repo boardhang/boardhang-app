@@ -17,7 +17,7 @@ import type { CatalogBoardDef } from '../board/boards'
 import { FONT_GRADES } from '../board/grades'
 import { HoldFilterPicker } from './HoldFilterPicker'
 import { SessionStatusRows } from './SessionStatusRows'
-import { useSessionFilterRows } from './useSessionFilterRows'
+import { hasStatusSelections, useSessionFilterRows } from './useSessionFilterRows'
 import {
   METHOD_LABELS,
   SORT_LABELS,
@@ -145,7 +145,10 @@ export function FacetControlPopover({
         ) : (
           <FacetBody facetId={facetId} filters={filters} set={set} gradeSpan={gradeSpan} />
         )}
-        {active && facetId !== 'sort' && (
+        {/* Clear keys off "is there something to clear", which for session status is NOT the same
+            as `active`: a paused projection makes the facet correctly read inactive (nothing is
+            being filtered) while the selections still exist in the rows below. */}
+        {(sessionStatus ? hasStatusSelections(sessionStatus) : active) && facetId !== 'sort' && (
           <Button
             variant="ghost"
             size="sm"
