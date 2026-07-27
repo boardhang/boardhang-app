@@ -20,6 +20,7 @@ import { ListFilterSheet } from './ListFilterSheet'
 import { BENCHMARK_LABEL, FAVORITES_LABEL, type FilterState } from './filters'
 import { CANONICAL_ORDER, chipFacetId, type FacetContext } from './pinnableFacets'
 import { usePinnedFacets } from './pinnedFiltersStore'
+import { useSessionFilterRows } from './useSessionFilterRows'
 import type { SavedList } from '../lists/listsTypes'
 import { Toggle } from '@/components/ui/toggle'
 
@@ -54,7 +55,17 @@ export function FilterPillBar({
   board,
 }: FilterPillBarProps) {
   const pinned = usePinnedFacets(layoutId)
-  const ctx: FacetContext = { inSession, statusReady }
+  // In a session, status is per-member store state, so the facet's active/label read off the
+  // member rows rather than FilterState (see pinnableFacets). Read directly from the store hook,
+  // mirroring FilterSheet's badge arithmetic — no prop drilling.
+  const session = useSessionFilterRows(board)
+  const ctx: FacetContext = {
+    inSession,
+    statusReady,
+    // Members with ≥1 chip selected — the same "is status filtering?" arithmetic the sheet's
+    // FAB badge does, so the control and the badge can never disagree.
+    sessionStatusMembers: session?.rows.filter((r) => r.selected.length > 0).length ?? 0,
+  }
   const [listSheetOpen, setListSheetOpen] = useState(false)
 
   // Chips only for active facets that are NOT pinned (a pinned facet shows as its control).
@@ -62,11 +73,11 @@ export function FilterPillBar({
     (chip) => !pinned.includes(chipFacetId(chip.id)),
   )
 
-  // Does any pinned control actually render? (Lists is hidden with no lists; Status is hidden in
-  // a session.) The divider only shows when there's a left group AND chips to divide from it.
+  // Does any pinned control actually render? (Lists is hidden with no lists; Status is hidden
+  // when signed out.) The divider only shows when there's a left group AND chips to divide.
   const hasPinnedControls = pinned.some((id) => {
     if (id === 'lists') return boardLists.length > 0
-    if (id === 'status') return !inSession && !signedOut
+    if (id === 'status') return !signedOut
     return true
   })
 
@@ -130,10 +141,10 @@ export function FilterPillBar({
               </Toggle>
             )
           case 'status':
-            // In a collab session status is per-member (not single-user statusFilters), so a
-            // single-user Status control would be misleading — suppress it, like its chip. Also
-            // suppress when signed out (status can't filter, and it can't be pinned there).
-            if (inSession || signedOut) return null
+            // Suppressed only when signed out (status can't filter, and it can't be pinned
+            // there). In a session the control stays — it just edits per-member status instead
+            // of single-user statusFilters (FacetControlPopover swaps the body).
+            if (signedOut) return null
             return (
               <FacetControlPopover
                 key={facet.id}

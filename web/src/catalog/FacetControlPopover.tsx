@@ -4,6 +4,10 @@
 // plus an inline Clear (no ✕ micro-target in the nav row); Holds routes to the full-board
 // HoldFilterPicker. An active facet's button gets the accent fill so "on" reads at a glance.
 //
+// Status is the one facet with two shapes: solo it edits FilterState.statusFilters, but inside a
+// collab session it edits PER-MEMBER status in the sessions store (the sheet's U5 rows) — so the
+// popover swaps in SessionStatusRows and clears via the store, not a FilterState patch.
+//
 // Lists is handled by FilterPillBar directly (it opens ListFilterSheet and is board-gated), so
 // it is not a case here. The control markup mirrors FilterControls so the two surfaces match.
 
@@ -12,6 +16,8 @@ import { ChevronRight } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import { FONT_GRADES } from '../board/grades'
 import { HoldFilterPicker } from './HoldFilterPicker'
+import { SessionStatusRows } from './SessionStatusRows'
+import { useSessionFilterRows } from './useSessionFilterRows'
 import {
   METHOD_LABELS,
   SORT_LABELS,
@@ -87,8 +93,13 @@ export function FacetControlPopover({
   board,
 }: FacetControlPopoverProps) {
   const active = isFacetActive(facetId, filters, ctx)
-  const label = facetActiveLabel(facetId, filters)
+  const label = facetActiveLabel(facetId, filters, ctx)
   const set = (patch: Partial<FilterState>) => onChange({ ...filters, ...patch })
+
+  // Status-in-a-session renders the per-member rows instead of the single-user chips. Read
+  // unconditionally (hook rules) — undefined unless a session targets this board.
+  const session = useSessionFilterRows(board)
+  const sessionStatus = facetId === 'status' ? session : undefined
 
   // Holds is not a popover — it opens the full-board picker, like the sheet's Holds row.
   const [holdPickerOpen, setHoldPickerOpen] = useState(false)
@@ -122,14 +133,24 @@ export function FacetControlPopover({
         {label}
         <ChevronRight aria-hidden className="size-3 rotate-90 opacity-60" />
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 space-y-3">
-        <FacetBody facetId={facetId} filters={filters} set={set} gradeSpan={gradeSpan} />
+      {/* Wider for the session rows: each is an avatar plus three chips, which wrap badly at w-64. */}
+      <PopoverContent align="start" className={cn('space-y-3', sessionStatus ? 'w-72' : 'w-64')}>
+        {sessionStatus ? (
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground">Ascent status</div>
+            <SessionStatusRows session={sessionStatus} scrollClassName="max-h-44" />
+          </div>
+        ) : (
+          <FacetBody facetId={facetId} filters={filters} set={set} gradeSpan={gradeSpan} />
+        )}
         {active && facetId !== 'sort' && (
           <Button
             variant="ghost"
             size="sm"
             className="w-full text-muted-foreground"
-            onClick={() => set(facetClearPatch(facetId))}
+            // Per-member status lives in the sessions store — clearing it is a store write,
+            // not a FilterState patch (see facetClearPatch).
+            onClick={() => (sessionStatus ? sessionStatus.onClearAll() : set(facetClearPatch(facetId)))}
           >
             Clear
           </Button>

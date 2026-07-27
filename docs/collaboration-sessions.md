@@ -83,8 +83,14 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   across member rows, empty row = ignore**. When a session is active it replaces the
   single-user status clause (self is member row #1), gated on the projection's single atomic
   readiness flag so the list is never blanked mid-load.
-- **UI** — `catalog/MemberStatusRow.tsx` + `FilterControls` (per-member rows in the Filters
-  sheet), `catalog/useMemberSenders.ts` (the **sends pill**: in a session, a row with ≥1 sender
+- **UI** — `catalog/MemberStatusRow.tsx` + `catalog/SessionStatusRows.tsx` (the per-member rows,
+  shared verbatim by the Filters sheet's `FilterControls` and — when the user has **pinned**
+  the Ascent-status facet — the header's nav control, so the two surfaces can't drift). The
+  pinned control is *not* suppressed in a session: it swaps its single-user chips for the same
+  member rows, is labelled by how many **members** are filtered (`Status (2)`), and its Clear
+  writes `setMemberStatus(uid, [])` per member rather than a `FilterState` patch (per-member
+  status lives in the sessions store — see `facetClearPatch`'s note in `pinnableFacets.ts`).
+  `catalog/useMemberSenders.ts` (the **sends pill**: in a session, a row with ≥1 sender
   gains a third row — a neutral pill with a green "sent" check + an `AvatarGroup` of the crew
   who sent it, **self included** and first, capped at 3 + `+K`. The name-line self-check is
   suppressed in a session since the pill is the sole home for send status; solo browsing is

@@ -64,6 +64,10 @@ export interface FacetContext {
   inSession: boolean
   /** Signed in AND ascents loaded — gates the status dimension. */
   statusReady: boolean
+  /** In a session only: how many members have ≥1 status chip selected. Per-member status lives
+   *  in the sessions store, not FilterState, so this — not `statusFilters` — decides whether the
+   *  status facet reads active and what its control is labelled. */
+  sessionStatusMembers?: number
 }
 
 /**
@@ -85,7 +89,10 @@ export function isFacetActive(id: PinnableFacetId, s: FilterState, ctx: FacetCon
     case 'stars':
       return s.minStars > 0
     case 'status':
-      return ctx.statusReady && !ctx.inSession && s.statusFilters.length > 0
+      // In a session the single-user `statusFilters` clause is inert (applyFilters takes the
+      // per-member path), so "active" means "some member row has a selection".
+      if (ctx.inSession) return (ctx.sessionStatusMembers ?? 0) > 0
+      return ctx.statusReady && s.statusFilters.length > 0
     case 'methods':
       return s.methods.length > 0
     case 'lists':
@@ -95,8 +102,11 @@ export function isFacetActive(id: PinnableFacetId, s: FilterState, ctx: FacetCon
 
 /** The label shown on a rich facet's nav control: the collapsed active value when the facet is
  *  filtering, otherwise the bare facet name (so an inactive pinned control reads "Holds", not
- *  "Holds (0)"). Sort always shows its current value — it's never "off". */
-export function facetActiveLabel(id: PinnableFacetId, s: FilterState): string {
+ *  "Holds (0)"). Sort always shows its current value — it's never "off".
+ *
+ *  `ctx` is only consulted for status: in a session the label counts MEMBERS with a selection
+ *  ("Status (2)" = two climbers filtered), since `statusFilters` is not what's filtering there. */
+export function facetActiveLabel(id: PinnableFacetId, s: FilterState, ctx?: FacetContext): string {
   switch (id) {
     case 'grade': {
       if (!s.gradeRange) return FACET_BY_ID.grade.label
@@ -111,6 +121,10 @@ export function facetActiveLabel(id: PinnableFacetId, s: FilterState): string {
       if (s.methods.length === 0) return FACET_BY_ID.methods.label
       return s.methods.length === 1 ? s.methods[0] : `Methods (${s.methods.length})`
     case 'status': {
+      if (ctx?.inSession) {
+        const members = ctx.sessionStatusMembers ?? 0
+        return members === 0 ? FACET_BY_ID.status.label : `Status (${members})`
+      }
       const keys = s.statusFilters
       if (keys.length === 0) return FACET_BY_ID.status.label
       return keys.length === 1 ? STATUS_LABELS[keys[0] as StatusKey] : `Status (${keys.length})`
@@ -123,7 +137,9 @@ export function facetActiveLabel(id: PinnableFacetId, s: FilterState): string {
 }
 
 /** The patch that clears a facet (used by rich facets' popover "Clear"). Sort has no cleared
- *  state, so it maps to no-op-ish empty patch and is never offered a Clear. */
+ *  state, so it maps to no-op-ish empty patch and is never offered a Clear. Status IN A SESSION
+ *  is the one facet this can't express — its state is per-member in the sessions store, so the
+ *  control clears it via SessionFilterUI.onClearAll instead of this patch. */
 export function facetClearPatch(id: PinnableFacetId): Partial<FilterState> {
   switch (id) {
     case 'grade':

@@ -125,7 +125,7 @@ function sessionSetup(over: Partial<SessionFilterUI> = {}) {
     { userId: 'alice', label: 'Alice', initials: 'AL', avatarUrl: null, isSelf: false, selected: ['sent'], onToggle: vi.fn() },
     { userId: 'bob', label: 'Bob', initials: 'BO', avatarUrl: null, isSelf: false, selected: [], onToggle: vi.fn() },
   ]
-  h.session = { rows, state: over.state ?? 'ready', onRefresh }
+  h.session = { rows, state: over.state ?? 'ready', onRefresh, onClearAll: vi.fn() }
   render(
     <FilterControls
       state={DEFAULT_FILTERS}

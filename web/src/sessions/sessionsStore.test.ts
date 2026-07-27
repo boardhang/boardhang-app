@@ -180,6 +180,7 @@ import {
   reloadActiveRoster,
   removeMemberFromRoster,
   renameSession,
+  clearAllMemberStatus,
   setMemberStatus,
   syncSessionsIdentity,
 } from './sessionsStore'
@@ -307,6 +308,23 @@ describe('sessionsStore', () => {
       'user-A': ['sent', 'attempted'],
       'user-B': ['unlogged'],
     })
+  })
+
+  it('clearAllMemberStatus empties every member row and persists the clear', async () => {
+    const s = await createSession(7, 'Crew')
+    setMemberStatus('user-A', ['sent'])
+    setMemberStatus('user-B', ['unlogged'])
+    clearAllMemberStatus()
+    expect(getSessionsSnapshot().memberStatus).toEqual({})
+    // Persisted too — a reload must not resurrect the cleared selections.
+    initSessions()
+    expect(getSessionsSnapshot().memberStatus).toEqual({})
+    expect(getSessionsSnapshot().activeSession?.id).toBe(s.id)
+  })
+
+  it('clearAllMemberStatus is a no-op with no active session', () => {
+    expect(() => clearAllMemberStatus()).not.toThrow()
+    expect(getSessionsSnapshot().memberStatus).toEqual({})
   })
 
   it('identity switch clears the session; same-user restore preserves it', async () => {

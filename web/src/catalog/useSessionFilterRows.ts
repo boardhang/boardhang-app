@@ -8,7 +8,13 @@
 
 import { useMemo } from 'react'
 import type { CatalogBoardDef } from '../board/boards'
-import { getSessionsSnapshot, refreshActiveSession, setMemberStatus, useSessions } from '../sessions/sessionsStore'
+import {
+  clearAllMemberStatus,
+  getSessionsSnapshot,
+  refreshActiveSession,
+  setMemberStatus,
+  useSessions,
+} from '../sessions/sessionsStore'
 import { refreshMemberAscents, useMemberAscents } from '../sessions/memberAscentsStore'
 import { memberInitials, memberLabel } from '../sessions/sessionsTypes'
 import type { StatusKey } from './filters'
@@ -36,6 +42,10 @@ export interface SessionFilterUI {
   state: 'loading' | 'ready' | 'paused'
   /** Re-fetch the projection to reapply (wired to the session bar's refresh — U7). */
   onRefresh: () => void
+  /** Clear every member's status selection. The pinned nav control's "Clear" needs this:
+   *  in a session status lives in the sessions store, so there is no FilterState patch
+   *  (facetClearPatch) that can clear it. */
+  onClearAll: () => void
 }
 
 /**
@@ -86,6 +96,7 @@ export function useSessionFilterRows(board: CatalogBoardDef): SessionFilterUI | 
         void refreshMemberAscents()
         void refreshActiveSession({ manual: true })
       },
+      onClearAll: clearAllMemberStatus,
     }
   }, [sessionForBoard, roster, memberStatus, selfId, memberAsc.members, memberAsc.ready, memberAsc.stale, memberAsc.error])
 }

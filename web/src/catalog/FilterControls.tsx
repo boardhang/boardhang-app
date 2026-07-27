@@ -7,12 +7,13 @@
 // use all selected holds).
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronRight, Pin, RefreshCw } from 'lucide-react'
+import { ChevronRight, Pin } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import type { SavedList } from '../lists/listsTypes'
 import { FONT_GRADES } from '../board/grades'
 import { HoldFilterPicker } from './HoldFilterPicker'
 import { MemberStatusRow } from './MemberStatusRow'
+import { SessionStatusRows } from './SessionStatusRows'
 import { useSessionFilterRows } from './useSessionFilterRows'
 import { SortSection } from './SortSection'
 import {
@@ -289,36 +290,7 @@ export function FilterControls({
           dead weight (and FilterPillBar hides an already-pinned status control when signed out). */}
       <Field label="Ascent status" pin={signedOut ? undefined : pin('status')}>
         {session ? (
-          <div className="space-y-2">
-            {session.state === 'paused' && (
-              <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
-                <span>Cross-member filtering paused — showing all problems.</span>
-                <button
-                  type="button"
-                  onClick={session.onRefresh}
-                  className="flex shrink-0 items-center gap-1 font-medium text-foreground hover:underline"
-                >
-                  <RefreshCw className="size-3" />
-                  Refresh
-                </button>
-              </div>
-            )}
-            <div className="max-h-52 space-y-2 overflow-y-auto">
-              {session.rows.map((row) => (
-                <MemberStatusRow
-                  key={row.userId}
-                  label={row.label}
-                  initials={row.initials}
-                  avatarUrl={row.avatarUrl}
-                  isSelf={row.isSelf}
-                  ariaLabel={row.isSelf ? 'Your ascent status' : `${row.label}’s ascent status`}
-                  selected={row.selected}
-                  onToggle={row.onToggle}
-                  rowState={session.state === 'loading' ? 'loading' : 'ready'}
-                />
-              ))}
-            </div>
-          </div>
+          <SessionStatusRows session={session} />
         ) : (
           <>
             <MemberStatusRow

@@ -576,6 +576,18 @@ export function setMemberStatus(userId: string, keys: StatusKey[]): void {
   persistMemberStatus(active.id, next)
 }
 
+/** Clear every member's chip selections in one write — the "Clear" on the per-member status
+ *  control. `memberStatus` is already scoped to the active session (it is persisted per session
+ *  id), so emptying the map clears exactly the rows the user is looking at. A single setState,
+ *  not a setMemberStatus per member: that would emit and persist once per row. */
+export function clearAllMemberStatus(): void {
+  const active = state.activeSession
+  if (!active) return
+  const next: MemberStatus = {}
+  setState({ memberStatus: next })
+  persistMemberStatus(active.id, next)
+}
+
 // ─── Identity lifecycle (mirrors syncListsIdentity) ───────────────────────────
 
 /** Clear the store + all persisted session state (sign-out / user switch). Bumps the
