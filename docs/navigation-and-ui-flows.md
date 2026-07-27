@@ -127,7 +127,8 @@ catalog shows — browser back/forward works and every meaningful view is deep-l
                            board's catalog (URL built from the localStorage seed)
 /boards                  → MyBoards
 /logbook                 → LogbookScreen
-/settings                → SettingsScreen (global; appearance/theme, climb previews)
+/settings                → SettingsScreen (global; appearance/theme, climb previews,
+                           catalog cache, logbook export/import, site links)
 /board/$layoutId/catalog → CatalogScreen  (search params below)
 ```
 
