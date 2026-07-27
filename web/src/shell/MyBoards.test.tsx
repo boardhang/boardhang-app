@@ -226,7 +226,7 @@ describe('MyBoards', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        'Couldn’t end the session',
+        'Couldn’t end the session yet',
         expect.objectContaining({ description: expect.stringContaining('invite link still works') }),
       ),
     )

@@ -73,10 +73,10 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
         console.error('Could not exit the session on the removed board', e)
         endActiveSessionLocally()
         const endFailed = e instanceof SessionExitError && e.intent === 'ended'
-        toast(endFailed ? 'Couldn’t end the session' : 'Left the session on this device', {
+        toast(endFailed ? 'Couldn’t end the session yet' : 'Left the session on this device', {
           description: endFailed
-            ? 'It’s still running and its invite link still works — end it from Resume session when you’re back online.'
-            : 'Couldn’t reach the server, so the others may still see you until the session ends.',
+            ? 'It’s still running and its invite link still works — we’ll finish ending it next time you’re online.'
+            : 'The others may still see you until we finish this next time you’re online.',
         })
       })
   }

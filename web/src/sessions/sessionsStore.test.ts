@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   rpcError: false,
   rosterReadError: false,
   memberDeleteError: false,
+  sessionUpdateError: false,
   litCalls: [] as { session: string; problem: string | null }[],
 }))
 
@@ -45,6 +46,7 @@ vi.mock('../supabase/client', () => {
         return { data: row, error: null }
       }
       if (verb === 'update') {
+        if (h.sessionUpdateError) return { data: null, error: { message: 'update failed' } }
         const patch = steps.find((s) => s[0] === 'update')![1] as Record<string, unknown>
         const id = steps.find((s) => s[0] === 'eq')?.[2] as string
         const row = h.sessions.find((r) => r.id === id)
@@ -183,6 +185,7 @@ import {
   reportProblemLit,
   refreshLitProblem,
   resumeSession,
+  retryPendingExits,
   refreshActiveSession,
   reloadActiveRoster,
   removeMemberFromRoster,
@@ -207,6 +210,7 @@ beforeEach(() => {
   h.rpcError = false
   h.rosterReadError = false
   h.memberDeleteError = false
+  h.sessionUpdateError = false
   h.litCalls = []
   clearSessionsCache() // reset in-memory module state
   localStorage.clear() // clearSessionsCache may have re-touched keys
@@ -450,6 +454,89 @@ describe('sessionsStore', () => {
     const s = await createSession(7, 'Crew') // no reloadActiveRoster → roster is []
     expect(await exitSessionOnBoard(7)).toBe('ended')
     expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true)
+  })
+
+  it('a failed leave is queued and finished by retryPendingExits', async () => {
+    // Without the queue the membership row survives the "leave" forever: the crew keeps seeing
+    // the user's status, and the session returns under Resume — where tapping it re-adds the
+    // board they just removed.
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    h.memberDeleteError = true
+    await expect(exitSessionOnBoard(7)).rejects.toThrow()
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(true) // still there
+
+    h.memberDeleteError = false // back online
+    await retryPendingExits()
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(false)
+    expect(localStorage.getItem('sessionsPendingExit')).toBeNull() // queue drained
+  })
+
+  it('a failed end is queued and finished by retryPendingExits', async () => {
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster() // owner alone → the end branch
+    h.sessionUpdateError = true
+    await expect(exitSessionOnBoard(7)).rejects.toMatchObject({ intent: 'ended' })
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // still live
+
+    h.sessionUpdateError = false
+    await retryPendingExits()
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true)
+  })
+
+  it('a still-failing retry stays queued', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    h.memberDeleteError = true
+    await expect(exitSessionOnBoard(7)).rejects.toThrow()
+
+    await retryPendingExits() // still offline
+    expect(localStorage.getItem('sessionsPendingExit')).toContain(s.id)
+  })
+
+  it('retryPendingExits never finishes another user’s exit', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    h.memberDeleteError = true
+    await expect(exitSessionOnBoard(7)).rejects.toThrow()
+
+    h.memberDeleteError = false
+    h.userId = 'user-B' // shared device: someone else signs in
+    await retryPendingExits()
+    // user-A's row is untouched, and their exit stays queued for their next session.
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(true)
+    expect(localStorage.getItem('sessionsPendingExit')).toContain('user-A')
+  })
+
+  it('follows another tab retiring the session (cross-tab coherence)', async () => {
+    await createSession(7, 'Crew')
+    initSessions() // wires the storage listener
+    expect(getSessionsSnapshot().activeSession).not.toBeNull()
+
+    // Another tab left/ended and cleared the pointer.
+    localStorage.removeItem(ACTIVE_KEY)
+    window.dispatchEvent(new StorageEvent('storage', { key: ACTIVE_KEY }))
+
+    expect(getSessionsSnapshot().activeSession).toBeNull()
+  })
+
+  it('adopts a session another tab joined, and ignores a same-session rewrite', async () => {
+    const s = await createSession(7, 'Crew')
+    initSessions()
+
+    const other = { ...fromSessionRow(h.sessions[0] as never), id: 'other-1', name: 'Other crew' }
+    localStorage.setItem(ACTIVE_KEY, JSON.stringify(other))
+    window.dispatchEvent(new StorageEvent('storage', { key: ACTIVE_KEY }))
+    expect(getSessionsSnapshot().activeSession?.id).toBe('other-1')
+
+    // A same-id rewrite (the lit pointer re-persisting) must not clobber in-memory state.
+    const before = getSessionsSnapshot().activeSession
+    window.dispatchEvent(new StorageEvent('storage', { key: ACTIVE_KEY }))
+    expect(getSessionsSnapshot().activeSession).toBe(before)
+    expect(s.id).not.toBe('other-1')
   })
 
   it('reloadActiveRoster returns the joined/left delta vs the previous roster', async () => {

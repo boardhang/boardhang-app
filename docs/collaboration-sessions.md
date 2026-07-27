@@ -95,7 +95,23 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
     A failed exit retires the session on this device (`endActiveSessionLocally`) and reports which
     exit failed via `SessionExitError.intent` — a failed *end* leaves a session that is still live
     and still joinable through its invite token, which the user must be told; a failed *leave*
-    only means the others may still see them until expiry.
+    only means the others may still see them until it lands.
+  - **A failed exit is queued, not forgotten** (`sessionsPendingExit` in localStorage). Retiring
+    locally is not the whole story: the membership row survives, so the crew still sees the user's
+    status and the session reappears under "Resume session" — where tapping it re-adds the very
+    board they removed (`sessionNav` activates the board deliberately). `retryPendingExits()`
+    finishes the write on app start and on the `online` event; entries are **per user id** so a
+    shared device never lets user B silently drop user A's revocation, a still-failing entry stays
+    queued, and the queue is capped at 5. Expiry remains the backstop for anything that never
+    lands.
+
+- **Cross-tab coherence.** `initSessions` wires a `storage` listener (and the `online` retry) —
+  `boardStore` already followed the added/active board across tabs, and until sessions did the
+  same, one tab could hold a session on a board another tab had removed. Another tab clearing the
+  pointer retires here; a different session id is adopted; a same-id rewrite (the lit pointer
+  re-persisting) is ignored, since the in-memory session is fresher. This also means the passive
+  tab retires from the local write rather than from the realtime member-left echo, so a
+  self-service exit is no longer announced to the user as "You were removed from the session".
   - The config drawer warns before the fact ("you'll drop out … and end it if you're the only one
     in it") when the live session is on the board being removed.
 - **`memberAscentsStore.ts`** — the projection: per-member `{ sentIds, loggedIds }` Set-pairs,
