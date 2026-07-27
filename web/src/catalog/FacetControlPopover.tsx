@@ -23,6 +23,7 @@ import {
   SORT_LABELS,
   STATUS_KEYS,
   STATUS_LABELS,
+  STATUS_SHORT_LABELS,
   sortDimension,
   type FilterState,
   type SortKey,
@@ -218,8 +219,11 @@ function FacetBody({
                       : filters.statusFilters.filter((x) => x !== k),
                   })
                 }
+                // Compact wording, shared with the sheet's rows — this popover is w-64, the
+                // tightest of the three status pickers, so the canonical labels wrap here worst.
+                title={STATUS_LABELS[k as StatusKey]}
               >
-                {STATUS_LABELS[k as StatusKey]}
+                {STATUS_SHORT_LABELS[k as StatusKey]}
               </Toggle>
             ))}
           </div>

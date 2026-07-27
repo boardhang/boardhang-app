@@ -93,11 +93,18 @@ describe('FilterControls', () => {
 
   it('toggles status chips (multi-select) when signed in', () => {
     const { onChange } = setup({ statusFilters: ['sent'] })
-    // 'Sent' already pressed; add 'Not logged'.
-    fireEvent.click(screen.getByRole('button', { name: 'Not logged' }))
+    // 'Sent' already pressed; add 'Not logged' — shown compactly as "Unlogged", like the session
+    // rows and the pinned control's solo body (all three share STATUS_SHORT_LABELS).
+    fireEvent.click(screen.getByRole('button', { name: 'Unlogged' }))
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ statusFilters: ['sent', 'unlogged'] }),
     )
+  })
+
+  it('keeps the canonical wording on each status option’s title', () => {
+    setup()
+    expect(screen.getByRole('button', { name: 'Unlogged' })).toHaveAttribute('title', 'Not logged')
+    expect(screen.getByRole('button', { name: 'Tried' })).toHaveAttribute('title', 'Attempted')
   })
 
   it('disables status chips with a sign-in hint when signed out', () => {

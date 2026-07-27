@@ -90,9 +90,11 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   the three statuses welded into a single segmented `ToggleGroup` (`spacing={0}`), fully
   controlled off `row.selected` and still reporting per-key toggles so multi-select survives.
   One line is load-bearing — free-standing chips wrap at popover width, and identical labels in
-  every row make the segment boundaries line up into scannable columns. That control alone uses
-  short labels (`SEGMENT_LABELS`: Tried / Unlogged) to fit the line; `STATUS_LABELS` stays
-  canonical everywhere else and survives as each segment's `title`. The
+  every row make the segment boundaries line up into scannable columns. All three status
+  PICKERS — these rows, the sheet's single-user row, and the pinned control's solo body — share
+  `STATUS_SHORT_LABELS` (Sent / Tried / Unlogged) so no two word an option differently;
+  `STATUS_LABELS` stays canonical wherever a status stands alone (chips, the pinned control's
+  collapsed label, every accessible name) and is each option's `title`. The
   pinned control is *not* suppressed in a session: it swaps its single-user chips for the same
   member rows and is labelled by how many **members** are filtered (`Status (2)`). Unpinned, the
   facet still leaves a trace — `describeActiveFilters` emits one collapsed `Status (n)` chip in

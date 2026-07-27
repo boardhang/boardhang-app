@@ -25,10 +25,29 @@ export type StatusKey = 'sent' | 'attempted' | 'unlogged'
 
 export const STATUS_KEYS: readonly StatusKey[] = ['sent', 'attempted', 'unlogged']
 
+/** The canonical wording — used wherever a status has to stand ALONE and explain itself: a
+ *  removable header chip, the pinned control's collapsed label, and every accessible name. */
 export const STATUS_LABELS: Record<StatusKey, string> = {
   sent: 'Sent',
   attempted: 'Attempted',
   unlogged: 'Not logged',
+}
+
+/**
+ * The compact wording, used by every three-across STATUS PICKER — the sheet's single-user row,
+ * the per-member session rows, and the pinned control's solo body. All three squeeze three
+ * options onto one line (beside an avatar and a name, in the session case), which the canonical
+ * labels cannot do without wrapping; they share this map so no two pickers word it differently.
+ *
+ * "Attempted" → "Tried" is the word climbers actually use. "Not logged" → "Unlogged" collapses
+ * two words into one so the option can never wrap — deliberately NOT "None", which would read as
+ * "nothing selected" rather than "no ascent recorded". The canonical form stays reachable on each
+ * option's `title`, and is what the resulting chip says.
+ */
+export const STATUS_SHORT_LABELS: Record<StatusKey, string> = {
+  sent: 'Sent',
+  attempted: 'Tried',
+  unlogged: 'Unlogged',
 }
 
 /** UI labels for the boolean toggles — shared by the filter sheet toggles and the header

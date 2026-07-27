@@ -6,7 +6,7 @@
 // avatar (initials), with the member's name (or "You") on hover.
 
 import { MemberAvatar } from '../sessions/MemberAvatar'
-import { STATUS_KEYS, STATUS_LABELS, type StatusKey } from './filters'
+import { STATUS_KEYS, STATUS_LABELS, STATUS_SHORT_LABELS, type StatusKey } from './filters'
 import { Toggle } from '@/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -69,8 +69,11 @@ export function MemberStatusRow({
             aria-describedby={rowState === 'signed-out' ? hintId : undefined}
             pressed={selected.includes(k)}
             onPressedChange={(active) => onToggle(k, active)}
+            // Compact wording so the three options hold one line, matching the per-member session
+            // rows; the canonical label stays reachable as the title and is what the chip says.
+            title={STATUS_LABELS[k]}
           >
-            {STATUS_LABELS[k]}
+            {STATUS_SHORT_LABELS[k]}
           </Toggle>
         ))}
       </div>

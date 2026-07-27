@@ -17,27 +17,17 @@
 // commits the group value, so we keep the per-key `row.onToggle(key, active)` contract and stay
 // fully controlled off `row.selected` — the sessions store is the single source of truth, and the
 // group must never hold its own copy. FilterControls.test covers that this actually fires.
+//
+// The segment wording is STATUS_SHORT_LABELS, shared with the sheet's single-user row and the
+// pinned control's solo body so no two status pickers word the same option differently.
 
 import { RefreshCw } from 'lucide-react'
-import { STATUS_KEYS, STATUS_LABELS, type StatusKey } from './filters'
+import { STATUS_KEYS, STATUS_LABELS, STATUS_SHORT_LABELS } from './filters'
 import type { MemberFilterRow, SessionFilterUI } from './useSessionFilterRows'
 import { MemberAvatar } from '../sessions/MemberAvatar'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-
-/** Line-length labels for the segments. The canonical STATUS_LABELS are written to stand alone
- *  ("Attempted", "Not logged"); inside a labelled row they only have to distinguish three options,
- *  and the budget is ~150px for all three. "Attempted" → "Tried" is the word climbers actually use
- *  and buys ~25px for names. "Not logged" → "Unlogged" collapses two words into one so the segment
- *  can never wrap — deliberately NOT "None", which reads as "nothing selected" rather than "no
- *  ascent recorded". These are local to this control: STATUS_LABELS stays canonical everywhere else
- *  (chips, the pinned control's label, the single-user row), and survives here as the hover title. */
-const SEGMENT_LABELS: Record<StatusKey, string> = {
-  sent: 'Sent',
-  attempted: 'Tried',
-  unlogged: 'Unlogged',
-}
 
 interface SessionStatusRowsProps {
   session: SessionFilterUI
@@ -105,7 +95,7 @@ function MemberLine({ row, loading }: { row: MemberFilterRow; loading: boolean }
             onPressedChange={(active) => row.onToggle(k, active)}
             className="h-6 px-2 text-[0.6875rem]"
           >
-            {SEGMENT_LABELS[k]}
+            {STATUS_SHORT_LABELS[k]}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
