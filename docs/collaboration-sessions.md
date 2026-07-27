@@ -83,9 +83,16 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   across member rows, empty row = ignore**. When a session is active it replaces the
   single-user status clause (self is member row #1), gated on the projection's single atomic
   readiness flag so the list is never blanked mid-load.
-- **UI** — `catalog/MemberStatusRow.tsx` + `catalog/SessionStatusRows.tsx` (the per-member rows,
-  shared verbatim by the Filters sheet's `FilterControls` and — when the user has **pinned**
-  the Ascent-status facet — the header's nav control, so the two surfaces can't drift). The
+- **UI** — `catalog/MemberStatusRow.tsx` (the single-user row, solo only) +
+  `catalog/SessionStatusRows.tsx` (the per-member rows, shared verbatim by the Filters sheet's
+  `FilterControls` and — when the user has **pinned** the Ascent-status facet — the header's nav
+  control, so the two surfaces can't drift). A member is **one line**: avatar, visible name, and
+  the three statuses welded into a single segmented `ToggleGroup` (`spacing={0}`), fully
+  controlled off `row.selected` and still reporting per-key toggles so multi-select survives.
+  One line is load-bearing — free-standing chips wrap at popover width, and identical labels in
+  every row make the segment boundaries line up into scannable columns. That control alone uses
+  short labels (`SEGMENT_LABELS`: Tried / Unlogged) to fit the line; `STATUS_LABELS` stays
+  canonical everywhere else and survives as each segment's `title`. The
   pinned control is *not* suppressed in a session: it swaps its single-user chips for the same
   member rows and is labelled by how many **members** are filtered (`Status (2)`). Unpinned, the
   facet still leaves a trace — `describeActiveFilters` emits one collapsed `Status (n)` chip in

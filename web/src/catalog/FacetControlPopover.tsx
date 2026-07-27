@@ -133,12 +133,13 @@ export function FacetControlPopover({
         {label}
         <ChevronRight aria-hidden className="size-3 rotate-90 opacity-60" />
       </PopoverTrigger>
-      {/* Wider for the session rows: each is an avatar plus three chips, which wrap badly at w-64. */}
-      <PopoverContent align="start" className={cn('space-y-3', sessionStatus ? 'w-72' : 'w-64')}>
+      {/* w-80 for the session rows: a member line is an avatar + name + the three-segment control,
+          and at w-72 the name column starves to ~7 characters. Still clears a 390px phone. */}
+      <PopoverContent align="start" className={cn('space-y-3', sessionStatus ? 'w-80' : 'w-64')}>
         {sessionStatus ? (
           <div className="space-y-1.5">
             <div className="text-xs font-medium text-muted-foreground">Ascent status</div>
-            <SessionStatusRows session={sessionStatus} scrollClassName="max-h-44" />
+            <SessionStatusRows session={sessionStatus} scrollClassName="max-h-56" />
           </div>
         ) : (
           <FacetBody facetId={facetId} filters={filters} set={set} gradeSpan={gradeSpan} />
