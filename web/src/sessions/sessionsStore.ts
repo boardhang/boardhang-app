@@ -207,10 +207,21 @@ function capPerUser(list: PendingExit[]): PendingExit[] {
  * cancels — NOT `setActiveSession`, which a background refresh also calls and which would
  * quietly discard an exit the user still wants.
  */
-function forgetPendingExit(sessionId: string): void {
+function forgetPendingExit(sessionId: string, userId: string | null): void {
+  // Scoped to the acting identity: cancelling by session id alone would let whoever is signed
+  // in now discard ANOTHER account's queued revocation — the same silent drop the per-user
+  // keying and the per-user cap exist to prevent. Unidentified → cancel nothing (that user
+  // can't run a retry either, so nothing is replayed on their behalf).
+  if (!userId) return
   const queued = readPendingExits()
-  const rest = queued.filter((p) => p.sessionId !== sessionId)
+  const rest = queued.filter((p) => !(p.sessionId === sessionId && p.userId === userId))
   if (rest.length !== queued.length) writePendingExits(rest)
+}
+
+/** Identity of a queued exit — includes `intent`, so a cancel-then-requeue with a different
+ *  intent is a different entry and can't be mistaken for one this pass already handled. */
+function pendingExitKey(p: PendingExit): string {
+  return `${p.sessionId}::${p.userId}::${p.intent}`
 }
 
 // One pass at a time: initSessions' fire-and-forget call and an `online` event moments later
@@ -234,12 +245,9 @@ export async function retryPendingExits(): Promise<void> {
   try {
     const userId = await currentUserId()
     if (!userId) return // signed out — keep the queue for their next sign-in
-    const remaining: PendingExit[] = []
+    const landed = new Set<string>()
     for (const p of queued) {
-      if (p.userId !== userId) {
-        remaining.push(p)
-        continue
-      }
+      if (p.userId !== userId) continue // another account's revocation — leave it for them
       const { error } =
         p.intent === 'ended'
           ? await supabase.from('sessions').update({ deleted: true }).eq('id', p.sessionId)
@@ -247,19 +255,19 @@ export async function retryPendingExits(): Promise<void> {
               .from('session_members')
               .delete()
               .match({ session_id: p.sessionId, user_id: userId })
-      if (error) {
-        remaining.push(p)
-      } else if (state.activeSession?.id === p.sessionId) {
+      if (error) continue // still failing — it stays queued by virtue of the fresh read below
+      landed.add(pendingExitKey(p))
+      if (state.activeSession?.id === p.sessionId) {
         // The exit finally landed for a session this device still shows (a failed leave from
         // SessionBar leaves it active) — stop presenting a session we just left/ended.
         retire(p.sessionId)
       }
     }
-    // Merge rather than overwrite: an exit queued DURING this pass (a second removal failing,
-    // or another tab) must not be erased by a write computed from the stale snapshot.
-    const handled = new Set(queued.map((p) => `${p.sessionId}::${p.userId}`))
-    const added = readPendingExits().filter((p) => !handled.has(`${p.sessionId}::${p.userId}`))
-    writePendingExits(capPerUser([...added, ...remaining]))
+    // Derive the final queue from a FRESH read, subtracting only what actually landed. Writing
+    // a list computed from the stale snapshot would revert anything that changed mid-pass — in
+    // particular a `forgetPendingExit` from a join/resume, which is the ONLY thing standing
+    // between a queued `ended` and a session the user just came back to.
+    writePendingExits(capPerUser(readPendingExits().filter((p) => !landed.has(pendingExitKey(p)))))
   } finally {
     retryingExits = false
   }
@@ -510,7 +518,8 @@ export async function joinSession(token: string): Promise<Session> {
   if (!row) throw new Error('That session link is no longer valid.')
   const session = fromSessionRow(row)
   if (gen !== generation) return session
-  forgetPendingExit(session.id) // re-joining supersedes any unfinished exit for this session
+  // Re-joining supersedes any unfinished exit of MINE for this session (never another user's).
+  forgetPendingExit(session.id, state.selfId ?? (await currentUserId()))
   setActiveSession(session)
   setState({ memberStatus: readMemberStatus(session.id) })
   void ensureSelfId()
@@ -552,7 +561,8 @@ export async function listMyLiveSessions(): Promise<Session[]> {
  */
 export async function resumeSession(session: Session): Promise<{ live: boolean }> {
   if (isLocallyExpired(session)) return { live: false }
-  forgetPendingExit(session.id) // resuming supersedes any unfinished exit for this session
+  // Resuming supersedes any unfinished exit of MINE for this session (never another user's).
+  forgetPendingExit(session.id, state.selfId ?? (await currentUserId()))
   setActiveSession(session)
   setState({ memberStatus: readMemberStatus(session.id) })
   void ensureSelfId()

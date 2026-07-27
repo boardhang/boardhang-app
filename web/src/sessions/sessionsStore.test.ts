@@ -589,6 +589,48 @@ describe('sessionsStore', () => {
     expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy()
   })
 
+  it('a cancel landing mid-retry is not reverted by the closing write', async () => {
+    // The retry's final write must come from a fresh read, not its opening snapshot: a
+    // forgetPendingExit (the user re-joining) during the pass is the only thing standing
+    // between a queued end and a session they just came back to.
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster()
+    h.sessionUpdateError = true
+    await expect(exitSessionOnBoard(7)).rejects.toMatchObject({ intent: 'ended' })
+    expect(localStorage.getItem('sessionsPendingExit')).toContain(s.id)
+
+    // The retry keeps failing, and the user re-joins while it is in flight.
+    const inFlight = retryPendingExits()
+    await resumeSession(fromSessionRow(h.sessions[0] as never))
+    await inFlight
+
+    expect(localStorage.getItem('sessionsPendingExit')).toBeNull() // cancel survived the pass
+  })
+
+  it('a cancel is scoped to the acting user — one account cannot clear another’s', async () => {
+    const s = await createSession(7, 'Crew')
+    h.memberDeleteError = true
+    await expect(leaveSession()).rejects.toThrow()
+    h.memberDeleteError = false
+
+    h.userId = 'user-B' // shared device: someone else signs in and joins the same session
+    clearSessionsCache()
+    await joinSession(`tok-${s.id}`)
+
+    expect(localStorage.getItem('sessionsPendingExit')).toContain('user-A') // still owed
+  })
+
+  it('keeps the queue while signed out rather than dropping it', async () => {
+    const s = await createSession(7, 'Crew')
+    h.memberDeleteError = true
+    await expect(leaveSession()).rejects.toThrow()
+
+    h.memberDeleteError = false
+    h.userId = null // signed out — currentUserId() resolves null
+    await retryPendingExits()
+    expect(localStorage.getItem('sessionsPendingExit')).toContain(s.id) // survives for next sign-in
+  })
+
   it('ignores a malformed queue instead of throwing', async () => {
     localStorage.setItem('sessionsPendingExit', JSON.stringify([{ nonsense: true }, 'garbage']))
     await expect(retryPendingExits()).resolves.toBeUndefined()
