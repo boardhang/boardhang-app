@@ -8,7 +8,13 @@
 
 import { useMemo } from 'react'
 import type { CatalogBoardDef } from '../board/boards'
-import { getSessionsSnapshot, refreshActiveSession, setMemberStatus, useSessions } from '../sessions/sessionsStore'
+import {
+  clearAllMemberStatus,
+  getSessionsSnapshot,
+  refreshActiveSession,
+  setMemberStatus,
+  useSessions,
+} from '../sessions/sessionsStore'
 import { refreshMemberAscents, useMemberAscents } from '../sessions/memberAscentsStore'
 import { memberInitials, memberLabel } from '../sessions/sessionsTypes'
 import type { StatusKey } from './filters'
@@ -36,6 +42,39 @@ export interface SessionFilterUI {
   state: 'loading' | 'ready' | 'paused'
   /** Re-fetch the projection to reapply (wired to the session bar's refresh — U7). */
   onRefresh: () => void
+  /** Clear every member's status selection. The pinned nav control's "Clear" needs this:
+   *  in a session status lives in the sessions store, so there is no FilterState patch
+   *  (facetClearPatch) that can clear it. */
+  onClearAll: () => void
+}
+
+/**
+ * How many members are actually narrowing the list right now — the one place the header's
+ * "is per-member status filtering?" question is answered, so the pinned control, its chip and
+ * the sheet's badge can't drift apart.
+ *
+ * Gated on `state === 'ready'` because that is exactly the gate applyFilters uses: with an
+ * unready projection it skips the per-member clause entirely (`ctx.session.ready && ...` in
+ * filters.ts) and widens the list to everything. Counting selections while paused would make the
+ * header claim a filter the list is not applying — and `paused` is normal, not exceptional: the
+ * projection carries a 5-minute max-age, so any session left open long enough reaches it.
+ */
+export function activeStatusMemberCount(session: SessionFilterUI | undefined): number {
+  if (!session || session.state !== 'ready') return 0
+  return session.rows.filter((r) => r.selected.length > 0).length
+}
+
+/**
+ * Whether any member has a selection AT ALL, ignoring readiness — the separate question of "is
+ * there something to clear?".
+ *
+ * Deliberately not the same predicate as activeStatusMemberCount: while the projection is paused
+ * the selections still exist and reapply the moment it returns, so a Clear affordance must stay
+ * reachable even though the header correctly reports nothing is being filtered. Gating Clear on
+ * readiness would strand a user with selections they can see in the rows and cannot clear.
+ */
+export function hasStatusSelections(session: SessionFilterUI | undefined): boolean {
+  return session?.rows.some((r) => r.selected.length > 0) ?? false
 }
 
 /**
@@ -86,6 +125,7 @@ export function useSessionFilterRows(board: CatalogBoardDef): SessionFilterUI | 
         void refreshMemberAscents()
         void refreshActiveSession({ manual: true })
       },
+      onClearAll: clearAllMemberStatus,
     }
   }, [sessionForBoard, roster, memberStatus, selfId, memberAsc.members, memberAsc.ready, memberAsc.stale, memberAsc.error])
 }

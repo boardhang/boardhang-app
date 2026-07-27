@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { describeActiveFilters, type ChipContext } from './activeFilterChips'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
 
@@ -56,10 +56,37 @@ describe('describeActiveFilters', () => {
     expect(describeActiveFilters(state({ gradeRange: null }), READY)).toEqual([])
   })
 
-  it('suppresses status chips in a session, keeping the rest', () => {
+  it('drops the single-user status chips in a session (statusFilters is inert there)', () => {
     const s = state({ minStars: 2, statusFilters: ['sent'] })
     const chips = describeActiveFilters(s, { inSession: true, statusReady: true })
     expect(chips.map((c) => c.id)).toEqual(['stars'])
+  })
+
+  it('emits one collapsed "Status (n)" chip for the members filtered in a session', () => {
+    const onClearAll = vi.fn()
+    const s = state({ minStars: 2, statusFilters: ['sent'] })
+    const chips = describeActiveFilters(s, {
+      inSession: true,
+      statusReady: true,
+      sessionStatus: { members: 2, onClearAll },
+    })
+    // Same slot as the solo status chips (between Methods and Holds), one chip, member count.
+    expect(chips.map((c) => c.id)).toEqual(['stars', 'status'])
+    const status = chips.find((c) => c.id === 'status')!
+    expect(status.label).toBe('Status (2)')
+    // Per-member status is store state — removal is a callback, never a FilterState patch.
+    expect(status.patch).toBeUndefined()
+    status.onRemove!()
+    expect(onClearAll).toHaveBeenCalled()
+  })
+
+  it('emits no status chip in a session when no member row is selected', () => {
+    const chips = describeActiveFilters(state({ statusFilters: ['sent'] }), {
+      inSession: true,
+      statusReady: true,
+      sessionStatus: { members: 0, onClearAll: vi.fn() },
+    })
+    expect(chips).toEqual([])
   })
 
   it('suppresses status chips when not statusReady (e.g. signed-out deep link)', () => {

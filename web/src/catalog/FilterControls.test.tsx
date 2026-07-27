@@ -100,6 +100,11 @@ describe('FilterControls', () => {
     )
   })
 
+  it('keeps the canonical wording on each status option’s title', () => {
+    setup()
+    expect(screen.getByRole('button', { name: 'Tried' })).toHaveAttribute('title', 'Attempted')
+  })
+
   it('disables status chips with a sign-in hint when signed out', () => {
     setup({}, { signedOut: true, statusReady: false })
     expect(screen.getByText('Sign in to filter by status')).toBeInTheDocument()
@@ -125,7 +130,7 @@ function sessionSetup(over: Partial<SessionFilterUI> = {}) {
     { userId: 'alice', label: 'Alice', initials: 'AL', avatarUrl: null, isSelf: false, selected: ['sent'], onToggle: vi.fn() },
     { userId: 'bob', label: 'Bob', initials: 'BO', avatarUrl: null, isSelf: false, selected: [], onToggle: vi.fn() },
   ]
-  h.session = { rows, state: over.state ?? 'ready', onRefresh }
+  h.session = { rows, state: over.state ?? 'ready', onRefresh, onClearAll: vi.fn() }
   render(
     <FilterControls
       state={DEFAULT_FILTERS}
@@ -148,9 +153,28 @@ describe('FilterControls — per-member session status (U5)', () => {
       .map((g) => g.getAttribute('aria-label'))
       .filter((l) => l?.endsWith('ascent status'))
     expect(groups).toEqual(['Your ascent status', 'Alice’s ascent status', 'Bob’s ascent status'])
-    // Self is shown as an avatar whose accessible name is "You".
-    expect(screen.getByLabelText('You')).toBeInTheDocument()
+    // Every member's name is VISIBLE text, not an avatar tooltip — there is no hover on a phone,
+    // so an avatar-only row would be unidentifiable to touch users.
+    for (const name of ['You', 'Alice', 'Bob']) {
+      expect(screen.getByText(name)).toBeInTheDocument()
+    }
     expect(screen.getByText('ME')).toBeInTheDocument()
+  })
+
+  it('welds each member’s three statuses into one segmented control, labelled to fit one line', () => {
+    sessionSetup()
+    const you = screen.getByRole('group', { name: 'Your ascent status' })
+    // The shared picker wording — identical in the sheet's single-user row and the pinned
+    // control's solo body, with the canonical form on each option's title.
+    expect(within(you).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Sent',
+      'Tried',
+      'Not logged',
+    ])
+    expect(within(you).getByRole('button', { name: 'Tried' })).toHaveAttribute(
+      'title',
+      'Attempted',
+    )
   })
 
   it('loading state marks rows aria-busy and non-interactive', () => {
@@ -171,9 +195,20 @@ describe('FilterControls — per-member session status (U5)', () => {
   })
 
   it('toggling a member chip calls that member row onToggle', () => {
+    // Guards the segmented control's contract: the group is fully controlled off row.selected and
+    // must still report per-KEY toggles, so the sessions store stays the single source of truth.
     const { rows } = sessionSetup()
     const you = screen.getByRole('group', { name: 'Your ascent status' })
     fireEvent.click(within(you).getByRole('button', { name: 'Not logged' }))
     expect(rows[0].onToggle).toHaveBeenCalledWith('unlogged', true)
+  })
+
+  it('un-toggling an already-selected segment reports active=false, not a replaced selection', () => {
+    // Alice has 'sent' on. A segmented control that swapped its value instead of toggling would
+    // silently turn multi-select into single-select — OR-within-a-member is the predicate.
+    const { rows } = sessionSetup()
+    const alice = screen.getByRole('group', { name: 'Alice’s ascent status' })
+    fireEvent.click(within(alice).getByRole('button', { name: 'Sent' }))
+    expect(rows[1].onToggle).toHaveBeenCalledWith('sent', false)
   })
 })

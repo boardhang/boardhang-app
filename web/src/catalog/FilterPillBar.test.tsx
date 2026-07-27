@@ -1,9 +1,24 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { boardByLayoutId } from '../board/boards'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
 import { FilterPillBar } from './FilterPillBar'
+import type { SessionFilterUI } from './useSessionFilterRows'
 import type { SavedList } from '../lists/listsTypes'
+
+// The bar (and the Status control it renders) read session rows from the store hook; control
+// them here so the session cases don't need a live sessions/projection store. Only the HOOK is
+// replaced — activeStatusMemberCount / hasStatusSelections keep their real implementations, so
+// the readiness gate these tests assert is the one that actually ships.
+const h = vi.hoisted(() => ({ session: undefined as SessionFilterUI | undefined }))
+vi.mock('./useSessionFilterRows', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./useSessionFilterRows')>()),
+  useSessionFilterRows: () => h.session,
+}))
+
+beforeEach(() => {
+  h.session = undefined
+})
 
 const board = boardByLayoutId(7)!
 
@@ -26,8 +41,8 @@ function renderBar(over: Partial<Parameters<typeof FilterPillBar>[0]> = {}) {
     <FilterPillBar
       filters={over.filters ?? state()}
       onChange={over.onChange ?? (() => {})}
-      inSession={false}
-      statusReady={false}
+      inSession={over.inSession ?? false}
+      statusReady={over.statusReady ?? false}
       signedOut={over.signedOut ?? false}
       boardLists={over.boardLists ?? []}
       layoutId={over.layoutId ?? 7}
@@ -93,5 +108,151 @@ describe('FilterPillBar — pinned controls vs. active chips', () => {
     localStorage.setItem('catalogPinnedFilters_104', JSON.stringify([]))
     renderBar({ layoutId: 104, filters: state({ favoritesOnly: true }) })
     expect(screen.getByRole('button', { name: 'Remove Favorites filter' })).toBeInTheDocument()
+  })
+})
+
+// A pinned Status facet used to vanish from the header for the whole session, because the nav
+// control could only edit single-user `statusFilters` (inert in a session). It now renders the
+// per-member rows, so the pin means what it looks like it means.
+function sessionUI(over: Partial<SessionFilterUI> = {}): SessionFilterUI {
+  return {
+    rows: over.rows ?? [
+      { userId: 'me', label: 'You', initials: 'ME', avatarUrl: null, isSelf: true, selected: [], onToggle: vi.fn() },
+      { userId: 'alice', label: 'Alice', initials: 'AL', avatarUrl: null, isSelf: false, selected: [], onToggle: vi.fn() },
+    ],
+    state: over.state ?? 'ready',
+    onRefresh: over.onRefresh ?? vi.fn(),
+    onClearAll: over.onClearAll ?? vi.fn(),
+  }
+}
+
+/** A rows fixture where `selectedCount` members have a status selected (self first). */
+function rowsWithSelections(selectedCount: number): SessionFilterUI['rows'] {
+  return ['me', 'alice', 'bob'].map((userId, i) => ({
+    userId,
+    label: i === 0 ? 'You' : userId === 'alice' ? 'Alice' : 'Bob',
+    initials: userId.slice(0, 2).toUpperCase(),
+    avatarUrl: null,
+    isSelf: i === 0,
+    selected: i < selectedCount ? ['sent' as const] : [],
+    onToggle: vi.fn(),
+  }))
+}
+
+describe('FilterPillBar — pinned Status inside a session', () => {
+  it('renders the pinned Status control in a session (not suppressed)', () => {
+    localStorage.setItem('catalogPinnedFilters_110', JSON.stringify(['status']))
+    h.session = sessionUI()
+    renderBar({ layoutId: 110, inSession: true })
+    expect(screen.getByRole('button', { name: 'Ascent status' })).toBeInTheDocument()
+  })
+
+  it('labels the control with the number of MEMBERS filtered, not statusFilters', () => {
+    localStorage.setItem('catalogPinnedFilters_111', JSON.stringify(['status']))
+    h.session = sessionUI({ rows: rowsWithSelections(2) })
+    // statusFilters is deliberately non-empty: in a session it is inert and must not be counted.
+    renderBar({ layoutId: 111, inSession: true, filters: state({ statusFilters: ['sent'] }) })
+    expect(screen.getByRole('button', { name: 'Status (2)' })).toBeInTheDocument()
+  })
+
+  it('opens the per-member rows, not the single-user status chips', () => {
+    localStorage.setItem('catalogPinnedFilters_112', JSON.stringify(['status']))
+    const rows = rowsWithSelections(0)
+    h.session = sessionUI({ rows })
+    renderBar({ layoutId: 112, inSession: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Ascent status' }))
+    const you = screen.getByRole('group', { name: 'Your ascent status' })
+    expect(screen.getByRole('group', { name: 'Alice’s ascent status' })).toBeInTheDocument()
+    fireEvent.click(within(you).getByRole('button', { name: 'Sent' }))
+    expect(rows[0].onToggle).toHaveBeenCalledWith('sent', true)
+  })
+
+  it('clears every member via the store, not a FilterState patch', () => {
+    localStorage.setItem('catalogPinnedFilters_113', JSON.stringify(['status']))
+    const onClearAll = vi.fn()
+    const onChange = vi.fn()
+    h.session = sessionUI({ rows: rowsWithSelections(1), onClearAll })
+    renderBar({ layoutId: 113, inSession: true, onChange })
+    fireEvent.click(screen.getByRole('button', { name: 'Status (1)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(onClearAll).toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('still suppresses the pinned Status control when signed out', () => {
+    localStorage.setItem('catalogPinnedFilters_114', JSON.stringify(['status']))
+    renderBar({ layoutId: 114, signedOut: true })
+    expect(screen.queryByRole('button', { name: 'Ascent status' })).toBeNull()
+  })
+})
+
+describe('FilterPillBar — UNpinned Status inside a session', () => {
+  it('shows an active per-member filter as a removable chip, not nothing', () => {
+    localStorage.setItem('catalogPinnedFilters_120', JSON.stringify([]))
+    h.session = sessionUI({ rows: rowsWithSelections(2) })
+    renderBar({ layoutId: 120, inSession: true })
+    expect(screen.getByRole('button', { name: 'Remove Status (2) filter' })).toBeInTheDocument()
+  })
+
+  it('removing the chip clears every member via the store, not onChange', () => {
+    localStorage.setItem('catalogPinnedFilters_121', JSON.stringify([]))
+    const onClearAll = vi.fn()
+    const onChange = vi.fn()
+    h.session = sessionUI({ rows: rowsWithSelections(1), onClearAll })
+    renderBar({ layoutId: 121, inSession: true, onChange })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Status (1) filter' }))
+    expect(onClearAll).toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('shows no status chip when no member row is selected', () => {
+    localStorage.setItem('catalogPinnedFilters_122', JSON.stringify([]))
+    h.session = sessionUI({ rows: rowsWithSelections(0) })
+    // statusFilters set but inert in a session — it must not surface as a chip either.
+    renderBar({ layoutId: 122, inSession: true, filters: state({ statusFilters: ['sent'] }) })
+    expect(screen.queryByRole('button', { name: /^Remove Status/ })).toBeNull()
+  })
+
+  // applyFilters skips the per-member clause unless the projection is ready (filters.ts:
+  // `ctx.session.ready && !matchesSessionStatus(...)`), so while it is paused or loading the list
+  // shows EVERYTHING. The header must not claim a filter the list is not applying — and paused is
+  // routine, not exceptional: the projection carries a 5-minute max-age.
+  it.each(['paused', 'loading'] as const)(
+    'reports status inactive while the projection is %s, even with selections',
+    (state) => {
+      localStorage.setItem('catalogPinnedFilters_130', JSON.stringify(['status']))
+      h.session = sessionUI({ rows: rowsWithSelections(2), state })
+      renderBar({ layoutId: 130, inSession: true })
+      // Bare facet name, not "Status (2)" — and no accent-filled "on" control.
+      expect(screen.getByRole('button', { name: 'Ascent status' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Status (2)' })).toBeNull()
+    },
+  )
+
+  it('emits no status chip while the projection is paused, even with selections', () => {
+    localStorage.setItem('catalogPinnedFilters_131', JSON.stringify([]))
+    h.session = sessionUI({ rows: rowsWithSelections(2), state: 'paused' })
+    renderBar({ layoutId: 131, inSession: true })
+    expect(screen.queryByRole('button', { name: /^Remove Status/ })).toBeNull()
+  })
+
+  it('keeps Clear reachable in the paused popover — selections exist even though nothing filters', () => {
+    // The two questions differ: "is it filtering?" (no, paused) vs "is there something to clear?"
+    // (yes). Gating Clear on the former would strand selections the user can see in the rows.
+    localStorage.setItem('catalogPinnedFilters_132', JSON.stringify(['status']))
+    const onClearAll = vi.fn()
+    h.session = sessionUI({ rows: rowsWithSelections(1), state: 'paused', onClearAll })
+    renderBar({ layoutId: 132, inSession: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Ascent status' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(onClearAll).toHaveBeenCalled()
+  })
+
+  it('does not duplicate status as both the pinned control and a chip', () => {
+    localStorage.setItem('catalogPinnedFilters_123', JSON.stringify(['status']))
+    h.session = sessionUI({ rows: rowsWithSelections(2) })
+    renderBar({ layoutId: 123, inSession: true })
+    expect(screen.getByRole('button', { name: 'Status (2)' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove Status (2) filter' })).toBeNull()
   })
 })

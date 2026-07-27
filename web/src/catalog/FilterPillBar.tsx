@@ -20,13 +20,15 @@ import { ListFilterSheet } from './ListFilterSheet'
 import { BENCHMARK_LABEL, FAVORITES_LABEL, type FilterState } from './filters'
 import { CANONICAL_ORDER, chipFacetId, type FacetContext } from './pinnableFacets'
 import { usePinnedFacets } from './pinnedFiltersStore'
+import { activeStatusMemberCount, useSessionFilterRows } from './useSessionFilterRows'
 import type { SavedList } from '../lists/listsTypes'
 import { Toggle } from '@/components/ui/toggle'
 
 interface FilterPillBarProps {
   filters: FilterState
   onChange: (next: FilterState) => void
-  /** A collab session targets this board → status is per-member; status controls suppressed. */
+  /** A collab session targets this board → status is per-member: the Status control and chip
+   *  read and write the sessions store, not `statusFilters` (which applyFilters ignores here). */
   inSession: boolean
   /** Signed in AND ascents loaded → status actually filters; gates status. */
   statusReady: boolean
@@ -54,19 +56,30 @@ export function FilterPillBar({
   board,
 }: FilterPillBarProps) {
   const pinned = usePinnedFacets(layoutId)
-  const ctx: FacetContext = { inSession, statusReady }
+  // In a session, status is per-member store state, so the facet's active/label read off the
+  // member rows rather than FilterState (see pinnableFacets). Read directly from the store hook,
+  // mirroring FilterSheet's badge arithmetic — no prop drilling.
+  const session = useSessionFilterRows(board)
+  // One shared selector (readiness-gated — see activeStatusMemberCount) so the pinned control,
+  // its chip and the sheet's FAB badge can never disagree with each other or with applyFilters.
+  const sessionStatusMembers = activeStatusMemberCount(session)
+  const ctx: FacetContext = { inSession, statusReady, sessionStatusMembers }
   const [listSheetOpen, setListSheetOpen] = useState(false)
 
   // Chips only for active facets that are NOT pinned (a pinned facet shows as its control).
-  const chips = describeActiveFilters(filters, { inSession, statusReady }).filter(
-    (chip) => !pinned.includes(chipFacetId(chip.id)),
-  )
+  const chips = describeActiveFilters(filters, {
+    inSession,
+    statusReady,
+    // Unpinned status in a session still needs a trace in the collapsed header; its removal is
+    // a store write, so the chip carries onRemove instead of a FilterState patch.
+    sessionStatus: session && { members: sessionStatusMembers, onClearAll: session.onClearAll },
+  }).filter((chip) => !pinned.includes(chipFacetId(chip.id)))
 
-  // Does any pinned control actually render? (Lists is hidden with no lists; Status is hidden in
-  // a session.) The divider only shows when there's a left group AND chips to divide from it.
+  // Does any pinned control actually render? (Lists is hidden with no lists; Status is hidden
+  // when signed out.) The divider only shows when there's a left group AND chips to divide.
   const hasPinnedControls = pinned.some((id) => {
     if (id === 'lists') return boardLists.length > 0
-    if (id === 'status') return !inSession && !signedOut
+    if (id === 'status') return !signedOut
     return true
   })
 
@@ -130,10 +143,10 @@ export function FilterPillBar({
               </Toggle>
             )
           case 'status':
-            // In a collab session status is per-member (not single-user statusFilters), so a
-            // single-user Status control would be misleading — suppress it, like its chip. Also
-            // suppress when signed out (status can't filter, and it can't be pinned there).
-            if (inSession || signedOut) return null
+            // Suppressed only when signed out (status can't filter, and it can't be pinned
+            // there). In a session the control stays — it just edits per-member status instead
+            // of single-user statusFilters (FacetControlPopover swaps the body).
+            if (signedOut) return null
             return (
               <FacetControlPopover
                 key={facet.id}
@@ -170,7 +183,7 @@ export function FilterPillBar({
         <button
           key={chip.id}
           type="button"
-          onClick={() => onChange({ ...filters, ...chip.patch })}
+          onClick={() => (chip.onRemove ? chip.onRemove() : onChange({ ...filters, ...chip.patch }))}
           aria-label={`Remove ${chip.label} filter`}
           // Outlined gray tag: the border defines the shape (a muted FILL would vanish into the
           // near-white frosted header in light mode). Reads as secondary to the accent-filled

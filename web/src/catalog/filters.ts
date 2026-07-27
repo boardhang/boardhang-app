@@ -25,9 +25,28 @@ export type StatusKey = 'sent' | 'attempted' | 'unlogged'
 
 export const STATUS_KEYS: readonly StatusKey[] = ['sent', 'attempted', 'unlogged']
 
+/** The canonical wording — used wherever a status has to stand ALONE and explain itself: a
+ *  removable header chip, the pinned control's collapsed label, and every accessible name. */
 export const STATUS_LABELS: Record<StatusKey, string> = {
   sent: 'Sent',
   attempted: 'Attempted',
+  unlogged: 'Not logged',
+}
+
+/**
+ * The wording used by every three-across STATUS PICKER — the sheet's single-user row, the
+ * per-member session rows, and the pinned control's solo body. All three fit three options on one
+ * line (beside an avatar and a name, in the session case), so they share this map rather than each
+ * deciding for itself.
+ *
+ * It differs from STATUS_LABELS in exactly one place: "Attempted" → "Tried", the word climbers
+ * actually use, which is also the shortest of the three to give up. "Not logged" deliberately
+ * stays as it is — a picker gains nothing from a coinage ("Unlogged") that reads worse, and the
+ * ~25px it costs comes out of the session rows' name column, not out of a wrapped line.
+ */
+export const STATUS_SHORT_LABELS: Record<StatusKey, string> = {
+  sent: 'Sent',
+  attempted: 'Tried',
   unlogged: 'Not logged',
 }
 

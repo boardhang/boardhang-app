@@ -1,14 +1,11 @@
-// One row of Sent / Attempted / Not-logged chips, for a single member's ascent status.
-// Extracted from FilterControls so the Filters sheet can render one row per session member
-// (self first) — or a single self row when there is no active session. The three chips are
-// an accessible group named for whose status they are, so a screen reader announces e.g.
-// "Alice's ascent status, Sent, not pressed". In a session the row is led by the member's
-// avatar (initials), with the member's name (or "You") on hover.
+// The SOLO self row of Sent / Tried / Not-logged chips in the Filters sheet — used only when no
+// collab session targets the board. (In a session the sheet and the pinned nav control both
+// render SessionStatusRows instead, which owns its own avatar-and-name member line.) The chips
+// are an accessible group named for whose status they are, so a screen reader announces
+// "Your ascent status, Sent, not pressed".
 
-import { MemberAvatar } from '../sessions/MemberAvatar'
-import { STATUS_KEYS, STATUS_LABELS, type StatusKey } from './filters'
+import { STATUS_KEYS, STATUS_LABELS, STATUS_SHORT_LABELS, type StatusKey } from './filters'
 import { Toggle } from '@/components/ui/toggle'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 /** Row interaction state — distinct from a generic `disabled` so the UI can tell a
  *  loading projection (chips inert, aria-busy) apart from a signed-out gate (chips inert,
@@ -16,12 +13,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 export type MemberRowState = 'loading' | 'ready' | 'signed-out'
 
 interface MemberStatusRowProps {
-  /** Whose row this is (e.g. "You", "Alice") — the avatar's hover tooltip + accessible name. */
-  label?: string
-  /** Member initials for the avatar. When set, the row is led by the member avatar. */
-  initials?: string
-  /** Public avatar URL for the member; null/undefined → the avatar renders initials. */
-  avatarUrl?: string | null
   /** Accessible name for the chip group (e.g. "Your ascent status"). */
   ariaLabel: string
   selected: StatusKey[]
@@ -29,36 +20,18 @@ interface MemberStatusRowProps {
   rowState: MemberRowState
   /** id of a sign-in hint the disabled chips describe (signed-out only). */
   hintId?: string
-  /** Mark the self row for a subtle visual distinction. */
-  isSelf?: boolean
 }
 
 export function MemberStatusRow({
-  label,
-  initials,
-  avatarUrl,
   ariaLabel,
   selected,
   onToggle,
   rowState,
   hintId,
-  isSelf,
 }: MemberStatusRowProps) {
   const interactive = rowState === 'ready'
   return (
     <div className="flex items-center gap-2" role="group" aria-label={ariaLabel} aria-busy={rowState === 'loading'}>
-      {initials && (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger
-              render={<span className="inline-flex shrink-0" aria-label={label} />}
-            >
-              <MemberAvatar initials={initials} avatarUrl={avatarUrl} isSelf={isSelf} />
-            </TooltipTrigger>
-            {label && <TooltipContent>{label}</TooltipContent>}
-          </Tooltip>
-        </TooltipProvider>
-      )}
       <div className="flex flex-wrap items-center gap-2">
         {STATUS_KEYS.map((k) => (
           <Toggle
@@ -69,8 +42,11 @@ export function MemberStatusRow({
             aria-describedby={rowState === 'signed-out' ? hintId : undefined}
             pressed={selected.includes(k)}
             onPressedChange={(active) => onToggle(k, active)}
+            // Shared picker wording (see STATUS_SHORT_LABELS) so this row and the per-member
+            // session rows never word an option differently; canonical form on the title.
+            title={STATUS_LABELS[k]}
           >
-            {STATUS_LABELS[k]}
+            {STATUS_SHORT_LABELS[k]}
           </Toggle>
         ))}
       </div>

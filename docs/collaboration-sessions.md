@@ -135,8 +135,37 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   across member rows, empty row = ignore**. When a session is active it replaces the
   single-user status clause (self is member row #1), gated on the projection's single atomic
   readiness flag so the list is never blanked mid-load.
-- **UI** — `catalog/MemberStatusRow.tsx` + `FilterControls` (per-member rows in the Filters
-  sheet), `catalog/useMemberSenders.ts` (the **sends pill**: in a session, a row with ≥1 sender
+- **UI** — `catalog/MemberStatusRow.tsx` (the single-user row, solo only) +
+  `catalog/SessionStatusRows.tsx` (the per-member rows, shared verbatim by the Filters sheet's
+  `FilterControls` and — when the user has **pinned** the Ascent-status facet — the header's nav
+  control, so the two surfaces can't drift). A member is **one line**: avatar, visible name, and
+  the three statuses welded into a single segmented `ToggleGroup` (`spacing={0}`), fully
+  controlled off `row.selected` and still reporting per-key toggles so multi-select survives.
+  One line is load-bearing — free-standing chips wrap at popover width, and identical labels in
+  every row make the segment boundaries line up into scannable columns. All three status
+  PICKERS — these rows, the sheet's single-user row, and the pinned control's solo body — share
+  `STATUS_SHORT_LABELS` (Sent / Tried / Not logged) so no two word an option differently; it
+  diverges from `STATUS_LABELS` only on Attempted → Tried. `STATUS_LABELS` stays canonical
+  wherever a status stands alone (chips, the pinned control's collapsed label, every accessible
+  name) and is each option's `title`. The
+  pinned control is *not* suppressed in a session: it swaps its single-user chips for the same
+  member rows and is labelled by how many **members** are filtered (`Status (2)`). Unpinned, the
+  facet still leaves a trace — `describeActiveFilters` emits one collapsed `Status (n)` chip in
+  the same slot, with the same label, so pinning changes only the affordance, not the reading.
+  Removing that chip, the control's Clear, and the sheet's "Clear filters" all route to
+  `clearAllMemberStatus()` (one store write + persist), because per-member status is **not** in
+  `FilterState` — no `resetFilters`/`facetClearPatch` result can express it, which is why
+  `FilterChip` is a union of `patch` and `onRemove`.
+- **Two questions, two selectors** (`useSessionFilterRows.ts`) — every header affordance derived
+  from per-member status goes through one of them, so none can drift from the predicate:
+  `activeStatusMemberCount()` answers *is it filtering?* and is gated on `state === 'ready'`,
+  mirroring `applyFilters`' own `ctx.session.ready` gate — with an unready projection the
+  per-member clause is skipped and the list is widened, so the pinned control, its chip and the
+  FAB badge must all read inactive or they would claim a filter the list is not applying (and
+  `paused` is routine — the projection has a 5-minute max-age). `hasStatusSelections()` answers
+  *is there anything to clear?*, deliberately **not** readiness-gated: paused selections survive
+  and reapply, so Clear stays reachable while the header correctly reports nothing is filtering.
+  `catalog/useMemberSenders.ts` (the **sends pill**: in a session, a row with ≥1 sender
   gains a third row — a neutral pill with a green "sent" check + an `AvatarGroup` of the crew
   who sent it, **self included** and first, capped at 3 + `+K`. The name-line self-check is
   suppressed in a session since the pill is the sole home for send status; solo browsing is
