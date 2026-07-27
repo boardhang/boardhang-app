@@ -5,18 +5,19 @@
 // /lists/$listId returns zero rows under RLS → a "list not found" state (KTD4).
 
 import { useEffect, useMemo, useState } from 'react'
-import { getRouteApi } from '@tanstack/react-router'
+import { Link, getRouteApi } from '@tanstack/react-router'
 import { Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '../auth/AuthProvider'
 import { boardByLayoutId } from '../board/boards'
+import { addBoard, useBoardStore } from '../board/boardStore'
 import { CatalogRow } from '../catalog/CatalogRow'
 import { ProblemDetail } from '../catalog/ProblemDetail'
 import { getCatalogProblemsByIds, type CatalogProblem } from '../catalog/catalogSync'
 import { useFavorites } from '../catalog/favoritesStore'
 import { useShowPreviews } from '../catalog/previewsStore'
 import { useEnsureAscentsLoaded } from '../logbook/ascents'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { cn } from '@/lib/utils'
@@ -40,6 +41,10 @@ export function ListDetailScreen() {
 
   const list = lists.find((l) => l.id === listId)
   const board = list ? boardByLayoutId(list.boardLayoutId) : undefined
+  // The Lists index hides lists for boards the user no longer owns, but this URL stays
+  // valid (a bookmark, a back-button, a share). Rather than 404 it, offer the board back.
+  const { addedBoards } = useBoardStore()
+  const boardAdded = board !== undefined && addedBoards.some((b) => b.layoutId === board.layoutId)
 
   const { problems: saved, loading } = useListProblems(listId)
 
@@ -158,6 +163,40 @@ export function ListDetailScreen() {
           <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
             This list doesn’t exist or isn’t shared with your account.
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Board removed from My Boards ────────────────────────────────────────────
+  // Nothing is deleted when a board is removed, so this is an invitation, not an error:
+  // one tap re-adds the board and the list renders in place (the store is reactive).
+  if (!boardAdded) {
+    return (
+      <div className="flex flex-1 flex-col px-3" data-testid="list-detail-screen">
+        {header}
+        <div
+          className="mt-6 rounded-lg border border-dashed border-border p-6 text-center"
+          data-testid="list-board-removed"
+        >
+          <h2 className="text-sm font-semibold">
+            {board ? `Add the ${board.name} back to open this list` : 'This list is on a board you removed'}
+          </h2>
+          <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+            Removing a board only hides its lists — this one and its saved problems are still
+            here.
+          </p>
+          {board ? (
+            <Button className="mt-3" size="sm" onClick={() => addBoard(board.layoutId)}>
+              Add {boardShortLabel(board.name)}
+            </Button>
+          ) : (
+            // A layout id this build doesn't ship (a newer app made the list). No board to add,
+            // so send them somewhere they can act instead of dead-ending on the card.
+            <Link to="/boards" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}>
+              My Boards
+            </Link>
+          )}
         </div>
       </div>
     )

@@ -151,6 +151,16 @@ The PWA (`web/`) mirrors this model in TypeScript, keyed by the same layout ids 
 The browse UI that consumes this state lands in later phases; see
 [`docs/plans/2026-07-04-001-feat-pwa-catalog-browser-plan.md`](plans/2026-07-04-001-feat-pwa-catalog-browser-plan.md).
 
+**Lists scoping differs from iOS.** The web Lists tab is scoped to the **added** boards, not
+the single active one: `web/src/lists/ListsScreen.tsx` filters `useSavedLists()` to the layout
+ids in `useBoardStore().addedBoards`, so lists for every board you own are visible at once and
+only lists for boards you removed drop out. New lists are still created against the *active*
+board (no board picker, as on iOS), and the create form is hidden when no board is added.
+Removing a board is display-only — the `lists` / `list_problems` rows are untouched and keep
+syncing, so re-adding the board restores every list intact. A deep link to a hidden list
+(`/lists/$listId`) is not a 404: `ListDetailScreen` renders an "add the board back" card whose
+button calls `addBoard`, and the list opens in place.
+
 ## Gotchas summary
 
 - Layout id (Int) is the real key; `Board`/`MoonBoardSetup` are wrappers around it.
@@ -159,4 +169,6 @@ The browse UI that consumes this state lands in later phases; see
 - Active-hold-sets empty = _all_ filterable sets active (not "none").
 - Always-on hold sets (feet) are rendered but never filterable.
 - Use `effectiveBoardLayoutId`, not `boardLayoutId`, when grouping/filtering ascents by board.
-- Lists/Favorites are single-board (the active board); the logbook's `BoardFilter` is multi-select. Don't conflate.
+- Lists/Favorites are single-board (the active board) **on iOS**; the web Lists tab shows every
+  added board and hides only removed ones. The logbook's `BoardFilter` is multi-select. Don't conflate.
+- Removing a board never deletes lists — it only hides them until the board is added back.

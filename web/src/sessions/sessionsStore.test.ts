@@ -11,6 +11,9 @@ const h = vi.hoisted(() => ({
   selectCount: 0,
   clientNull: false,
   rpcError: false,
+  rosterReadError: false,
+  memberDeleteError: false,
+  sessionUpdateError: false,
   litCalls: [] as { session: string; problem: string | null }[],
 }))
 
@@ -43,6 +46,7 @@ vi.mock('../supabase/client', () => {
         return { data: row, error: null }
       }
       if (verb === 'update') {
+        if (h.sessionUpdateError) return { data: null, error: { message: 'update failed' } }
         const patch = steps.find((s) => s[0] === 'update')![1] as Record<string, unknown>
         const id = steps.find((s) => s[0] === 'eq')?.[2] as string
         const row = h.sessions.find((r) => r.id === id)
@@ -58,10 +62,14 @@ vi.mock('../supabase/client', () => {
 
     if (table === 'session_members') {
       if (verb === 'delete') {
+        if (h.memberDeleteError) return { data: null, error: { message: 'delete failed' } }
         const m = steps.find((s) => s[0] === 'match')![1] as { session_id: string; user_id: string }
         h.members = h.members.filter((x) => !(x.session_id === m.session_id && x.user_id === m.user_id))
         return { data: null, error: null }
       }
+      // Roster reads can fail (offline, transient) — loadRoster then leaves the previous
+      // roster in place, which exitSessionOnBoard must read as "unconfirmed".
+      if (h.rosterReadError) return { data: null, error: { message: 'roster read failed' } }
       const sid = steps.find((s) => s[0] === 'eq')?.[2] as string
       const rows = h.members.filter((x) => x.session_id === sid).map((x) => ({ user_id: x.user_id, joined_at: x.joined_at }))
       return { data: rows, error: null }
@@ -167,6 +175,7 @@ import {
   createSession,
   endActiveSessionLocally,
   endSession,
+  exitSessionOnBoard,
   getInviteToken,
   getSessionsSnapshot,
   initSessions,
@@ -176,6 +185,7 @@ import {
   reportProblemLit,
   refreshLitProblem,
   resumeSession,
+  retryPendingExits,
   refreshActiveSession,
   reloadActiveRoster,
   removeMemberFromRoster,
@@ -198,6 +208,9 @@ beforeEach(() => {
   h.selectCount = 0
   h.clientNull = false
   h.rpcError = false
+  h.rosterReadError = false
+  h.memberDeleteError = false
+  h.sessionUpdateError = false
   h.litCalls = []
   clearSessionsCache() // reset in-memory module state
   localStorage.clear() // clearSessionsCache may have re-touched keys
@@ -342,6 +355,321 @@ describe('sessionsStore', () => {
     endActiveSessionLocally()
     expect(getSessionsSnapshot().activeSession).toBeNull()
     expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // no server call
+  })
+
+  it('exitSessionOnBoard ends an owner-alone session on the removed board', async () => {
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster() // roster = [user-A] → alone
+    expect(await exitSessionOnBoard(7)).toBe('ended')
+    expect(getSessionsSnapshot().activeSession).toBeNull()
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true)
+  })
+
+  it('exitSessionOnBoard never ends on a STALE roster — a member who joined since is honored', async () => {
+    // The cached roster still reads [user-A]; user-B joined server-side afterwards and no
+    // realtime nudge arrived. Ending here would destroy a session user-B is climbing in.
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster()
+    expect(getSessionsSnapshot().roster).toHaveLength(1) // stale snapshot says "alone"
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+
+    expect(await exitSessionOnBoard(7)).toBe('left')
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // still live for user-B
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(false)
+  })
+
+  it('exitSessionOnBoard leaves when the roster cannot be confirmed with the server', async () => {
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster() // roster = [user-A]
+    h.rosterReadError = true // the pre-end reload fails → unconfirmed
+    expect(await exitSessionOnBoard(7)).toBe('left')
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // never end on stale data
+  })
+
+  it('exitSessionOnBoard surfaces which exit failed via SessionExitError', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    h.memberDeleteError = true // the leave DELETE fails
+    await expect(exitSessionOnBoard(7)).rejects.toMatchObject({
+      name: 'SessionExitError',
+      intent: 'left',
+    })
+    expect(getSessionsSnapshot().activeSession).not.toBeNull() // not retired by the store
+  })
+
+  it('exitSessionOnBoard only leaves when the owner has company — the session lives on', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    expect(await exitSessionOnBoard(7)).toBe('left')
+    expect(getSessionsSnapshot().activeSession).toBeNull()
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // still live for user-B
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(false)
+  })
+
+  it('exitSessionOnBoard leaves a session owned by someone else', async () => {
+    h.sessions.push({
+      id: 'S1',
+      owner_id: 'owner-x',
+      name: 'Crew',
+      board_layout_id: 7,
+      invite_token: 'tok-join',
+      expires_at: dayFromNow(1),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted: false,
+    })
+    await joinSession('tok-join')
+    expect(await exitSessionOnBoard(7)).toBe('left')
+    expect(h.sessions.find((r) => r.id === 'S1')?.deleted).toBeFalsy() // never end someone else's
+  })
+
+  it('exitSessionOnBoard ignores a session on a different board', async () => {
+    await createSession(7, 'Crew')
+    await reloadActiveRoster()
+    expect(await exitSessionOnBoard(5)).toBeNull()
+    expect(getSessionsSnapshot().activeSession).not.toBeNull()
+  })
+
+  it('exitSessionOnBoard settles identity first, so a cold-launch owner is not mistaken for a member', async () => {
+    // Rebuild the store's cold-launch state: an active session restored from localStorage with
+    // no selfId yet. Reading isOwner here without resolving identity would make the owner LEAVE
+    // their own solo session — unrecoverable, since resume and token re-fetch are both
+    // membership-gated.
+    const s = await createSession(7, 'Crew')
+    const persisted = localStorage.getItem(ACTIVE_KEY)!
+    clearSessionsCache() // drops selfId and the in-memory session
+    localStorage.setItem(ACTIVE_KEY, persisted)
+    initSessions()
+
+    expect(await exitSessionOnBoard(7)).toBe('ended')
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true)
+    expect(h.members.some((m) => m.session_id === s.id)).toBe(true) // ended, not abandoned
+  })
+
+  it('exitSessionOnBoard resolves an unloaded roster with the server instead of guessing', async () => {
+    // Roster never loaded. The pre-end reload answers the question, so an owner who really is
+    // alone ends their session instead of abandoning a live one they could never rejoin.
+    const s = await createSession(7, 'Crew') // no reloadActiveRoster → roster is []
+    expect(await exitSessionOnBoard(7)).toBe('ended')
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true)
+  })
+
+  it('a failed leave is queued and finished by retryPendingExits', async () => {
+    // Without the queue the membership row survives the "leave" forever: the crew keeps seeing
+    // the user's status, and the session returns under Resume — where tapping it re-adds the
+    // board they just removed.
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    h.memberDeleteError = true
+    await expect(exitSessionOnBoard(7)).rejects.toThrow()
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(true) // still there
+
+    h.memberDeleteError = false // back online
+    await retryPendingExits()
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(false)
+    expect(localStorage.getItem('sessionsPendingExit')).toBeNull() // queue drained
+  })
+
+  it('a failed end is queued and finished by retryPendingExits', async () => {
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster() // owner alone → the end branch
+    h.sessionUpdateError = true
+    await expect(exitSessionOnBoard(7)).rejects.toMatchObject({ intent: 'ended' })
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // still live
+
+    h.sessionUpdateError = false
+    await retryPendingExits()
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBe(true)
+  })
+
+  it('a still-failing retry stays queued', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    h.memberDeleteError = true
+    await expect(exitSessionOnBoard(7)).rejects.toThrow()
+
+    await retryPendingExits() // still offline
+    expect(localStorage.getItem('sessionsPendingExit')).toContain(s.id)
+  })
+
+  it('retryPendingExits never finishes another user’s exit', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    h.memberDeleteError = true
+    await expect(exitSessionOnBoard(7)).rejects.toThrow()
+
+    h.memberDeleteError = false
+    h.userId = 'user-B' // shared device: someone else signs in
+    await retryPendingExits()
+    // user-A's row is untouched, and their exit stays queued for their next session.
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(true)
+    expect(localStorage.getItem('sessionsPendingExit')).toContain('user-A')
+  })
+
+  it('a queued end never replays against a session the user re-joined', async () => {
+    // The failure that queues the exit can happen while ONLINE, so the retry may not run until
+    // the next app start — by which time the user may have deliberately resumed that session and
+    // invited people into it. Replaying the end there would destroy a live session for everyone.
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster()
+    h.sessionUpdateError = true
+    await expect(exitSessionOnBoard(7)).rejects.toMatchObject({ intent: 'ended' })
+    h.sessionUpdateError = false
+
+    await resumeSession(fromSessionRow(h.sessions[0] as never)) // user changes their mind
+    await retryPendingExits()
+
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy() // still live
+    expect(localStorage.getItem('sessionsPendingExit')).toBeNull() // and the intent is gone
+  })
+
+  it('drops a queued exit older than the session lifetime', async () => {
+    const s = await createSession(7, 'Crew')
+    h.members.push({ session_id: s.id, user_id: 'user-B', joined_at: new Date().toISOString() })
+    await reloadActiveRoster()
+    h.memberDeleteError = true
+    await expect(exitSessionOnBoard(7)).rejects.toThrow()
+
+    // Age the entry past the 24h backstop — the row it targets is gone server-side by then.
+    const aged = (JSON.parse(localStorage.getItem('sessionsPendingExit')!) as { queuedAt: string }[]).map(
+      (p) => ({ ...p, queuedAt: new Date(Date.now() - 25 * 3600_000).toISOString() }),
+    )
+    localStorage.setItem('sessionsPendingExit', JSON.stringify(aged))
+
+    h.memberDeleteError = false
+    await retryPendingExits()
+    expect(localStorage.getItem('sessionsPendingExit')).toBeNull()
+    expect(h.members.some((m) => m.session_id === s.id && m.user_id === 'user-A')).toBe(true) // never replayed
+  })
+
+  it('the queue cap is per user — one account cannot evict another’s revocation', async () => {
+    const older = Array.from({ length: 5 }, (_, i) => ({
+      sessionId: `mine-${i}`,
+      intent: 'left' as const,
+      userId: 'user-A',
+      queuedAt: new Date().toISOString(),
+    }))
+    const theirs = {
+      sessionId: 'theirs-1',
+      intent: 'left' as const,
+      userId: 'user-B',
+      queuedAt: new Date().toISOString(),
+    }
+    localStorage.setItem('sessionsPendingExit', JSON.stringify([...older, theirs]))
+
+    const s = await createSession(7, 'Crew') // a sixth exit for user-A
+    h.memberDeleteError = true
+    await expect(leaveSession()).rejects.toThrow()
+
+    const queue = JSON.parse(localStorage.getItem('sessionsPendingExit')!) as typeof older
+    expect(queue.filter((p) => p.userId === 'user-A')).toHaveLength(5) // capped
+    expect(queue.some((p) => p.sessionId === s.id)).toBe(true) // newest kept
+    expect(queue.some((p) => p.sessionId === 'theirs-1')).toBe(true) // user-B untouched
+  })
+
+  it('exitSessionOnBoard bails out if the active session changes under its awaits', async () => {
+    // The awaits (identity, roster) are windows in which another tab can adopt a different
+    // session — and endSession/leaveSession act on whatever is active THEN.
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster()
+    const swap = { ...fromSessionRow(h.sessions[0] as never), id: 'other-9' }
+    // Swap the pointer the moment identity resolution yields.
+    void Promise.resolve().then(() => {
+      localStorage.setItem(ACTIVE_KEY, JSON.stringify(swap))
+      window.dispatchEvent(new StorageEvent('storage', { key: ACTIVE_KEY }))
+    })
+
+    const result = await exitSessionOnBoard(7)
+    expect(result).toBeNull() // nothing done to either session
+    expect(h.sessions.find((r) => r.id === s.id)?.deleted).toBeFalsy()
+  })
+
+  it('a cancel landing mid-retry is not reverted by the closing write', async () => {
+    // The retry's final write must come from a fresh read, not its opening snapshot: a
+    // forgetPendingExit (the user re-joining) during the pass is the only thing standing
+    // between a queued end and a session they just came back to.
+    const s = await createSession(7, 'Crew')
+    await reloadActiveRoster()
+    h.sessionUpdateError = true
+    await expect(exitSessionOnBoard(7)).rejects.toMatchObject({ intent: 'ended' })
+    expect(localStorage.getItem('sessionsPendingExit')).toContain(s.id)
+
+    // The retry keeps failing, and the user re-joins while it is in flight.
+    const inFlight = retryPendingExits()
+    await resumeSession(fromSessionRow(h.sessions[0] as never))
+    await inFlight
+
+    expect(localStorage.getItem('sessionsPendingExit')).toBeNull() // cancel survived the pass
+  })
+
+  it('a cancel is scoped to the acting user — one account cannot clear another’s', async () => {
+    const s = await createSession(7, 'Crew')
+    h.memberDeleteError = true
+    await expect(leaveSession()).rejects.toThrow()
+    h.memberDeleteError = false
+
+    h.userId = 'user-B' // shared device: someone else signs in and joins the same session
+    clearSessionsCache()
+    await joinSession(`tok-${s.id}`)
+
+    expect(localStorage.getItem('sessionsPendingExit')).toContain('user-A') // still owed
+  })
+
+  it('keeps the queue while signed out rather than dropping it', async () => {
+    const s = await createSession(7, 'Crew')
+    h.memberDeleteError = true
+    await expect(leaveSession()).rejects.toThrow()
+
+    h.memberDeleteError = false
+    h.userId = null // signed out — currentUserId() resolves null
+    await retryPendingExits()
+    expect(localStorage.getItem('sessionsPendingExit')).toContain(s.id) // survives for next sign-in
+  })
+
+  it('ignores a malformed queue instead of throwing', async () => {
+    localStorage.setItem('sessionsPendingExit', JSON.stringify([{ nonsense: true }, 'garbage']))
+    await expect(retryPendingExits()).resolves.toBeUndefined()
+  })
+
+  it('a failed leave from any surface is queued, not just board removal', async () => {
+    // leaveSession owns the durability, so SessionBar / SessionPill inherit it.
+    const s = await createSession(7, 'Crew')
+    h.memberDeleteError = true
+    await expect(leaveSession()).rejects.toThrow()
+    expect(localStorage.getItem('sessionsPendingExit')).toContain(s.id)
+  })
+
+  it('follows another tab retiring the session (cross-tab coherence)', async () => {
+    await createSession(7, 'Crew')
+    initSessions() // wires the storage listener
+    expect(getSessionsSnapshot().activeSession).not.toBeNull()
+
+    // Another tab left/ended and cleared the pointer.
+    localStorage.removeItem(ACTIVE_KEY)
+    window.dispatchEvent(new StorageEvent('storage', { key: ACTIVE_KEY }))
+
+    expect(getSessionsSnapshot().activeSession).toBeNull()
+  })
+
+  it('adopts a session another tab joined, and ignores a same-session rewrite', async () => {
+    const s = await createSession(7, 'Crew')
+    initSessions()
+
+    const other = { ...fromSessionRow(h.sessions[0] as never), id: 'other-1', name: 'Other crew' }
+    localStorage.setItem(ACTIVE_KEY, JSON.stringify(other))
+    window.dispatchEvent(new StorageEvent('storage', { key: ACTIVE_KEY }))
+    expect(getSessionsSnapshot().activeSession?.id).toBe('other-1')
+
+    // A same-id rewrite (the lit pointer re-persisting) must not clobber in-memory state.
+    const before = getSessionsSnapshot().activeSession
+    window.dispatchEvent(new StorageEvent('storage', { key: ACTIVE_KEY }))
+    expect(getSessionsSnapshot().activeSession).toBe(before)
+    expect(s.id).not.toBe('other-1')
   })
 
   it('reloadActiveRoster returns the joined/left delta vs the previous roster', async () => {

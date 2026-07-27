@@ -119,6 +119,160 @@ function persistMemberStatus(sessionId: string, ms: MemberStatus): void {
   }
 }
 
+// ─── Pending exits (a leave / end whose server call never landed) ─────────────
+//
+// Retiring a session locally after a failed leave is not the whole story: the membership row
+// survives, so the crew still sees the user's status and the session comes back under "Resume
+// session" — where tapping it re-adds the very board they removed. Queue the unfinished exit
+// and retry it on app start and on reconnect, so the user's decision sticks.
+
+/** A leave/end that still owes the server a write. Keyed per user: on a shared device, user B
+ *  must never "retry" (and thereby silently drop) user A's revocation. `queuedAt` bounds how
+ *  long the intent stays valid — see the TTL below. */
+interface PendingExit {
+  sessionId: string
+  intent: 'ended' | 'left'
+  userId: string
+  queuedAt: string
+}
+
+const PENDING_EXIT_KEY = 'sessionsPendingExit'
+/** A self-heal queue, not an audit log — bound it. */
+const MAX_PENDING_EXITS = 5
+/**
+ * An unfinished exit is only worth replaying while the session it targets could still be live.
+ * Past the server's 24h backstop the row is gone anyway, and a stale entry becomes a hazard
+ * rather than a repair: `ended` is destructive and the queue must never outlive the decision
+ * that justified it.
+ */
+const PENDING_EXIT_TTL_MS = 24 * 60 * 60 * 1000
+
+function isPendingExit(v: unknown): v is PendingExit {
+  const p = v as Partial<PendingExit> | null
+  return (
+    !!p &&
+    typeof p.sessionId === 'string' &&
+    typeof p.userId === 'string' &&
+    (p.intent === 'ended' || p.intent === 'left') &&
+    typeof p.queuedAt === 'string'
+  )
+}
+
+function readPendingExits(): PendingExit[] {
+  try {
+    const raw = localStorage.getItem(PENDING_EXIT_KEY)
+    const list = raw ? (JSON.parse(raw) as unknown) : []
+    if (!Array.isArray(list)) return []
+    // Shape-check every entry (this key is user-writable) and drop anything past its TTL.
+    const fresh = Date.now() - PENDING_EXIT_TTL_MS
+    return list.filter((p) => isPendingExit(p) && Date.parse(p.queuedAt) > fresh)
+  } catch {
+    return []
+  }
+}
+
+function writePendingExits(list: PendingExit[]): void {
+  try {
+    if (list.length === 0) localStorage.removeItem(PENDING_EXIT_KEY)
+    else localStorage.setItem(PENDING_EXIT_KEY, JSON.stringify(list))
+  } catch {
+    /* best-effort — the retry is a nicety, expiry is the real backstop */
+  }
+}
+
+function rememberPendingExit(sessionId: string, intent: 'ended' | 'left', userId: string): void {
+  if (!userId) return // can't scope it to anyone; expiry remains the backstop
+  const rest = readPendingExits().filter((p) => !(p.sessionId === sessionId && p.userId === userId))
+  writePendingExits(
+    capPerUser([{ sessionId, intent, userId, queuedAt: new Date().toISOString() }, ...rest]),
+  )
+}
+
+/** Keep the newest `MAX_PENDING_EXITS` per user. Capping the list globally would let one
+ *  account's queue evict another account's revocation — the silent drop the per-user keying
+ *  exists to prevent. Order is newest-first, so a plain running count does it. */
+function capPerUser(list: PendingExit[]): PendingExit[] {
+  const kept = new Map<string, number>()
+  return list.filter((p) => {
+    const n = (kept.get(p.userId) ?? 0) + 1
+    kept.set(p.userId, n)
+    return n <= MAX_PENDING_EXITS
+  })
+}
+
+/**
+ * Cancel a queued exit because the user deliberately re-entered that session (join / resume).
+ * Without this the queue outlives the intent: a failed end, then a resume, then an app start,
+ * and the retry soft-deletes a session the user is actively climbing in. Only explicit re-entry
+ * cancels — NOT `setActiveSession`, which a background refresh also calls and which would
+ * quietly discard an exit the user still wants.
+ */
+function forgetPendingExit(sessionId: string, userId: string | null): void {
+  // Scoped to the acting identity: cancelling by session id alone would let whoever is signed
+  // in now discard ANOTHER account's queued revocation — the same silent drop the per-user
+  // keying and the per-user cap exist to prevent. Unidentified → cancel nothing (that user
+  // can't run a retry either, so nothing is replayed on their behalf).
+  if (!userId) return
+  const queued = readPendingExits()
+  const rest = queued.filter((p) => !(p.sessionId === sessionId && p.userId === userId))
+  if (rest.length !== queued.length) writePendingExits(rest)
+}
+
+/** Identity of a queued exit — includes `intent`, so a cancel-then-requeue with a different
+ *  intent is a different entry and can't be mistaken for one this pass already handled. */
+function pendingExitKey(p: PendingExit): string {
+  return `${p.sessionId}::${p.userId}::${p.intent}`
+}
+
+// One pass at a time: initSessions' fire-and-forget call and an `online` event moments later
+// would otherwise both read the same queue and race their writes.
+let retryingExits = false
+
+/**
+ * Finish the exits whose server call failed. Idempotent and best-effort: a still-failing entry
+ * stays queued, an entry belonging to another user is left for that user, and an `ended` retry
+ * for a session that has since expired simply matches no rows. Called on app start and from the
+ * `online` listener wired in `initSessions`.
+ */
+export async function retryPendingExits(): Promise<void> {
+  if (!supabase || retryingExits) return
+  const queued = readPendingExits()
+  if (queued.length === 0) {
+    writePendingExits([]) // prune whatever the read just filtered out (expired / malformed)
+    return
+  }
+  retryingExits = true
+  try {
+    const userId = await currentUserId()
+    if (!userId) return // signed out — keep the queue for their next sign-in
+    const landed = new Set<string>()
+    for (const p of queued) {
+      if (p.userId !== userId) continue // another account's revocation — leave it for them
+      const { error } =
+        p.intent === 'ended'
+          ? await supabase.from('sessions').update({ deleted: true }).eq('id', p.sessionId)
+          : await supabase
+              .from('session_members')
+              .delete()
+              .match({ session_id: p.sessionId, user_id: userId })
+      if (error) continue // still failing — it stays queued by virtue of the fresh read below
+      landed.add(pendingExitKey(p))
+      if (state.activeSession?.id === p.sessionId) {
+        // The exit finally landed for a session this device still shows (a failed leave from
+        // SessionBar leaves it active) — stop presenting a session we just left/ended.
+        retire(p.sessionId)
+      }
+    }
+    // Derive the final queue from a FRESH read, subtracting only what actually landed. Writing
+    // a list computed from the stale snapshot would revert anything that changed mid-pass — in
+    // particular a `forgetPendingExit` from a join/resume, which is the ONLY thing standing
+    // between a queued `ended` and a session the user just came back to.
+    writePendingExits(capPerUser(readPendingExits().filter((p) => !landed.has(pendingExitKey(p)))))
+  } finally {
+    retryingExits = false
+  }
+}
+
 function readMemberStatus(sessionId: string): MemberStatus {
   try {
     const raw = localStorage.getItem(MEMBER_STATUS_PREFIX + sessionId)
@@ -255,6 +409,8 @@ export function removeMemberFromRoster(userId: string): SessionMember | null {
  * refresh reconciles it with the server + loads the roster.
  */
 export function initSessions(): void {
+  wireWindowSync()
+  void retryPendingExits()
   const cached = readPersistedActive()
   if (!cached) {
     setState({ status: 'idle', activeSession: null, roster: [], memberStatus: {}, error: null })
@@ -267,6 +423,55 @@ export function initSessions(): void {
   setState({ status: 'active', activeSession: cached, memberStatus: readMemberStatus(cached.id) })
   void ensureSelfId()
   void refreshActiveSession()
+}
+
+let windowSyncWired = false
+
+/**
+ * Follow the active-session pointer across tabs, and finish pending exits on reconnect.
+ *
+ * `boardStore` already re-reads its added/active boards on the cross-tab `storage` event; until
+ * this store did the same, one tab could hold a session on a board another tab had removed —
+ * the exact contradiction the board-removal exit exists to prevent. It also means the tab that
+ * did not initiate a leave retires from the local write rather than from the realtime
+ * member-left echo, so a self-service exit is no longer reported to the user as a kick.
+ *
+ * `storage` fires only in the OTHER tabs, never the writer, so this never re-handles our own
+ * write. A same-id event (the lit-problem pointer re-persisting) is deliberately ignored — the
+ * in-memory session is fresher than the pointer.
+ */
+function wireWindowSync(): void {
+  if (windowSyncWired || typeof window === 'undefined') return
+  windowSyncWired = true
+  window.addEventListener('storage', (e) => {
+    // `key` is null when another tab called localStorage.clear() — treat that as "re-read".
+    if (e.key !== null && e.key !== ACTIVE_KEY) return
+    const next = readPersistedActive()
+    const current = state.activeSession
+    if (!next) {
+      if (current) retire(current.id)
+      return
+    }
+    if (!current || current.id !== next.id) {
+      // Adopt on the same terms as initSessions — a pointer is never treated as live without
+      // the local expiry check and a server reconcile (refreshActiveSession loads the roster on
+      // success and retires a deleted/expired/unreadable row, so the adopt fails closed).
+      if (isLocallyExpired(next)) {
+        retire(next.id)
+        return
+      }
+      setState({
+        status: 'active',
+        activeSession: next,
+        roster: [],
+        memberStatus: readMemberStatus(next.id),
+        error: null,
+      })
+      void ensureSelfId()
+      void refreshActiveSession()
+    }
+  })
+  window.addEventListener('online', () => void retryPendingExits())
 }
 
 /**
@@ -313,6 +518,8 @@ export async function joinSession(token: string): Promise<Session> {
   if (!row) throw new Error('That session link is no longer valid.')
   const session = fromSessionRow(row)
   if (gen !== generation) return session
+  // Re-joining supersedes any unfinished exit of MINE for this session (never another user's).
+  forgetPendingExit(session.id, state.selfId ?? (await currentUserId()))
   setActiveSession(session)
   setState({ memberStatus: readMemberStatus(session.id) })
   void ensureSelfId()
@@ -354,6 +561,8 @@ export async function listMyLiveSessions(): Promise<Session[]> {
  */
 export async function resumeSession(session: Session): Promise<{ live: boolean }> {
   if (isLocallyExpired(session)) return { live: false }
+  // Resuming supersedes any unfinished exit of MINE for this session (never another user's).
+  forgetPendingExit(session.id, state.selfId ?? (await currentUserId()))
   setActiveSession(session)
   setState({ memberStatus: readMemberStatus(session.id) })
   void ensureSelfId()
@@ -394,12 +603,25 @@ export async function leaveSession(): Promise<void> {
   if (!active) return
   if (supabase) {
     const userId = await currentUserId()
-    if (userId) {
+    if (!userId) {
+      // We can't prove who we are, so we can't delete our membership row — and reporting a
+      // successful leave here would be a lie about a revocation. Queue it under the last-known
+      // identity and fail loudly instead.
+      rememberPendingExit(active.id, 'left', state.selfId ?? '')
+      throw new Error('Couldn’t confirm your account — this will finish next time you’re online.')
+    }
+    {
       const { error } = await supabase
         .from('session_members')
         .delete()
         .match({ session_id: active.id, user_id: userId })
-      if (error) throw new Error(error.message)
+      if (error) {
+        // Leaving IS the revocation, so a failed one must not evaporate — queue it here rather
+        // than in one caller, so every Leave affordance (SessionBar, SessionPill, board removal)
+        // inherits the guarantee.
+        rememberPendingExit(active.id, 'left', userId)
+        throw new Error(error.message)
+      }
     }
   }
   retire(active.id)
@@ -416,9 +638,79 @@ export async function endSession(): Promise<void> {
   if (!active) return
   if (supabase) {
     const { error } = await supabase.from('sessions').update({ deleted: true }).eq('id', active.id)
-    if (error) throw new Error(error.message)
+    if (error) {
+      rememberPendingExit(active.id, 'ended', state.selfId ?? '')
+      throw new Error(error.message)
+    }
   }
   retire(active.id)
+}
+
+/** Thrown when the server call behind `exitSessionOnBoard` fails, carrying which exit was
+ *  attempted — a failed END leaves a session that is still live and still joinable via its
+ *  invite token, which is a different thing to tell the user than a failed LEAVE. */
+export class SessionExitError extends Error {
+  readonly intent: 'ended' | 'left'
+  readonly reason: unknown
+
+  constructor(intent: 'ended' | 'left', reason: unknown) {
+    super(reason instanceof Error ? reason.message : 'Could not exit the session')
+    this.name = 'SessionExitError'
+    this.intent = intent
+    this.reason = reason
+  }
+}
+
+/**
+ * Drop out of the active session when the user removes the board it runs on — a session is
+ * tied to one physical wall, so keeping it would leave them "climbing" on a board they just
+ * said they don't have. Mirrors the two actions SessionBar offers, so nothing happens here
+ * that the user couldn't do by hand: an owner who is genuinely alone ENDS it (no one is left
+ * to keep it going); everyone else — a member, or an owner with company — only LEAVES, and
+ * the session lives on for the others. A session on any other board is untouched.
+ *
+ * **Never decide the destructive branch from the cached roster.** `state.roster` is only
+ * written on create/join/resume/manual-refresh and best-effort realtime nudges, so a roster
+ * that still reads `[self]` while a friend has since joined would end a session they are
+ * using — unrecoverable (ending is final, KTD "ended = gone"). So reload first, and end only
+ * on a roster the server just confirmed: `loadRoster` writes a NEW array on success and
+ * leaves the old reference untouched on any failure, so an unchanged reference means "not
+ * confirmed" and falls through to the recoverable leave.
+ *
+ * Returns what happened so the caller can say so; a failed server call throws
+ * `SessionExitError` and the caller decides whether to retire it locally anyway.
+ */
+export async function exitSessionOnBoard(layoutId: number): Promise<'ended' | 'left' | null> {
+  const active = state.activeSession
+  if (!active || active.boardLayoutId !== layoutId) return null
+  // initSessions resolves selfId without awaiting it, so on a cold launch the real owner can
+  // still read as a non-owner here — and an owner who "leaves" a solo session can never get
+  // back to it (both re-entry paths are membership-gated). Settle identity first.
+  await ensureSelfId()
+  // Every await below is a chance for the active session to change under us (a cross-tab adopt,
+  // a resume, a sign-out) — and endSession/leaveSession act on whatever is active *then*, not on
+  // `active`. Re-assert the target after each one so a swapped-in session can't take the write.
+  if (state.activeSession?.id !== active.id) return null
+  if (!!state.selfId && active.ownerId === state.selfId) {
+    const before = state.roster
+    await reloadActiveRoster()
+    if (state.activeSession?.id !== active.id) return null
+    const confirmed = state.roster !== before
+    if (confirmed && state.roster.length === 1) {
+      try {
+        await endSession() // queues its own pending exit on failure
+      } catch (e) {
+        throw new SessionExitError('ended', e)
+      }
+      return 'ended'
+    }
+  }
+  try {
+    await leaveSession() // queues its own pending exit on failure
+  } catch (e) {
+    throw new SessionExitError('left', e)
+  }
+  return 'left'
 }
 
 /**

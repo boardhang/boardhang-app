@@ -6,7 +6,8 @@
 // lives in the SessionBar's ⋯ menu.
 
 import { Users } from 'lucide-react'
-import { leaveSession, useSessions } from '../sessions/sessionsStore'
+import { useSessions } from '../sessions/sessionsStore'
+import { leaveSessionWithFeedback } from '../sessions/exitFeedback'
 import { ShareSession } from '../sessions/ShareSession'
 import { MemberAvatar } from '../sessions/MemberAvatar'
 import { memberInitials, memberLabel } from '../sessions/sessionsTypes'
@@ -60,7 +61,7 @@ export function SessionPill({ suppressed }: { suppressed?: boolean }) {
           <Button
             variant="outline"
             className="w-full text-destructive hover:text-destructive"
-            onClick={() => void leaveSession()}
+            onClick={() => void leaveSessionWithFeedback()}
           >
             Leave session
           </Button>

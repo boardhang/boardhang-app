@@ -17,12 +17,11 @@ import { boardShortLabel } from '../lists/listsTypes'
 import { useAuth } from '../auth/AuthProvider'
 import {
   createSession,
-  endSession,
-  leaveSession,
   removeMember,
   renameSession,
   useSessions,
 } from '../sessions/sessionsStore'
+import { endSessionWithFeedback, leaveSessionWithFeedback } from '../sessions/exitFeedback'
 import { useResumableSessions } from '../sessions/useResumableSessions'
 import { ResumableSessionRow } from '../sessions/ResumableSessionRow'
 import {
@@ -347,7 +346,7 @@ function ActiveBar({
                 className="w-full justify-start text-destructive hover:text-destructive"
                 onClick={() => {
                   setMenuOpen(false)
-                  void endSession()
+                  void endSessionWithFeedback()
                 }}
               >
                 {alone ? 'End session' : 'End session for everyone'}
@@ -360,7 +359,7 @@ function ActiveBar({
                 className="w-full justify-start text-destructive hover:text-destructive"
                 onClick={() => {
                   setMenuOpen(false)
-                  void leaveSession()
+                  void leaveSessionWithFeedback()
                 }}
               >
                 Leave session

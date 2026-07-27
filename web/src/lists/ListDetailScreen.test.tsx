@@ -104,11 +104,18 @@ function listWithBoard(id: string, name: string): SavedList {
   }
 }
 
+/** Own these boards — a list only opens for a board that's in My Boards. */
+function ownBoards(ids: number[]): void {
+  localStorage.setItem('addedBoards', ids.join('|'))
+  window.dispatchEvent(new StorageEvent('storage'))
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   // Reset the previews snapshot (survives localStorage.clear()).
   window.dispatchEvent(new StorageEvent('storage'))
+  ownBoards([5]) // the board this list is saved for
   authState.status = 'signedInWithProfile'
   storeState = { status: 'loaded', lists: [listWithBoard('list-1', 'Projects')], error: null }
   problemsState = {
@@ -132,6 +139,27 @@ describe('ListDetailScreen', () => {
     expect(screen.getByText('Masters 2019')).toBeInTheDocument()
     expect(await screen.findByText('Forty')).toBeInTheDocument()
     expect(screen.getByText('Twentyfive')).toBeInTheDocument()
+  })
+
+  it('board removed: offers to add it back instead of showing the problems', async () => {
+    ownBoards([7]) // a different board — this list's board (5) is gone
+    renderWithRouter('/lists/list-1')
+
+    expect(await screen.findByTestId('list-board-removed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Masters 2019' })).toBeInTheDocument()
+    expect(screen.queryByText('Forty')).toBeNull()
+    // Not a "list not found" — the list is intact, just on a board you don't own.
+    expect(screen.queryByText('List not found')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeInTheDocument()
+  })
+
+  it('adding the board back opens the list in place', async () => {
+    ownBoards([7])
+    renderWithRouter('/lists/list-1')
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Masters 2019' }))
+
+    expect(await screen.findByText('Forty')).toBeInTheDocument()
+    expect(screen.queryByTestId('list-board-removed')).toBeNull()
   })
 
   it('the angle filter narrows the shown problems; All shows every angle', async () => {

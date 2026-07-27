@@ -11,6 +11,9 @@ const h = vi.hoisted(() => ({
   resumeSession: vi.fn(),
   navigate: vi.fn(),
   navigateToSessionBoard: vi.fn(),
+  exitSessionOnBoard: vi.fn(),
+  endActiveSessionLocally: vi.fn(),
+  toast: vi.fn(),
 }))
 vi.mock('@tanstack/react-router', async (orig) => ({
   ...((await orig()) as Record<string, unknown>),
@@ -21,7 +24,19 @@ vi.mock('../sessions/sessionsStore', () => ({
   useSessions: () => ({ activeSession: h.activeSession }),
   listMyLiveSessions: (...a: unknown[]) => h.listMyLiveSessions(...a),
   resumeSession: (...a: unknown[]) => h.resumeSession(...a),
+  exitSessionOnBoard: (...a: unknown[]) => h.exitSessionOnBoard(...a),
+  endActiveSessionLocally: (...a: unknown[]) => h.endActiveSessionLocally(...a),
+  // Same class object the component imports, so its `instanceof` check holds.
+  SessionExitError: class SessionExitError extends Error {
+    intent: 'ended' | 'left'
+    constructor(intent: 'ended' | 'left', _reason: unknown) {
+      super('exit failed')
+      this.name = 'SessionExitError'
+      this.intent = intent
+    }
+  },
 }))
+vi.mock('sonner', () => ({ toast: (...a: unknown[]) => h.toast(...a) }))
 vi.mock('../sessions/sessionNav', () => ({
   navigateToSessionBoard: (...a: unknown[]) => h.navigateToSessionBoard(...a),
 }))
@@ -31,6 +46,7 @@ vi.mock('../sessions/ScanToJoin', () => ({
   ),
 }))
 
+import { SessionExitError } from '../sessions/sessionsStore'
 import { MyBoards } from './MyBoards'
 
 beforeEach(() => {
@@ -42,6 +58,11 @@ beforeEach(() => {
   h.resumeSession.mockReset().mockImplementation(async () => h.resumeResult)
   h.navigate.mockClear()
   h.navigateToSessionBoard.mockClear()
+  h.exitSessionOnBoard.mockReset().mockResolvedValue(null)
+  h.endActiveSessionLocally.mockClear()
+  h.toast.mockClear()
+  // The failed-exit paths log the real error on purpose; keep it out of the test output.
+  vi.spyOn(console, 'error').mockImplementation(() => {})
   localStorage.clear()
   window.dispatchEvent(new StorageEvent('storage')) // reset boardStore snapshot
 })
@@ -137,7 +158,7 @@ describe('MyBoards', () => {
     expect(stillOn[0]).toBeDisabled()
   })
 
-  it('removes a board from its drawer after a confirm click', () => {
+  it('removes a board from its drawer after a confirm click', async () => {
     render(<MyBoards onActivated={() => {}} />)
     addBoard('MoonBoard Masters 2019')
     expect(screen.getByText('My boards')).toBeInTheDocument()
@@ -145,7 +166,125 @@ describe('MyBoards', () => {
     openConfig('MoonBoard Masters 2019')
     fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
     fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
-    expect(screen.queryByText('My boards')).toBeNull() // back to first-run
+    await waitFor(() => expect(screen.queryByText('My boards')).toBeNull()) // back to first-run
+  })
+
+  it('removing the board you are mid-session on drops you out of that session', async () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 5 } // Masters 2019
+    h.exitSessionOnBoard.mockResolvedValue('left')
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() => expect(h.exitSessionOnBoard).toHaveBeenCalledWith(5))
+    await waitFor(() => expect(screen.queryByText('My boards')).toBeNull()) // board still removed
+    expect(h.toast).toHaveBeenCalledWith('Left the session on MoonBoard Masters 2019')
+  })
+
+  it('ends the session instead when the store reports the owner was alone', async () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    h.exitSessionOnBoard.mockResolvedValue('ended')
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith('Ended your session on MoonBoard Masters 2019'),
+    )
+  })
+
+  it('removes the board immediately, without waiting on the session call', async () => {
+    // The exit is a network call with no timeout; a stalled connection must not hold the
+    // removal (or the drawer) hostage. A never-settling promise pins that.
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    h.exitSessionOnBoard.mockReturnValue(new Promise(() => {}))
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    expect(screen.queryByText('My boards')).toBeNull() // gone on the same tick
+  })
+
+  it('tells the user the session is still live when an END fails', async () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    h.exitSessionOnBoard.mockRejectedValue(new SessionExitError('ended', new Error('offline')))
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Couldn’t end the session yet',
+        expect.objectContaining({ description: expect.stringContaining('invite link still works') }),
+      ),
+    )
+  })
+
+  it('tells the user only the others may still see them when a LEAVE fails', async () => {
+    // The other half of the intent split: a failed leave must NOT claim the session is still
+    // running under their name — that copy belongs to a failed end.
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    h.exitSessionOnBoard.mockRejectedValue(new SessionExitError('left', new Error('offline')))
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Left the session on this device',
+        expect.objectContaining({ description: expect.stringContaining('may still see you') }),
+      ),
+    )
+  })
+
+  it('warns in the drawer before removing a board that has the live session', () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+    addBoard('Mini MoonBoard 2025')
+
+    openConfig('MoonBoard Masters 2019')
+    // The copy has to cover both outcomes — removal ends the session when you're alone in it.
+    expect(screen.getByText(/drop out of the session on this board/)).toBeInTheDocument()
+    expect(screen.getByText(/end it if you’re the only one/)).toBeInTheDocument()
+  })
+
+  it('does not warn for a board the session is not on', () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 7 } // Mini 2025
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    expect(screen.queryByText(/drop out of the session on this board/)).toBeNull()
+  })
+
+  it('a failed leave still removes the board and retires the session on this device', async () => {
+    h.activeSession = { id: 'S1', boardLayoutId: 5 }
+    h.exitSessionOnBoard.mockRejectedValue(new Error('offline'))
+    render(<MyBoards onActivated={() => {}} />)
+    addBoard('MoonBoard Masters 2019')
+
+    openConfig('MoonBoard Masters 2019')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() => expect(h.endActiveSessionLocally).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText('My boards')).toBeNull())
   })
 
   // ── U3: cross-device "Resume session" surface ──
