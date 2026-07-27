@@ -10,12 +10,18 @@
 // one place and can retry per attempt. React.lazy is a poor fit: it memoizes a rejected import, so
 // its retry edge can't recover an offline first scan (KTD-5). Any load failure drops back to the
 // chooser, where the paste field is always available (R6).
+//
+// A camera failure keeps the *reason* (see cameraError.ts) rather than collapsing to one flat
+// message: a denied camera can only be fixed in OS/browser settings, so it gets a persistent panel
+// with the steps, not a hint that fades after 2.5s.
 
 import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronLeft, Loader2, Plus, ScanQrCode } from 'lucide-react'
+import { CameraOff, ChevronLeft, Loader2, Plus, ScanQrCode } from 'lucide-react'
 import type { IScannerProps } from '@yudiel/react-qr-scanner'
 import { parseJoinUrl } from './joinUrl'
+import { classifyCameraError, describeCameraIssue, type CameraIssue } from './cameraError'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -30,8 +36,9 @@ type ScannerComponent = ComponentType<IScannerProps>
 type Phase = 'menu' | 'scanning'
 
 /** Loads the scanner chunk + WASM on mount (and on each `attempt`), then renders the camera. A
- *  chunk or WASM failure calls `onError` so the parent drops back to the chooser; bumping `attempt`
- *  re-runs the load, which recovers because ensureDecoder retries a previously-failed WASM fetch. */
+ *  chunk, WASM or camera failure calls `onError` with the underlying error so the parent can drop
+ *  back to the chooser and explain it; bumping `attempt` re-runs the load, which recovers because
+ *  ensureDecoder retries a previously-failed WASM fetch. */
 function ScannerStage({
   attempt,
   paused,
@@ -41,7 +48,7 @@ function ScannerStage({
   attempt: number
   paused: boolean
   onDecode: (raw: string) => void
-  onError: () => void
+  onError: (error: unknown) => void
 }) {
   const [Scanner, setScanner] = useState<ScannerComponent | null>(null)
 
@@ -53,8 +60,8 @@ function ScannerStage({
         const mod = await import('./qrDecoder')
         await mod.ensureDecoder()
         if (!cancelled) setScanner(() => mod.default)
-      } catch {
-        if (!cancelled) onError()
+      } catch (err) {
+        if (!cancelled) onError(err)
       }
     })()
     return () => {
@@ -89,6 +96,29 @@ function ScannerStage({
   )
 }
 
+/** Why the camera didn't start, plus the steps to fix it when there are any. Sits at the top of the
+ *  chooser and stays put until the next scan attempt — settings live outside the app, so the user
+ *  has to be able to leave, change the toggle, and come back to a message that's still there. */
+function CameraIssuePanel({ issue }: { issue: CameraIssue }) {
+  const { title, detail, steps } = describeCameraIssue(issue)
+  return (
+    <Alert variant="destructive">
+      <CameraOff className="size-4" />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>
+        <span className="block">{detail}</span>
+        {steps && (
+          <ol className="mt-2 list-decimal space-y-0.5 pl-4 text-foreground">
+            {steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        )}
+      </AlertDescription>
+    </Alert>
+  )
+}
+
 /**
  * Session launcher dialog. Opens on the chooser (scan / paste / optional start); the camera starts
  * only on "Scan a QR code". Pass `onStart` (+ `starting`/`canStart`) to surface the host action.
@@ -113,6 +143,7 @@ export function ScanToJoin({
   const [attempt, setAttempt] = useState(0)
   const [paused, setPaused] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
+  const [cameraIssue, setCameraIssue] = useState<CameraIssue | null>(null)
   const [pasteValue, setPasteValue] = useState('')
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -136,6 +167,7 @@ export function ScanToJoin({
       setPhase('menu')
       setPaused(false)
       setHint(null)
+      setCameraIssue(null)
       setPasteValue('')
     }
   }, [open])
@@ -160,6 +192,7 @@ export function ScanToJoin({
 
   const startScanning = useCallback(() => {
     setHint(null)
+    setCameraIssue(null)
     setPhase('scanning')
   }, [])
 
@@ -172,12 +205,14 @@ export function ScanToJoin({
     [goToJoin, showHint],
   )
 
-  // Camera couldn't start (denied / no camera / offline decoder) — drop back to the chooser, where
-  // the paste field is always available, and say so.
-  const onScannerError = useCallback(() => {
+  // Camera couldn't start (denied / no camera / busy / offline decoder) — drop back to the chooser,
+  // where the paste field is always available, and explain *this* failure. The panel is persistent
+  // rather than a fading hint: a denied camera needs the user to leave for settings and come back.
+  const onScannerError = useCallback((error: unknown) => {
     setPhase('menu')
-    showHint('Camera unavailable — paste the link instead')
-  }, [showHint])
+    setHint(null)
+    setCameraIssue(classifyCameraError(error))
+  }, [])
 
   const submitPaste = useCallback(() => {
     const token = parseJoinUrl(pasteValue)
@@ -227,6 +262,8 @@ export function ScanToJoin({
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            {cameraIssue && <CameraIssuePanel issue={cameraIssue} />}
+
             <Button className="w-full" onClick={startScanning}>
               <ScanQrCode className="size-4" />
               Scan a QR code

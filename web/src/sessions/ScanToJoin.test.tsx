@@ -6,7 +6,7 @@ const h = vi.hoisted(() => ({
   navigate: vi.fn(),
   ensureDecoder: vi.fn(() => Promise.resolve<unknown>(undefined)),
   onScanRef: { current: null as null | ((codes: { rawValue: string }[]) => void) },
-  onErrorRef: { current: null as null | (() => void) },
+  onErrorRef: { current: null as null | ((error?: unknown) => void) },
   onOpenChange: vi.fn(),
 }))
 
@@ -18,7 +18,10 @@ vi.mock('@tanstack/react-router', async (orig) => {
 // The lazy decoder chunk is mocked so tests never touch getUserMedia or the WASM. The fake Scanner
 // captures its onScan/onError props so tests can drive a decode or a camera failure.
 vi.mock('./qrDecoder', () => ({
-  default: (props: { onScan: (c: { rawValue: string }[]) => void; onError: () => void }) => {
+  default: (props: {
+    onScan: (c: { rawValue: string }[]) => void
+    onError: (error?: unknown) => void
+  }) => {
     h.onScanRef.current = props.onScan
     h.onErrorRef.current = props.onError
     return <div data-testid="fake-scanner" />
@@ -144,7 +147,7 @@ describe('ScanToJoin', () => {
     render(<Harness />)
     fireEvent.click(screen.getByRole('button', { name: /scan a qr code/i }))
 
-    expect(await screen.findByText(/camera unavailable/i)).toBeInTheDocument()
+    expect(await screen.findByText(/couldn’t start the camera/i)).toBeInTheDocument()
     // the paste field is still right there
     expect(screen.getByLabelText('Session link')).toBeInTheDocument()
     expect(screen.queryByTestId('fake-scanner')).not.toBeInTheDocument()
@@ -154,10 +157,43 @@ describe('ScanToJoin', () => {
     render(<Harness />)
     await enterScanning()
 
-    act(() => h.onErrorRef.current?.())
+    act(() => h.onErrorRef.current?.({ kind: 'unknown', message: 'boom', cause: null }))
 
     expect(await screen.findByLabelText('Session link')).toBeInTheDocument()
-    expect(screen.getByText(/camera unavailable/i)).toBeInTheDocument()
+    expect(screen.getByText(/couldn’t start the camera/i)).toBeInTheDocument()
+  })
+
+  it('guides the user to settings when the camera is denied, and keeps the panel up', async () => {
+    render(<Harness />)
+    await enterScanning()
+
+    act(() =>
+      h.onErrorRef.current?.({ kind: 'permission-denied', message: 'denied', cause: null }),
+    )
+
+    // named as a permission problem, with actionable steps — not a generic failure
+    expect(await screen.findByText(/camera access is (turned off|blocked)/i)).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem').length).toBeGreaterThan(1)
+
+    // persistent, unlike the transient scan hints: it stays through unrelated interaction so the
+    // user can leave for settings and come back to it
+    fireEvent.change(screen.getByLabelText('Session link'), { target: { value: 'x' } })
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+  })
+
+  it('clears the camera panel on the next scan attempt', async () => {
+    render(<Harness />)
+    await enterScanning()
+    act(() =>
+      h.onErrorRef.current?.({ kind: 'permission-denied', message: 'denied', cause: null }),
+    )
+    await screen.findByRole('alert')
+
+    fireEvent.click(screen.getByRole('button', { name: /scan a qr code/i }))
+
+    await waitFor(() => expect(screen.getByTestId('fake-scanner')).toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('recovers the scanner on a second scan attempt after a first failed load', async () => {
@@ -166,7 +202,7 @@ describe('ScanToJoin', () => {
 
     // first scan attempt fails → back on the chooser
     fireEvent.click(screen.getByRole('button', { name: /scan a qr code/i }))
-    await screen.findByText(/camera unavailable/i)
+    await screen.findByText(/couldn’t start the camera/i)
 
     // second attempt succeeds (proves a per-attempt loader, not a memoized rejection)
     fireEvent.click(screen.getByRole('button', { name: /scan a qr code/i }))
