@@ -14,6 +14,10 @@
 // board's default". The secondary sort rides `sortThenBy` (a SortKey or `none` for
 // no tiebreak), stripped at its default; a secondary that shares the primary's
 // dimension is dropped on read so URL state matches the "Then by" control.
+//
+// Two params open the problem editor rather than describing the list: `new=1` (a fresh
+// draft) and `edit=<id>` (an existing own problem). They live here so the editor is
+// deep-linkable and survives the reloads its persisted draft is built for (plan KTD10).
 
 import { FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
 import {
@@ -55,6 +59,10 @@ export interface CatalogSearch {
   list: string
   /** Open problem's `source_catalog_id`; `''` = drawer closed. */
   problem: string
+  /** `1` opens the problem editor on a new draft; omitted = closed. */
+  new: 0 | 1
+  /** Id of the problem the editor is editing; `''` = not editing. */
+  edit: string
 }
 
 /** The default (stripped) value of every param. */
@@ -72,6 +80,8 @@ export const CATALOG_SEARCH_DEFAULTS: CatalogSearch = {
   status: '',
   list: '',
   problem: '',
+  new: 0,
+  edit: '',
 }
 
 const GRADE_MAX = FONT_GRADES.length - 1
@@ -104,6 +114,8 @@ export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSear
     status: str(raw.status),
     list: str(raw.list),
     problem: str(raw.problem),
+    new: num(raw.new) === 1 ? 1 : 0,
+    edit: str(raw.edit),
   }
 }
 
@@ -151,11 +163,14 @@ export function decodeGrade(s: string): [number, number] | null {
 
 // ─── FilterState <-> search ─────────────────────────────────────────────────
 
-/** Build the filter/sort/search portion of the URL from a FilterState. Omits
- *  `angle` and `problem`, which the route and drawer own respectively. Defaults
- *  are still emitted (e.g. `bench: 0`) — the route's strip middleware removes
+/** Build the filter/sort/search portion of the URL from a FilterState. Omits `angle`,
+ *  `problem` and the editor params (`new`/`edit`), which the route, the detail drawer and
+ *  the editor own respectively — writing filters must never open or close either drawer.
+ *  Defaults are still emitted (e.g. `bench: 0`) — the route's strip middleware removes
  *  them, so every write site can pass natural values without remembering to omit. */
-export function filtersToSearch(f: FilterState): Omit<CatalogSearch, 'angle' | 'problem'> {
+export function filtersToSearch(
+  f: FilterState,
+): Omit<CatalogSearch, 'angle' | 'problem' | 'new' | 'edit'> {
   return {
     q: f.search,
     grade: encodeGrade(f.gradeRange),

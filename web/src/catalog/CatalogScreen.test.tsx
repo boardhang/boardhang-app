@@ -4,6 +4,7 @@ import type { CatalogProblem } from './catalogSync'
 import { recordRecent } from './recentsStore'
 import { dismissLastOpened } from './lastOpenedStore'
 import { addBoard } from '../board/boardStore'
+import { boardByLayoutId } from '../board/boards'
 import { renderWithRouter } from '../test/renderWithRouter'
 import { useSlab } from './useSlab'
 import { useAscents, useEnsureAscentsLoaded } from '../logbook/ascents'
@@ -522,5 +523,27 @@ describe('CatalogScreen — sticky session bar (#98)', () => {
 
     const start = screen.getByText('Session with friends')
     expect(start.closest('.app-header')).toBeNull()
+  })
+})
+
+describe('CatalogScreen — problem editor (?new=1)', () => {
+  it('opens the editor from a ?new=1 deep link', async () => {
+    addBoard(LAYOUT)
+    renderWithRouter(`/board/${LAYOUT}/catalog?new=1`)
+
+    // The editor's tap grid is live over the board art, on the route's resolved angle.
+    expect(await screen.findByRole('button', { name: 'A1, empty' })).toBeInTheDocument()
+    expect(screen.getByText(`${boardByLayoutId(LAYOUT)!.name} · ${ANGLE}°`)).toBeInTheDocument()
+  })
+
+  it('opens the editor from the New problem FAB and writes ?new=1', async () => {
+    addBoard(LAYOUT)
+    const { router } = renderWithRouter(`/board/${LAYOUT}/catalog`)
+    await screen.findByText('Visible')
+
+    fireEvent.click(screen.getByRole('button', { name: 'New problem' }))
+
+    expect(await screen.findByRole('button', { name: 'A1, empty' })).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ new: 1 }))
   })
 })

@@ -25,7 +25,7 @@ function stripDefaults(s: Record<string, unknown>): Record<string, unknown> {
 // sortSecondary is intentionally not URL-addressable, so it always returns to the
 // default; equality is asserted against a normalized copy.
 function roundTrip(f: FilterState): FilterState {
-  const params = stripDefaults({ ...filtersToSearch(f), problem: '', angle: 0 })
+  const params = stripDefaults({ ...filtersToSearch(f), problem: '', angle: 0, new: 0, edit: '' })
   return searchToFilters(validateCatalogSearch(params))
 }
 
@@ -33,7 +33,13 @@ const GRADE_MAX = FONT_GRADES.length - 1
 
 describe('catalogSearch round-trip', () => {
   it('preserves the empty (all-default) state as an empty URL', () => {
-    const params = stripDefaults({ ...filtersToSearch(DEFAULT_FILTERS), problem: '', angle: 0 })
+    const params = stripDefaults({
+      ...filtersToSearch(DEFAULT_FILTERS),
+      problem: '',
+      angle: 0,
+      new: 0,
+      edit: '',
+    })
     expect(params).toEqual({})
     expect(roundTrip(DEFAULT_FILTERS)).toEqual(DEFAULT_FILTERS)
   })
@@ -177,6 +183,34 @@ describe('list param', () => {
   it('defaults list to an empty string', () => {
     expect(CATALOG_SEARCH_DEFAULTS.list).toBe('')
     expect(validateCatalogSearch({}).list).toBe('')
+  })
+})
+
+describe('editor params (new / edit)', () => {
+  it('defaults to a closed editor and strips both from the URL', () => {
+    expect(CATALOG_SEARCH_DEFAULTS.new).toBe(0)
+    expect(CATALOG_SEARCH_DEFAULTS.edit).toBe('')
+    expect(validateCatalogSearch({})).toMatchObject({ new: 0, edit: '' })
+  })
+
+  it('reads ?new=1 as the open create editor and anything else as closed', () => {
+    expect(validateCatalogSearch({ new: '1' }).new).toBe(1)
+    expect(validateCatalogSearch({ new: 1 }).new).toBe(1)
+    expect(validateCatalogSearch({ new: 'yes' }).new).toBe(0)
+    expect(validateCatalogSearch({ new: '0' }).new).toBe(0)
+  })
+
+  it('reads ?edit=<id> verbatim', () => {
+    expect(validateCatalogSearch({ edit: 'user:abc' }).edit).toBe('user:abc')
+    expect(validateCatalogSearch({ edit: '' }).edit).toBe('')
+  })
+
+  it('never writes the editor params from a filter change', () => {
+    // filtersToSearch is spread over the previous search at every write site, so an
+    // emitted `new`/`edit` would slam the editor open or shut on any filter tap.
+    const written = filtersToSearch({ ...DEFAULT_FILTERS, benchmarkOnly: true })
+    expect(written).not.toHaveProperty('new')
+    expect(written).not.toHaveProperty('edit')
   })
 })
 

@@ -1,6 +1,6 @@
 // Wires the routed board's slab into the browsing UI: the filter bar, the list,
-// the recents sheet, and the detail pager. The URL is the source of truth —
-// filters, sort, search, the resolved angle, and the open problem all come from
+// the recents sheet, the detail pager, and the problem editor. The URL is the source
+// of truth — filters, sort, search, the resolved angle, and the open problem all come from
 // `?…` search params and are written back with `navigate` (replace for
 // filters/search, push-on-open / replace-on-swipe for the problem drawer). Owns
 // the single useSlab and derives the filter context (favorites + installed-hold-set
@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { getRouteApi } from '@tanstack/react-router'
 import { FONT_GRADES, GRADE_FILTER_FLOOR, gradeIndex } from '../board/grades'
@@ -26,6 +26,8 @@ import { useBottomSlot } from '../shell/bottomSlot'
 import { useHeaderFilterSlot } from '../shell/headerFilterSlot'
 import { useHeaderSessionSlot } from '../shell/headerSessionSlot'
 import { ProblemDetail } from './ProblemDetail'
+import { ProblemEditorDrawer } from './ProblemEditorDrawer'
+import { FAB_CLASS } from './FabTrigger'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -264,6 +266,20 @@ export function CatalogScreen() {
   const problemPending = Boolean(openId) && !current && loading
   const drawerOpen = current !== undefined || problemPending
 
+  // ── Problem editor, driven by ?new (plan KTD10) ─────────────────────────────
+  // The editor's open state lives in the URL like everything else on this route, so it
+  // survives the reload its localStorage draft is built for. Push on open (Back closes
+  // it), replace on close — the same protocol the problem drawer uses.
+  const editorOpen = search.new === 1
+  const setEditorOpen = useCallback(
+    (open: boolean) =>
+      void navigate({
+        search: (prev) => ({ ...prev, new: open ? 1 : 0 }),
+        replace: !open,
+      }),
+    [navigate],
+  )
+
   // Pull-to-refresh: a downward drag at the top of the list forces a full slab re-pull
   // (resets the sync cursor), repairing a stale/incomplete cache — e.g. a slab cached
   // before a catalog re-import. Disabled while the problem drawer is open so it can't
@@ -279,7 +295,7 @@ export function CatalogScreen() {
         position: 'top-center',
       })
     },
-    !drawerOpen,
+    !drawerOpen && !editorOpen,
   )
 
   // List taps: page over the filtered list (no snapshot). Recent taps: page over the
@@ -366,19 +382,26 @@ export function CatalogScreen() {
           (it's a zero-height sticky rail), so without this the last rows would sit under
           the FABs at full scroll and their far-right corner wouldn't be tappable. A modest
           buffer — not the full FAB-stack height, which would re-introduce a large trailing
-          gap — so the last row's content clears the lower FAB. */}
+          gap — so the last row's content clears the lower FAB. The New-problem FAB stacks
+          on TOP of the column, so the lowest FAB is still Filter and this buffer is
+          unchanged by the taller stack. */}
       <div aria-hidden className="h-24 shrink-0" />
-      {/* Shared FAB column: recents on top, filter below (mirrors iOS's VStack).
-          A zero-height sticky rail (mt-auto pins it to the bottom of the scroll region,
-          sticky keeps it there as a long list scrolls) with the FABs absolutely anchored
-          to it and stacking upward — so the FABs float over the list without reserving
-          any trailing scroll space. pointer-events fall through except on the FABs. */}
+      {/* Shared FAB column: new problem on top, then recents, filter below (mirrors iOS's
+          VStack). A zero-height sticky rail (mt-auto pins it to the bottom of the scroll
+          region, sticky keeps it there as a long list scrolls) with the FABs absolutely
+          anchored to it and stacking upward — so the FABs float over the list without
+          reserving any trailing scroll space. pointer-events fall through except on the FABs. */}
       <div className="pointer-events-none sticky bottom-4 z-30 mt-auto h-0">
         <div className="absolute bottom-0 right-0 flex flex-col items-end gap-3">
+          <button type="button" aria-label="New problem" className={FAB_CLASS} onClick={() => setEditorOpen(true)}>
+            <Plus className="size-6" strokeWidth={1.5} />
+          </button>
           <RecentsSheet board={board} angle={angle} problems={problems} favoriteIds={favoriteIds} sentIds={sentIds} onSelect={openRecent} />
           <FilterSheet state={filters} onChange={setFilters} board={board} gradeSpan={gradeSpan} statusReady={statusReady} signedOut={signedOut} boardLists={boardLists} />
         </div>
       </div>
+
+      <ProblemEditorDrawer board={board} angle={angle} open={editorOpen} onOpenChange={setEditorOpen} />
 
       {/* Last-opened bar: portaled into the shell's slot so it sits as a real row above
           the nav. Renders nothing until a problem has been opened this session. */}

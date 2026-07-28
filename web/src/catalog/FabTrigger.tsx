@@ -14,15 +14,14 @@ import type { ComponentProps } from 'react'
 import { DrawerTrigger } from '@/components/ui/drawer'
 import { cn } from '@/lib/utils'
 
+/** The FAB's look, shared with FABs that aren't drawer triggers — the "New problem" FAB
+ *  opens its editor through the URL (`?new=1`), so it's a plain button, not a trigger. */
+export const FAB_CLASS =
+  'pointer-events-auto relative flex size-14 items-center justify-center rounded-full border border-border bg-card/70 text-primary shadow-lg backdrop-blur-md transition hover:bg-card/90'
+
 export function FabTrigger({ className, children, ...props }: ComponentProps<typeof DrawerTrigger>) {
   return (
-    <DrawerTrigger
-      className={cn(
-        'pointer-events-auto relative flex size-14 items-center justify-center rounded-full border border-border bg-card/70 text-primary shadow-lg backdrop-blur-md transition hover:bg-card/90',
-        className,
-      )}
-      {...props}
-    >
+    <DrawerTrigger className={cn(FAB_CLASS, className)} {...props}>
       {children}
     </DrawerTrigger>
   )
