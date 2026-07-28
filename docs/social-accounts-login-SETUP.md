@@ -55,6 +55,22 @@ New bucket** (`logbook-imports`, **Private**, 25 MB) and the insert is a no-op. 
 verified locally by `supabase/migrations/tests/run_rls_test.sh` (throwaway docker Postgres);
 re-verify cross-user denial in the dashboard after applying.
 
+**`0018_user_problems_authoring.sql`** — web problem authoring, Phase A (private):
+extends `user_problems` with `layout_id`/`angle`/`visibility` and the generated
+`'user:<id>'` `source_catalog_id` identity lane. Additive, no policy change — the
+owner-only RLS stands. **Apply before deploying the client build that authors
+problems** (the editor writes the new columns and reads the generated id back).
+
+**`0019_user_problems_public.sql`** — web problem authoring, Phase B (public): the
+public read policy (anon + authenticated), server-stamped setter attribution, the
+publish completeness CHECK, and the per-user live-public cap. **This is a cross-user
+data path: apply and verify in the target project _before_ deploying the client build
+that publishes.** Note the apply itself **retracts any pre-0019 `visibility='public'`
+row back to private** (they predate the attribution/completeness guards) — anything
+published during a Phase-A-only deployment needs re-publishing by hand afterwards.
+`user_problems` RLS is owner-only for writes but **no longer owner-scoped for reads**
+after this migration.
+
 - **Easiest:** open **SQL Editor** in the dashboard, paste the entire contents of
   [`supabase/migrations/0001_profiles.sql`](../supabase/migrations/0001_profiles.sql)
   and **Run**, then do the same with

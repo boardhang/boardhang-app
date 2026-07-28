@@ -248,7 +248,8 @@ export function LogbookScreen() {
               <div className="overflow-hidden rounded-lg border border-border">
                 {session.ascents.map((ascent) => {
                   // Only rows whose catalog entry resolved open the detail drawer; a
-                  // user-created or uncached row gets no onSelect (not tappable).
+                  // legacy iOS-authored or uncached row gets no onSelect (not tappable).
+                  // Web-authored problems resolve through getCatalogProblemsByIds.
                   const catalog = ascent.sourceCatalogId
                     ? catalogById.get(ascent.sourceCatalogId)
                     : undefined
@@ -305,7 +306,7 @@ export function LogbookScreen() {
 
 /** A day-session's pager domain: its resolvable problems in on-screen order, deduped by
  *  `source_catalog_id` (keep the first/topmost occurrence). Non-resolvable ascents
- *  (user-created or uncached) are skipped — they were never tappable. */
+ *  (legacy iOS-authored or uncached) are skipped — they were never tappable. */
 function resolveSession(
   ascents: Ascent[],
   catalogById: Map<string, CatalogProblem>,

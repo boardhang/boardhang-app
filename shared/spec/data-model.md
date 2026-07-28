@@ -47,6 +47,29 @@ HoldAssignment {
 
 Identity is the `col-row` pair (one hold per cell).
 
+## User problem
+
+A problem a person authored, as stored in `public.user_problems` (Supabase) and
+cached by each client. The holds are a `HoldAssignment` array serialized as
+`{ c, r, t }` — `c`/`r` are the grid coordinates above, `t` the role's raw value.
+
+| Field            | Meaning                                                                 |
+| ---------------- | ----------------------------------------------------------------------- |
+| `id`             | uuid, client-generated (the primary key)                                |
+| `name`, `grade`  | display name and Font grade                                             |
+| `holds`          | `[{ c, r, t }]` — 1–60 entries when public                              |
+| `layout_id`      | the board it was drawn on; null on legacy rows that recorded no board   |
+| `angle`          | wall angle in degrees; null on the same legacy rows                     |
+| `visibility`     | `private` (default) or `public`                                          |
+| `source_catalog_id` | `"user:" + id` — the text id shared with official catalog problems   |
+| `setter_user_id` | authoritative author of a **public** problem                            |
+| `setter_handle`  | the setter's profile handle, denormalized so anon readers can attribute  |
+
+Identity and attribution are **server-owned**: `source_catalog_id` is a generated
+column and the two `setter_*` fields are trigger-stamped when a problem becomes
+public and cleared when it goes private or is deleted. A client reads all three
+and writes none of them.
+
 ## Board config shape
 
 Board geometry is data-driven so other sizes drop in without code changes. A board
