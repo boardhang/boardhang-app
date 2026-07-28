@@ -8,7 +8,7 @@
 // customize.
 
 import { useSyncExternalStore } from 'react'
-import type { PinnableFacetId } from './pinnableFacets'
+import { CANONICAL_ORDER, type PinnableFacetId } from './pinnableFacets'
 
 const key = (layoutId: number) => `catalogPinnedFilters_${layoutId}`
 
@@ -19,17 +19,10 @@ export const DEFAULT_PINNED: readonly PinnableFacetId[] = ['benchmarks', 'favori
 // SSR is ever added). Inert today — this is a client-only PWA — but cheap correctness.
 const SERVER_SNAPSHOT: PinnableFacetId[] = [...DEFAULT_PINNED]
 
-const VALID: ReadonlySet<string> = new Set<PinnableFacetId>([
-  'sort',
-  'grade',
-  'holds',
-  'benchmarks',
-  'favorites',
-  'stars',
-  'status',
-  'methods',
-  'lists',
-])
+// Derived from the facet registry, not re-listed: a hand-written copy silently drops any
+// facet added later (the stored pin parses, fails this filter, and vanishes on reload) and
+// no exhaustive switch would catch it.
+const VALID: ReadonlySet<string> = new Set(CANONICAL_ORDER.map((f) => f.id))
 
 function read(layoutId: number): PinnableFacetId[] {
   try {

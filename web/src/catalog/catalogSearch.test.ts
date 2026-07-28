@@ -57,8 +57,19 @@ describe('catalogSearch round-trip', () => {
       holdsFilter: ['3-4', '5-6'],
       statusFilters: ['sent', 'unlogged'],
       listFilter: ['list-1', 'list-2'],
+      source: 'community',
     }
     expect(roundTrip(f)).toEqual(f)
+  })
+
+  it('round-trips each source facet value and omits it when off', () => {
+    expect(roundTrip({ ...DEFAULT_FILTERS, source: 'mine' }).source).toBe('mine')
+    expect(roundTrip({ ...DEFAULT_FILTERS, source: 'community' }).source).toBe('community')
+    expect(stripDefaults(filtersToSearch(DEFAULT_FILTERS)).source).toBeUndefined()
+  })
+
+  it('drops an unknown ?source= value rather than filtering on it', () => {
+    expect(searchToFilters(validateCatalogSearch({ source: 'everyone' })).source).toBeNull()
   })
 
   it('round-trips a chosen secondary sort (Then by)', () => {

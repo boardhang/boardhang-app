@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
-import { facetActiveLabel, isFacetActive, type FacetContext } from './pinnableFacets'
+import {
+  CANONICAL_ORDER,
+  chipFacetId,
+  facetActiveLabel,
+  facetClearPatch,
+  isFacetActive,
+  type FacetContext,
+} from './pinnableFacets'
 
 const state = (over: Partial<FilterState> = {}): FilterState => ({ ...DEFAULT_FILTERS, ...over })
 const ctx = (over: Partial<FacetContext> = {}): FacetContext => ({
@@ -54,5 +61,28 @@ describe('pinnableFacets — status facet, in a session', () => {
       false,
     )
     expect(facetActiveLabel('status', state(), ctx({ inSession: true }))).toBe('Ascent status')
+  })
+})
+
+describe('pinnableFacets — source facet', () => {
+  it('is active for either value and inactive when unset', () => {
+    expect(isFacetActive('source', state({ source: 'mine' }), ctx())).toBe(true)
+    expect(isFacetActive('source', state({ source: 'community' }), ctx())).toBe(true)
+    expect(isFacetActive('source', state(), ctx())).toBe(false)
+  })
+
+  it('collapses to the selected value, falling back to the facet name', () => {
+    expect(facetActiveLabel('source', state({ source: 'mine' }), ctx())).toBe('Mine')
+    expect(facetActiveLabel('source', state({ source: 'community' }), ctx())).toBe('Community')
+    expect(facetActiveLabel('source', state(), ctx())).toBe('Custom problems')
+  })
+
+  it('clears to no source filter', () => {
+    expect(facetClearPatch('source')).toEqual({ source: null })
+  })
+
+  it('is pinnable in the canonical order', () => {
+    expect(CANONICAL_ORDER.map((f) => f.id)).toContain('source')
+    expect(chipFacetId('source')).toBe('source')
   })
 })

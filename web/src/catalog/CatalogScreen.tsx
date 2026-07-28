@@ -38,6 +38,7 @@ import { useFavorites } from './favoritesStore'
 import { loadLists, useSavedLists } from '../lists/listsStore'
 import { useListMemberIds } from '../lists/useListMemberIds'
 import { useSlab } from './useSlab'
+import { useUserProblemFacets } from './useUserProblemFacets'
 import { usePullToRefresh } from './usePullToRefresh'
 import { useProblemDrawer } from './useProblemDrawer'
 import { useEnsureAscentsLoaded } from '../logbook/ascents'
@@ -171,10 +172,29 @@ export function CatalogScreen() {
   // or before the cold pull) — which would blank the grid for a selected-but-unresolved list.
   // Until both hold, the facet fails OPEN (shows everything) rather than to zero.
   const listMembersReady = listsLoaded && memberIdsReady
+
+  // ── Source facet (own / community authored problems) ─────────────────────────
+  // The own-id set and the slab's recency map both come from the user-problems cache; `ready`
+  // gates the predicate so an active facet fails OPEN while that read is in flight.
+  const { ownProblemIds, recencyById, ready: sourceReady } = useUserProblemFacets(
+    board.layoutId,
+    angle,
+  )
+  // "Mine" can't match anything signed out, so a stale `?source=mine` (a shared link, or a
+  // pinned control used before signing out) is pruned rather than left blanking the list —
+  // the listFilter prune's rule, applied to the one source value that needs an identity.
+  const source = signedOut && filters.source === 'mine' ? null : filters.source
+  useEffect(() => {
+    if (source !== filters.source) setFilters({ ...filters, source })
+  }, [source, filters, setFilters])
+
   // Filter on the PRUNED ids, not the raw URL value: a fully-pruned set (every id stale/foreign)
   // is a no-op immediately, so an unresolvable ?list= deep-link never flashes an empty grid in
-  // the render before the self-heal effect rewrites the URL.
-  const effectiveFilters = useMemo<FilterState>(() => ({ ...filters, listFilter }), [filters, listFilter])
+  // the render before the self-heal effect rewrites the URL. Same for a signed-out ?source=mine.
+  const effectiveFilters = useMemo<FilterState>(
+    () => ({ ...filters, listFilter, source }),
+    [filters, listFilter, source],
+  )
 
   // The slab's actual grade span (ordinal) for the slider, floored at 6A+ (issue #96) —
   // stray sub-6A+ catalog grades must not become the slider's lowest stop. (The Method
@@ -202,6 +222,9 @@ export function CatalogScreen() {
       sentIds,
       loggedIds,
       statusReady,
+      ownProblemIds,
+      sourceReady,
+      recencyById,
       // In a session the per-member clause replaces the single-user one (self = row #1);
       // gated on the projection's atomic readiness so the list is never blanked mid-load.
       session: sessionForBoard
@@ -225,6 +248,9 @@ export function CatalogScreen() {
     sentIds,
     loggedIds,
     statusReady,
+    ownProblemIds,
+    sourceReady,
+    recencyById,
     sessionForBoard,
     memberStatus,
     selfId,

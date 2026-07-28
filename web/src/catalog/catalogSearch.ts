@@ -22,10 +22,12 @@
 import { FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
 import {
   DEFAULT_FILTERS,
+  SOURCE_KEYS,
   STATUS_KEYS,
   sortDimension,
   type FilterState,
   type SortKey,
+  type SourceFacet,
   type StatusKey,
 } from './filters'
 
@@ -57,6 +59,8 @@ export interface CatalogSearch {
   status: string
   /** Comma-joined saved-list ids to filter by (OR'd); `''` = no list filter. */
   list: string
+  /** Authored-problem source facet (`mine`/`community`); `''` = no source filter. */
+  source: string
   /** Open problem's `source_catalog_id`; `''` = drawer closed. */
   problem: string
   /** `1` opens the problem editor on a new draft; omitted = closed. */
@@ -79,6 +83,7 @@ export const CATALOG_SEARCH_DEFAULTS: CatalogSearch = {
   holds: '',
   status: '',
   list: '',
+  source: '',
   problem: '',
   new: 0,
   edit: '',
@@ -113,6 +118,8 @@ export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSear
     holds: str(raw.holds),
     status: str(raw.status),
     list: str(raw.list),
+    // Unknown values decode to no filter rather than to a facet nothing can satisfy.
+    source: SOURCE_KEYS.includes(str(raw.source) as SourceFacet) ? str(raw.source) : '',
     problem: str(raw.problem),
     new: num(raw.new) === 1 ? 1 : 0,
     edit: str(raw.edit),
@@ -183,6 +190,7 @@ export function filtersToSearch(
     holds: f.holdsFilter.join(','),
     status: encodeStatus(f.statusFilters),
     list: f.listFilter.join(','),
+    source: f.source ?? '',
   }
 }
 
@@ -207,5 +215,7 @@ export function searchToFilters(s: CatalogSearch): FilterState {
     holdsFilter: s.holds ? s.holds.split(',').filter(Boolean) : [],
     statusFilters: decodeStatus(s.status),
     listFilter: s.list ? s.list.split(',').filter(Boolean) : [],
+    // Already validated to a known key (or '') on read, so the cast is safe here.
+    source: s.source ? (s.source as SourceFacet) : null,
   }
 }

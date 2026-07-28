@@ -29,6 +29,9 @@ const DEFAULT_CONTEXT: FilterContext = {
   sentIds: new Set(),
   loggedIds: new Set(),
   statusReady: false,
+  ownProblemIds: new Set(),
+  sourceReady: false,
+  recencyById: new Map(),
 }
 
 interface CatalogListProps {

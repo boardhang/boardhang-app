@@ -16,12 +16,14 @@ import { MemberStatusRow } from './MemberStatusRow'
 import { SessionStatusRows } from './SessionStatusRows'
 import { useSessionFilterRows } from './useSessionFilterRows'
 import { SortSection } from './SortSection'
+import { SourceToggles } from './SourceToggles'
 import {
   BENCHMARK_LABEL,
   FAVORITES_LABEL,
   METHOD_LABELS,
   SORT_KEYS,
   SORT_LABELS,
+  SOURCE_LABEL,
   sortDimension,
   type FilterState,
   type SortKey,
@@ -142,6 +144,7 @@ export function FilterControls({
   )
   const [holdPickerOpen, setHoldPickerOpen] = useState(false)
   const statusHintId = useId()
+  const sourceHintId = useId()
   const toggleStatus = (k: StatusKey, active: boolean) =>
     set({ statusFilters: active ? [...state.statusFilters, k] : state.statusFilters.filter((x) => x !== k) })
   const range = state.gradeRange ?? gradeSpan
@@ -356,6 +359,24 @@ export function FilterControls({
           </div>
         </Field>
       )}
+
+      {/* Custom problems — the source facet (R8/R16). Mutually exclusive values: "Mine AND
+          Community" is just the unfiltered custom set, which the facet-off list already shows.
+          "Mine" is meaningless signed out (nothing is yours on this device), so it's disabled
+          there — but "Community" stays, since public problems are browsable signed out (R11). */}
+      <Field label={SOURCE_LABEL} pin={pin('source')}>
+        <SourceToggles
+          value={state.source}
+          onChange={(source) => set({ source })}
+          signedOut={signedOut}
+          hintId={sourceHintId}
+        />
+        {signedOut && (
+          <div id={sourceHintId} className="mt-1.5 text-xs text-muted-foreground">
+            Sign in to filter by your own problems
+          </div>
+        )}
+      </Field>
 
       <HoldFilterPicker
         board={board}

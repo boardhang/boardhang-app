@@ -118,3 +118,17 @@ describe('describeActiveFilters', () => {
     expect(byId['status:sent']).toEqual({ statusFilters: ['unlogged'] })
   })
 })
+
+describe('describeActiveFilters — source facet', () => {
+  it('emits one removable chip labelled with the selected value', () => {
+    const mine = describeActiveFilters(state({ source: 'mine' }), READY)
+    expect(mine.map((c) => c.id)).toEqual(['source'])
+    expect(mine[0].label).toBe('Mine')
+    expect(mine[0].patch).toEqual({ source: null })
+    expect(describeActiveFilters(state({ source: 'community' }), READY)[0].label).toBe('Community')
+  })
+
+  it('emits nothing when no source is selected', () => {
+    expect(describeActiveFilters(state({ source: null }), READY)).toEqual([])
+  })
+})

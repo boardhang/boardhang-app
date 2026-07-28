@@ -36,6 +36,9 @@ const mkCtx = (over: Partial<FilterContext> = {}): FilterContext => ({
   sentIds: new Set(),
   loggedIds: new Set(),
   statusReady: false,
+  ownProblemIds: new Set(),
+  sourceReady: true,
+  recencyById: new Map(),
   ...over,
 })
 const ctx: FilterContext = mkCtx()
@@ -343,5 +346,93 @@ describe('applyFilters — per-member session status (R4/R5)', () => {
   it('no active session → single-user statusFilters path is unchanged', () => {
     const single = mkCtx({ statusReady: true, sentIds: new Set(['S']), loggedIds: new Set(['S', 'A']) })
     expect(ids(applyFilters(list, state({ statusFilters: ['sent'] }), single))).toEqual(['S'])
+  })
+})
+
+// The source facet (U6): Mine = the signed-in user's own authored problems, Community =
+// everybody else's public ones. Both run off id sets supplied through FilterContext — a
+// CatalogProblem carries no owner field, and the `user:` prefix alone can't tell the two
+// apart (another user's public problem carries it too).
+describe('applyFilters — source facet', () => {
+  const list = [
+    p({ source_catalog_id: 'imported', name: 'Imported' }),
+    p({ source_catalog_id: 'user:mine-1', name: 'Mine one' }),
+    p({ source_catalog_id: 'user:mine-2', name: 'Mine two' }),
+    p({ source_catalog_id: 'user:theirs-1', name: 'Theirs one' }),
+  ]
+  const own = new Set(['user:mine-1', 'user:mine-2'])
+  const sourceCtx = mkCtx({ ownProblemIds: own })
+
+  it('Mine keeps only the user’s own problems', () => {
+    expect(ids(applyFilters(list, state({ source: 'mine' }), sourceCtx)).sort()).toEqual([
+      'user:mine-1',
+      'user:mine-2',
+    ])
+  })
+
+  it('Community keeps only OTHER users’ custom problems', () => {
+    expect(ids(applyFilters(list, state({ source: 'community' }), sourceCtx))).toEqual([
+      'user:theirs-1',
+    ])
+  })
+
+  it('with the facet off, custom problems interleave in the full list', () => {
+    expect(ids(applyFilters(list, state(), sourceCtx))).toHaveLength(4)
+  })
+
+  it('fails OPEN while the own-id set is still loading (never blanks the list)', () => {
+    const loading = mkCtx({ ownProblemIds: new Set(), sourceReady: false })
+    expect(ids(applyFilters(list, state({ source: 'mine' }), loading))).toHaveLength(4)
+    expect(ids(applyFilters(list, state({ source: 'community' }), loading))).toHaveLength(4)
+  })
+
+  it('Community orders by recency (newest first), regardless of the sort keys', () => {
+    const theirs = [
+      p({ source_catalog_id: 'user:a', grade: '6A', name: 'A' }),
+      p({ source_catalog_id: 'user:b', grade: '7A', name: 'B' }),
+      p({ source_catalog_id: 'user:c', grade: '6B', name: 'C' }),
+    ]
+    const ctxWithRecency = mkCtx({
+      recencyById: new Map([
+        ['user:a', '2026-01-01T00:00:00Z'],
+        ['user:b', '2026-03-01T00:00:00Z'],
+        ['user:c', '2026-02-01T00:00:00Z'],
+      ]),
+    })
+    const s = state({ source: 'community', sortPrimary: 'easiest', sortSecondary: null })
+    expect(ids(applyFilters(theirs, s, ctxWithRecency))).toEqual(['user:b', 'user:c', 'user:a'])
+    // Mine keeps the chosen sort — recency is the Community facet's ordering, not a global one.
+    const mineCtx = mkCtx({
+      ownProblemIds: new Set(['user:a', 'user:b', 'user:c']),
+      recencyById: ctxWithRecency.recencyById,
+    })
+    expect(ids(applyFilters(theirs, state({ source: 'mine', sortPrimary: 'easiest' }), mineCtx))).toEqual([
+      'user:a',
+      'user:c',
+      'user:b',
+    ])
+  })
+
+  it('sorts a row with no known recency last, then by the normal keys', () => {
+    const theirs = [
+      p({ source_catalog_id: 'user:unknown', name: 'Zed' }),
+      p({ source_catalog_id: 'user:known', name: 'Abe' }),
+    ]
+    const c = mkCtx({ recencyById: new Map([['user:known', '2026-01-01T00:00:00Z']]) })
+    expect(ids(applyFilters(theirs, state({ source: 'community' }), c))).toEqual([
+      'user:known',
+      'user:unknown',
+    ])
+  })
+
+  it('counts as one active filter dimension', () => {
+    expect(activeFilterCount(state({ source: 'mine' }))).toBe(1)
+    expect(activeFilterCount(state({ source: 'community' }))).toBe(1)
+    expect(activeFilterCount(state())).toBe(0)
+    expect(hasActiveFilters(state({ source: 'mine' }))).toBe(true)
+  })
+
+  it('is cleared by resetFilters', () => {
+    expect(resetFilters(state({ source: 'community' })).source).toBeNull()
   })
 })

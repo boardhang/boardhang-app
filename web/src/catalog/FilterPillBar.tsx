@@ -63,7 +63,7 @@ export function FilterPillBar({
   // One shared selector (readiness-gated — see activeStatusMemberCount) so the pinned control,
   // its chip and the sheet's FAB badge can never disagree with each other or with applyFilters.
   const sessionStatusMembers = activeStatusMemberCount(session)
-  const ctx: FacetContext = { inSession, statusReady, sessionStatusMembers }
+  const ctx: FacetContext = { inSession, statusReady, sessionStatusMembers, signedOut }
   const [listSheetOpen, setListSheetOpen] = useState(false)
 
   // Chips only for active facets that are NOT pinned (a pinned facet shows as its control).

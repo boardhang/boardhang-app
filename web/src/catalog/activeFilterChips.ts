@@ -17,6 +17,7 @@ import {
   BENCHMARK_LABEL,
   FAVORITES_LABEL,
   METHOD_LABELS,
+  SOURCE_LABELS,
   STATUS_KEYS,
   STATUS_LABELS,
   type FilterState,
@@ -53,9 +54,7 @@ export interface ChipContext {
 
 /**
  * Removable-pill descriptors for the given filter state, in fixed category order:
- * Grade → Min-stars → Methods → Status → Holds. (Benchmark and Favorites are the pinned
- * always-on toggles, produced by the component, not here; the saved-list selection is edited
- * via the "Lists" control, also not a removable chip.)
+ * Grade → Benchmarks → Favorites → Source → Min-stars → Methods → Status → Holds → Lists.
  */
 export function describeActiveFilters(state: FilterState, ctx: ChipContext): FilterChip[] {
   const chips: FilterChip[] = []
@@ -79,6 +78,12 @@ export function describeActiveFilters(state: FilterState, ctx: ChipContext): Fil
 
   if (state.favoritesOnly) {
     chips.push({ id: 'favorites', label: FAVORITES_LABEL, patch: { favoritesOnly: false } })
+  }
+
+  // Source: one chip carrying the selected value's own word ("Mine" / "Community"), since the
+  // two are mutually exclusive and the value says more than the facet name would.
+  if (state.source) {
+    chips.push({ id: 'source', label: SOURCE_LABELS[state.source], patch: { source: null } })
   }
 
   if (state.minStars > 0) {
