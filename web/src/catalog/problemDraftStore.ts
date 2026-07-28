@@ -1,7 +1,8 @@
 // The in-progress problem the editor is authoring, persisted to localStorage per
 // board+angle. One mechanism covers every way the tab can go away mid-draft: a full
-// page reload at the wall, PWA tab eviction, and (once the save flow lands) the
-// Google OAuth full-page redirect — see plan KTD10/AE1.
+// page reload at the wall, PWA tab eviction, and the Google OAuth full-page redirect —
+// see plan KTD10/AE1. Only the CREATE editor persists here; an edit session keeps its
+// working copy in memory (see ProblemEditorDrawer) so it can never clobber a parked draft.
 //
 // The stored shape is the whole draft, not just the holds: `name`, `grade` and
 // `visibility` are already carried here so the save sheet can join without a storage
@@ -24,6 +25,7 @@ export interface ProblemDraft {
 export const EMPTY_DRAFT: ProblemDraft = { holds: [], name: '', grade: '', visibility: 'private' }
 
 const key = (layoutId: number, angle: number) => `problemDraft_${layoutId}_${angle}`
+const intentKey = (layoutId: number, angle: number) => `problemSaveIntent_${layoutId}_${angle}`
 
 const HOLD_TYPES: readonly HoldType[] = ['start', 'left', 'right', 'match', 'end']
 
@@ -68,10 +70,37 @@ export function writeDraft(layoutId: number, angle: number, draft: ProblemDraft)
   }
 }
 
-/** Drop a slab's draft (explicit discard; later, a completed save). */
+/** Drop a slab's draft and any pending save intent (explicit discard, or a completed save). */
 export function clearDraft(layoutId: number, angle: number): void {
   try {
     localStorage.removeItem(key(layoutId, angle))
+    localStorage.removeItem(intentKey(layoutId, angle))
+  } catch {
+    // Best-effort.
+  }
+}
+
+// ─── Pending save intent (AE1) ───────────────────────────────────────────────
+// "The author asked to save" is editor state, not draft content, so it rides its own key
+// rather than widening ProblemDraft. It exists for the same reason the draft is persisted
+// at all: a signed-out Save opens the sign-in dialog, and Google OAuth takes the whole page
+// away. Without this the session comes back and the editor just sits there — the author has
+// to find the Save button again and re-state an intent they already expressed.
+
+/** Whether a save was pending when the editor last went away. */
+export function readSaveIntent(layoutId: number, angle: number): boolean {
+  try {
+    return localStorage.getItem(intentKey(layoutId, angle)) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Record (or drop) a pending save for this slab. Best-effort, like the draft itself. */
+export function writeSaveIntent(layoutId: number, angle: number, pending: boolean): void {
+  try {
+    if (pending) localStorage.setItem(intentKey(layoutId, angle), '1')
+    else localStorage.removeItem(intentKey(layoutId, angle))
   } catch {
     // Best-effort.
   }

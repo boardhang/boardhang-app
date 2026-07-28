@@ -13,24 +13,59 @@
 // Light-up sends BLE directly and deliberately does NOT call `reportProblemLit`
 // (KTD9/R3/AE5): an unsaved draft must never become a session's shared "on the wall"
 // problem. The draft persists to localStorage on every change (KTD10) so it survives a
-// reload at the wall. Saving is not wired yet — the Save button is a disabled placeholder.
+// reload at the wall.
+//
+// Save (R4/R5/AE1) collects name, grade and visibility in a sheet over the board. Signed
+// out, the tap opens the SignInDialog and remembers the intent — the useAddToList resume
+// pattern, but persisted rather than in-memory, because Google OAuth takes the whole page
+// away and an in-memory flag doesn't survive that.
+//
+// Two modes, one component: a new draft (persisted, keyed by board+angle) and an edit of an
+// already-saved problem (`editing`). An edit session is deliberately NOT persisted — see
+// `persistDraft` below.
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { Loader2 } from 'lucide-react'
 import { bleClient, connectBoard, isConnected, setBleError, useBle } from '../ble/useBle'
 import { describeBleError } from '../ble/moonboard'
+import { useAuth } from '../auth/AuthProvider'
+import { SignInDialog } from '../auth/SignInDialog'
 import { getActiveHoldSetsRaw, getFlipped } from '../board/boardStore'
 import type { CatalogBoardDef } from '../board/boards'
 import { CatalogBoard } from '../board/CatalogBoard'
 import { columnLabel } from '../board/geometry'
+import { DEFAULT_GRADE, FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
 import { holdSetContext, setIdAt } from '../board/holdSetMembership'
 import { center } from '../board/renderGeometry'
 import { holdColor, holdLabel, type HoldType } from '../types'
-import type { CatalogHold } from './catalogSync'
-import { clearDraft, readDraft, writeDraft, type ProblemDraft } from './problemDraftStore'
+import {
+  clearDraft,
+  readDraft,
+  readSaveIntent,
+  writeDraft,
+  writeSaveIntent,
+  type ProblemDraft,
+  type Visibility,
+} from './problemDraftStore'
+import { createUserProblem, updateUserProblem } from './userProblemsStore'
+import type { UserProblem } from './userProblemsTypes'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 /** Tap-target diameter as a fraction of a column's span — matches CatalogBoard's
  *  marker size so the target sits right on the drawn hold. */
@@ -44,9 +79,40 @@ const CYCLE: (HoldType | null)[] = [null, 'start', 'right', 'end']
  *  for the beta moves, which have no place in a three-step cycle (KTD8). */
 const BRUSH_ROLES: HoldType[] = ['left', 'right', 'match']
 
+/** Grades an author can pick, floored at 6A+ like every other grade surface (issue #96). */
+const AUTHORABLE_GRADES = FONT_GRADES.slice(GRADE_FILTER_FLOOR)
+
+/** The Select's value→label map. base-ui renders the closed trigger from this, not from the
+ *  open list's items — without it the trigger shows the raw value. */
+const GRADE_LABELS: Record<string, string> = Object.fromEntries(
+  AUTHORABLE_GRADES.map((g) => [g, g]),
+)
+
+/** Matches the `name` column's length in migration 0018. */
+const MAX_NAME = 60
+
+const VISIBILITIES: { value: Visibility; label: string }[] = [
+  { value: 'private', label: 'Private' },
+  { value: 'public', label: 'Public' },
+]
+
 function nextInCycle(current: HoldType | null): HoldType | null {
   const i = CYCLE.findIndex((t) => t === current)
   return CYCLE[(i + 1) % CYCLE.length]
+}
+
+/** The draft an edit session starts from — the saved row as the editor's working shape. */
+function draftFrom(problem: UserProblem): ProblemDraft {
+  return {
+    holds: problem.holds,
+    name: problem.name,
+    grade: problem.grade,
+    visibility: problem.visibility,
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 interface Pos {
@@ -63,32 +129,78 @@ interface ProblemEditorDrawerProps {
   angle: number
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** The already-saved problem being edited (`?edit=<id>`); omitted for a new draft. */
+  editing?: UserProblem
+  /** A save landed — the caller navigates to the problem's detail (R5). */
+  onSaved: (sourceCatalogId: string) => void
 }
 
 type Busy = 'connecting' | 'sending' | null
 
-export function ProblemEditorDrawer({ board, angle, open, onOpenChange }: ProblemEditorDrawerProps) {
+export function ProblemEditorDrawer({
+  board,
+  angle,
+  open,
+  onOpenChange,
+  editing,
+  onSaved,
+}: ProblemEditorDrawerProps) {
   const g = board.geometry
   const { state, error: connectionError } = useBle()
+  const { status: authStatus, profile } = useAuth()
+  const signedIn = authStatus !== 'signedOut'
+  // AE3, client side: publishing needs a handle to attribute the problem to. The server
+  // backstop is a later unit; this is the affordance, not the enforcement.
+  const canPublish = Boolean(profile?.handle)
 
-  const [draft, setDraft] = useState<ProblemDraft>(() => readDraft(board.layoutId, angle))
+  // An edit session is in-memory only. The persisted draft is keyed by board+angle, so
+  // writing an edit through it would clobber whatever new problem the author had parked on
+  // that slab — and a stale persisted edit could later resurrect over a row that changed on
+  // another device. An edit's durable copy is the saved row itself; reopening `?edit=<id>`
+  // restores it.
+  const persistDraft = editing === undefined
+  const [draft, setDraft] = useState<ProblemDraft>(() =>
+    editing ? draftFrom(editing) : readDraft(board.layoutId, angle),
+  )
   const [brush, setBrush] = useState<HoldType | null>(null)
   // Dirty *since open* (KTD10): a restored draft alone must not demand a discard
-  // confirmation — only edits made in this sitting do.
+  // confirmation — only edits made in this sitting do. In edit mode the state starts at the
+  // loaded snapshot, so the same flag means "differs from what was loaded".
   const [dirty, setDirty] = useState(false)
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [busy, setBusy] = useState<Busy>(null)
 
-  // Restore on open (and on a board/angle switch), which is also the mount path when the
-  // editor opens straight from a `?new=1` deep link.
+  // ── Save sheet + sign-in gate (R4/AE1) ──────────────────────────────────────
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [signInOpen, setSignInOpen] = useState(false)
+  // The pending save. Seeded from localStorage so it survives the OAuth full-page redirect;
+  // it stays *pending* rather than opening the sheet outright because a real remount starts
+  // signed out and restores the session a tick later.
+  const [resume, setResume] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Restore on open (and on a board/angle/target switch), which is also the mount path when
+  // the editor opens straight from a `?new=1` / `?edit=<id>` deep link.
   useEffect(() => {
     if (!open) return
-    setDraft(readDraft(board.layoutId, angle))
+    setDraft(editing ? draftFrom(editing) : readDraft(board.layoutId, angle))
     setBrush(null)
     setDirty(false)
     setSendError(null)
-  }, [open, board.layoutId, angle])
+    setSaveError(null)
+    setSaveOpen(false)
+    setResume(editing === undefined && readSaveIntent(board.layoutId, angle))
+  }, [open, board.layoutId, angle, editing])
+
+  // The resume itself: once a session is present the sheet opens on the restored draft.
+  useEffect(() => {
+    if (signedIn && resume) {
+      setResume(false)
+      setSaveOpen(true)
+    }
+  }, [signedIn, resume])
 
   const { membership, active, visible } = useMemo(
     () => holdSetContext(board.membershipResource, getActiveHoldSetsRaw(board.layoutId)),
@@ -122,11 +234,13 @@ export function ProblemEditorDrawer({ board, angle, open, onOpenChange }: Proble
 
   const targetPct = ((1 - g.leftMargin - g.rightMargin) / g.numColumns) * TARGET_COLUMN_RATIO * 100
 
-  function update(holds: CatalogHold[]) {
-    const next = { ...draft, holds }
+  /** The one write path for the draft: state, dirty flag, and (create mode) localStorage.
+   *  Every field rides it, so name/grade/visibility are as reload-proof as the holds. */
+  function update(patch: Partial<ProblemDraft>) {
+    const next = { ...draft, ...patch }
     setDraft(next)
     setDirty(true)
-    writeDraft(board.layoutId, angle, next)
+    if (persistDraft) writeDraft(board.layoutId, angle, next)
   }
 
   function tap(col: number, row: number) {
@@ -135,16 +249,17 @@ export function ProblemEditorDrawer({ board, angle, open, onOpenChange }: Proble
     // again, so the palette can both paint and erase without a separate eraser mode.
     const next = brush ? (current === brush ? null : brush) : nextInCycle(current)
     if (next === null) {
-      update(draft.holds.filter((h) => !(h.c === col && h.r === row)))
+      update({ holds: draft.holds.filter((h) => !(h.c === col && h.r === row)) })
       return
     }
     // Replace in place when the position already had a role, so re-roling a hold doesn't
     // reorder the draft under the author.
-    update(
-      current === null
-        ? [...draft.holds, { c: col, r: row, t: next }]
-        : draft.holds.map((h) => (h.c === col && h.r === row ? { ...h, t: next } : h)),
-    )
+    update({
+      holds:
+        current === null
+          ? [...draft.holds, { c: col, r: row, t: next }]
+          : draft.holds.map((h) => (h.c === col && h.r === row ? { ...h, t: next } : h)),
+    })
   }
 
   function requestClose() {
@@ -152,15 +267,84 @@ export function ProblemEditorDrawer({ board, angle, open, onOpenChange }: Proble
       setConfirmingDiscard(true)
       return
     }
+    closeEditor()
+  }
+
+  /** Leave the editor, dropping any pending save so an unrelated later sign-in can't
+   *  resurrect the sheet. In create mode the draft itself stays parked. */
+  function closeEditor() {
+    if (persistDraft) writeSaveIntent(board.layoutId, angle, false)
+    setResume(false)
+    setSignInOpen(false)
+    setSaveOpen(false)
     onOpenChange(false)
   }
 
   function discard() {
-    clearDraft(board.layoutId, angle)
-    setDraft(readDraft(board.layoutId, angle))
+    if (persistDraft) {
+      clearDraft(board.layoutId, angle)
+      setDraft(readDraft(board.layoutId, angle))
+    } else if (editing) {
+      // An edit discards back to the saved row, which is untouched — nothing to clear.
+      setDraft(draftFrom(editing))
+    }
     setDirty(false)
     setConfirmingDiscard(false)
-    onOpenChange(false)
+    closeEditor()
+  }
+
+  // ── Save ────────────────────────────────────────────────────────────────────
+
+  /** The Save button. Signed out on a new problem, this is a sign-in prompt that remembers
+   *  what it was for (AE1); an edit is only ever reached by its owner, so it goes straight
+   *  through. */
+  function requestSave() {
+    setSaveError(null)
+    if (persistDraft) writeSaveIntent(board.layoutId, angle, true)
+    if (persistDraft && !signedIn) {
+      setResume(true)
+      setSignInOpen(true)
+      return
+    }
+    setSaveOpen(true)
+  }
+
+  function closeSaveSheet() {
+    setSaveOpen(false)
+    setSaveError(null)
+    if (persistDraft) writeSaveIntent(board.layoutId, angle, false)
+  }
+
+  async function save() {
+    if (saving || !trimmedName) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = editing
+        ? await updateUserProblem(editing.sourceCatalogId, {
+            name: trimmedName,
+            grade,
+            holds: draft.holds,
+          })
+        : await createUserProblem({
+            layoutId: board.layoutId,
+            angle,
+            name: trimmedName,
+            grade,
+            holds: draft.holds,
+            visibility: draft.visibility,
+          })
+      // Only now is the draft expendable: a failed save leaves it parked for a retry.
+      if (persistDraft) clearDraft(board.layoutId, angle)
+      setDirty(false)
+      closeEditor()
+      onSaved(saved.sourceCatalogId)
+    } catch (err) {
+      // Inline, beside the button that failed — the author stays in the sheet and retries.
+      setSaveError(errorMessage(err))
+    } finally {
+      setSaving(false)
+    }
   }
 
   // Direct BLE send, connect-if-needed — modeled on useLightUp but WITHOUT its session
@@ -193,6 +377,12 @@ export function ProblemEditorDrawer({ board, angle, open, onOpenChange }: Proble
 
   const shownError = sendError ?? connectionError
   const holdCount = draft.holds.length
+  const holdSummary = `${holdCount} hold${holdCount === 1 ? '' : 's'}`
+  const trimmedName = draft.name.trim()
+  // A draft carries no grade until the author opens the sheet; 6A+ (the scale's filter
+  // floor) is the offered default rather than a blank the Select can't render.
+  const grade = draft.grade || DEFAULT_GRADE
+  const title = editing ? 'Edit problem' : 'New problem'
 
   return (
     <>
@@ -200,17 +390,21 @@ export function ProblemEditorDrawer({ board, angle, open, onOpenChange }: Proble
         {/* Nearly full-height so the whole board is visible without scrolling — the
             author needs every row reachable in one view. */}
         <DrawerContent style={{ '--drawer-height': 'calc(100dvh - 4rem)' } as CSSProperties}>
-          <DrawerTitle className="sr-only">New problem</DrawerTitle>
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between gap-2 px-4 pt-2 pb-3">
               <div className="min-w-0">
-                <div className="font-heading text-base font-medium text-foreground">New problem</div>
+                <DrawerTitle>{title}</DrawerTitle>
                 <div className="truncate text-xs text-muted-foreground">
                   {board.name} · {angle}°
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <Button variant="ghost" size="sm" disabled={holdCount === 0} onClick={() => update([])}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={holdCount === 0}
+                  onClick={() => update({ holds: [] })}
+                >
                   Clear
                 </Button>
                 <Button variant="ghost" size="sm" onClick={requestClose}>
@@ -292,9 +486,7 @@ export function ProblemEditorDrawer({ board, angle, open, onOpenChange }: Proble
 
             <div className="shrink-0 px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
               <p className="pb-2 text-center text-xs text-muted-foreground">
-                {holdCount === 0
-                  ? 'Tap holds to build your problem'
-                  : `${holdCount} hold${holdCount === 1 ? '' : 's'}`}
+                {holdCount === 0 ? 'Tap holds to build your problem' : holdSummary}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -306,8 +498,7 @@ export function ProblemEditorDrawer({ board, angle, open, onOpenChange }: Proble
                   {busy && <Loader2 className="size-4 animate-spin" />}
                   {busy === 'connecting' ? 'Connecting…' : busy === 'sending' ? 'Sending…' : 'Light up'}
                 </Button>
-                {/* Saving is wired in a later unit; the placeholder keeps the real layout. */}
-                <Button className="flex-1" disabled>
+                <Button className="flex-1" disabled={holdCount === 0} onClick={requestSave}>
                   Save
                 </Button>
               </div>
@@ -321,13 +512,130 @@ export function ProblemEditorDrawer({ board, angle, open, onOpenChange }: Proble
         </DrawerContent>
       </Drawer>
 
+      {/* The save sheet. A dialog over the board rather than a nested drawer: the board
+          stays put behind it, so the author can read what they drew while naming it. */}
+      <Dialog open={saveOpen} onOpenChange={(next) => !next && closeSaveSheet()}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{editing ? 'Save changes' : 'Save problem'}</DialogTitle>
+            <DialogDescription>
+              {board.name} · {angle}° · {holdSummary}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            <div className="grid gap-1.5">
+              <label htmlFor="problem-name" className="text-sm font-medium">
+                Name
+              </label>
+              <Input
+                id="problem-name"
+                value={draft.name}
+                maxLength={MAX_NAME}
+                autoComplete="off"
+                placeholder="Name your problem"
+                // text-base on mobile so iOS doesn't zoom the page on focus.
+                className="text-base md:text-sm"
+                // maxLength stops typing past the limit; the slice also covers a paste and
+                // a draft restored from an older/hand-edited entry.
+                onChange={(e) => update({ name: e.target.value.slice(0, MAX_NAME) })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium">Grade</span>
+              <Select
+                items={GRADE_LABELS}
+                value={grade}
+                onValueChange={(v) => update({ grade: v as string })}
+              >
+                <SelectTrigger aria-label="Grade" className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AUTHORABLE_GRADES.map((gr) => (
+                    <SelectItem key={gr} value={gr}>
+                      {gr}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Visibility is set once, at authoring time; changing it later belongs to the
+                problem's own screen, so an edit doesn't repeat the choice here. */}
+            {!editing && (
+              <div className="grid gap-1.5">
+                <span className="text-sm font-medium">Visibility</span>
+                <div className="flex gap-2">
+                  {VISIBILITIES.map(({ value, label }) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant={draft.visibility === value ? 'secondary' : 'outline'}
+                      className="flex-1"
+                      aria-pressed={draft.visibility === value}
+                      disabled={value === 'public' && !canPublish}
+                      onClick={() => update({ visibility: value })}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                {!canPublish && (
+                  <p className="text-xs text-muted-foreground">
+                    Pick a handle in your profile to share problems with other climbers.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {saveError && (
+              <p className="text-sm text-destructive" role="alert">
+                {saveError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-row gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={closeSaveSheet}>
+              Back
+            </Button>
+            <Button
+              className="flex-1"
+              disabled={saving || trimmedName.length === 0}
+              onClick={() => void save()}
+            >
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              {editing ? 'Save changes' : 'Save problem'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <SignInDialog
+        open={signInOpen}
+        onOpenChange={(o) => {
+          setSignInOpen(o)
+          // Dismissed WITHOUT a session: drop the pending save, here and on disk, so a
+          // later unrelated sign-in never reopens the sheet on its own.
+          if (!o && !signedIn) {
+            setResume(false)
+            writeSaveIntent(board.layoutId, angle, false)
+          }
+        }}
+        title="Sign in to save your problem"
+      />
+
       <Dialog open={confirmingDiscard} onOpenChange={(next) => !next && setConfirmingDiscard(false)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Discard this problem?</DialogTitle>
+            <DialogTitle>{editing ? 'Discard your changes?' : 'Discard this problem?'}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Your placed holds will be lost. This can’t be undone.
+            {editing
+              ? 'Your edits will be lost and the saved problem stays as it was.'
+              : 'Your placed holds will be lost. This can’t be undone.'}
           </p>
           <div className="flex flex-row gap-2 pt-2">
             <Button variant="outline" className="flex-1" onClick={() => setConfirmingDiscard(false)}>

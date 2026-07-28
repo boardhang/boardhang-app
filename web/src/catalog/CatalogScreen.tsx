@@ -6,7 +6,7 @@
 // the single useSlab and derives the filter context (favorites + installed-hold-set
 // climbable check).
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
@@ -47,6 +47,8 @@ import { useSessionQueue } from '../sessions/queueStore'
 import { useMemberAscents, withSelfSends } from '../sessions/memberAscentsStore'
 import { useBoardSelfSends } from './useBoardSelfSends'
 import { useMemberSenders } from './useMemberSenders'
+import { getUserProblemsByIds } from './userProblemsSync'
+import type { UserProblem } from './userProblemsTypes'
 import type { CatalogProblem } from './catalogSync'
 
 const routeApi = getRouteApi('/board/$layoutId/catalog')
@@ -266,17 +268,69 @@ export function CatalogScreen() {
   const problemPending = Boolean(openId) && !current && loading
   const drawerOpen = current !== undefined || problemPending
 
-  // ── Problem editor, driven by ?new (plan KTD10) ─────────────────────────────
+  // ── Problem editor, driven by ?new / ?edit (plan KTD10) ─────────────────────
   // The editor's open state lives in the URL like everything else on this route, so it
   // survives the reload its localStorage draft is built for. Push on open (Back closes
   // it), replace on close — the same protocol the problem drawer uses.
-  const editorOpen = search.new === 1
+  const closeEditor = useCallback(
+    () => void navigate({ search: (prev) => ({ ...prev, new: 0, edit: '' }), replace: true }),
+    [navigate],
+  )
   const setEditorOpen = useCallback(
-    (open: boolean) =>
+    (open: boolean) => {
+      if (!open) {
+        closeEditor()
+        return
+      }
+      void navigate({ search: (prev) => ({ ...prev, new: 1 }) })
+    },
+    [navigate, closeEditor],
+  )
+
+  // `?edit=<id>` opens the editor on an already-saved problem, resolved from the
+  // user-problems cache (the only place an authored row lives client-side).
+  const editId = search.edit
+  const [editTarget, setEditTarget] = useState<UserProblem | null>(null)
+  useEffect(() => {
+    if (!editId) {
+      setEditTarget(null)
+      return
+    }
+    let cancelled = false
+    const giveUp = () => {
+      setEditTarget(null)
+      closeEditor()
+    }
+    void getUserProblemsByIds([editId])
+      .then((found) => {
+        if (cancelled) return
+        const problem = found.get(editId)
+        // An unknown id, an imported catalog problem, someone else's row, or one drawn on
+        // a different board: nothing this slab's editor can open, so drop back to the list
+        // rather than showing an editor bound to the wrong geometry.
+        if (problem && problem.layoutId === board.layoutId) setEditTarget(problem)
+        else giveUp()
+      })
+      .catch(() => {
+        if (!cancelled) giveUp()
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [editId, board.layoutId, closeEditor])
+
+  const editorOpen = search.new === 1 || editTarget !== null
+
+  // R5: the author lands on the saved problem's detail, so the thing they just made is
+  // immediately in front of them. Replace, so Back doesn't step into an emptied editor.
+  const openSavedProblem = useCallback(
+    (sourceCatalogId: string) => {
+      setEditTarget(null)
       void navigate({
-        search: (prev) => ({ ...prev, new: open ? 1 : 0 }),
-        replace: !open,
-      }),
+        search: (prev) => ({ ...prev, new: 0, edit: '', problem: sourceCatalogId }),
+        replace: true,
+      })
+    },
     [navigate],
   )
 
@@ -401,7 +455,14 @@ export function CatalogScreen() {
         </div>
       </div>
 
-      <ProblemEditorDrawer board={board} angle={angle} open={editorOpen} onOpenChange={setEditorOpen} />
+      <ProblemEditorDrawer
+        board={board}
+        angle={editTarget?.angle ?? angle}
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
+        editing={editTarget ?? undefined}
+        onSaved={openSavedProblem}
+      />
 
       {/* Last-opened bar: portaled into the shell's slot so it sits as a real row above
           the nav. Renders nothing until a problem has been opened this session. */}

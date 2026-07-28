@@ -10,6 +10,9 @@ import { useSlab } from './useSlab'
 import { useAscents, useEnsureAscentsLoaded } from '../logbook/ascents'
 import type { Ascent } from '../logbook/ascents'
 import { useAuth } from '../auth/AuthProvider'
+import { getUserProblemsByIds } from './userProblemsSync'
+import { createUserProblem } from './userProblemsStore'
+import type { UserProblem } from './userProblemsTypes'
 import type { SavedList } from '../lists/listsTypes'
 
 // The saved-list filter reads the lists store + the union-membership hook. Mock both so
@@ -173,6 +176,38 @@ function activeSessionValue(boardLayoutId = LAYOUT): Record<string, unknown> {
   }
 }
 
+// `?edit=<id>` resolves its target through the user-problems cache. Stub the read so the
+// suite picks what a given id resolves to; the default (nothing cached) is what every
+// pre-existing test wants.
+vi.mock('./userProblemsSync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./userProblemsSync')>()
+  return { ...actual, getUserProblemsByIds: vi.fn(async () => new Map()) }
+})
+
+// The editor's save call. Partial so the store's other exports (the identity hook
+// AuthProvider calls, the change subscription) stay real.
+vi.mock('./userProblemsStore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./userProblemsStore')>()
+  return { ...actual, createUserProblem: vi.fn() }
+})
+
+/** An authored problem on this board, as the editor's `?edit` target. */
+function authored(): UserProblem {
+  return {
+    id: 'p-1',
+    sourceCatalogId: 'user:p-1',
+    userId: 'user-A',
+    name: 'Crimp ladder',
+    grade: '7A',
+    holds: [H(0, 1)],
+    layoutId: LAYOUT,
+    angle: ANGLE,
+    visibility: 'private',
+    updatedAt: '2026-07-28T00:00:00Z',
+    deleted: false,
+  }
+}
+
 // ProblemDetail (opened by tapping a recent) reaches for Web Bluetooth.
 vi.mock('../ble/useBle', () => ({
   useBle: vi.fn(() => ({ state: 'disconnected', deviceName: null, error: null })),
@@ -197,6 +232,8 @@ beforeEach(() => {
   // useAscents mirrors the current useEnsureAscentsLoaded stub, so a test that sets ascents on
   // one drives both (the real store backs both hooks; useBoardSelfSends reads useAscents).
   vi.mocked(useAscents).mockImplementation(() => vi.mocked(useEnsureAscentsLoaded)())
+  // Nothing authored is cached by default, so ?edit resolves to nothing unless a test says so.
+  vi.mocked(getUserProblemsByIds).mockResolvedValue(new Map())
   // Reset the saved-list mocks to their inert defaults so a list-filter test can't leak.
   listsMock.saved = { status: 'loaded', lists: [], error: null }
   listsMock.members = { ids: new Set<string>(), ready: true }
@@ -545,5 +582,64 @@ describe('CatalogScreen — problem editor (?new=1)', () => {
 
     expect(await screen.findByRole('button', { name: 'A1, empty' })).toBeInTheDocument()
     await waitFor(() => expect(router.state.location.search).toMatchObject({ new: 1 }))
+  })
+})
+
+describe('CatalogScreen — editing an authored problem (?edit=<id>)', () => {
+  it('opens the editor pre-populated from the cached problem', async () => {
+    addBoard(LAYOUT)
+    vi.mocked(getUserProblemsByIds).mockResolvedValue(
+      new Map([['user:p-1', authored()]]),
+    )
+
+    renderWithRouter(`/board/${LAYOUT}/catalog?edit=user:p-1`)
+
+    expect(await screen.findByText('Edit problem')).toBeInTheDocument()
+    // Pre-populated: the saved row's hold is already placed on the grid.
+    expect(screen.getByRole('button', { name: 'A1, start hold' })).toBeInTheDocument()
+  })
+
+  it('closes back to the catalog when the id resolves to nothing', async () => {
+    addBoard(LAYOUT)
+    vi.mocked(getUserProblemsByIds).mockResolvedValue(new Map())
+
+    const { router } = renderWithRouter(`/board/${LAYOUT}/catalog?edit=user:gone`)
+
+    await waitFor(() => expect(router.state.location.search).not.toMatchObject({ edit: 'user:gone' }))
+    expect(screen.queryByText('Edit problem')).toBeNull()
+    expect(await screen.findByText('Visible')).toBeInTheDocument()
+  })
+
+  it('closes back to the catalog when the problem belongs to another board', async () => {
+    addBoard(LAYOUT)
+    vi.mocked(getUserProblemsByIds).mockResolvedValue(
+      new Map([['user:p-1', { ...authored(), layoutId: 5 }]]),
+    )
+
+    const { router } = renderWithRouter(`/board/${LAYOUT}/catalog?edit=user:p-1`)
+
+    await waitFor(() => expect(router.state.location.search).not.toMatchObject({ edit: 'user:p-1' }))
+    expect(screen.queryByText('Edit problem')).toBeNull()
+  })
+})
+
+describe('CatalogScreen — a saved problem opens its own detail (R5)', () => {
+  it('closes the editor and puts the new problem in the URL', async () => {
+    addBoard(LAYOUT)
+    vi.mocked(useAuth).mockReturnValue(authValue('signedInWithProfile'))
+    vi.mocked(createUserProblem).mockResolvedValue({ ...authored(), sourceCatalogId: 'user:new' })
+
+    const { router } = renderWithRouter(`/board/${LAYOUT}/catalog?new=1`)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'A1, empty' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Sloper trip' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save problem' }))
+
+    await waitFor(() =>
+      expect(router.state.location.search).toMatchObject({ problem: 'user:new' }),
+    )
+    // The editor closed with it — `new` is back at its stripped default.
+    expect(router.state.location.search).not.toMatchObject({ new: 1 })
   })
 })
