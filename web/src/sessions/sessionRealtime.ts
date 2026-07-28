@@ -221,14 +221,14 @@ export function activateSessionRealtime(sessionId: string | null): void {
         if (myToken !== activationToken) return
         void refreshLitProblem()
       })
-      // Broadcast is best-effort with no replay, so a 'queue-changed' or 'lit-changed' nudge dropped
-      // while the socket was down would strand a stale queue / lit pointer. On reconnect (a second+
-      // SUBSCRIBED after a drop — the first is the initial join, already covered by the store's
-      // activation fetch), reconcile both (KTD5). memberAscents reconciles on foreground/active-session
-      // change instead; the queue and lit pointer add reconnect here because their nudge, not just
-      // their pull, can be missed mid-disconnect. The lit pointer also reconciles on foreground
-      // (onForeground) — the two backstops cover a background→foreground with no socket drop, and a
-      // socket drop with no foreground transition, respectively.
+      // Broadcast is best-effort with no replay, so a 'queue-changed', 'lit-changed' or
+      // 'ascents-changed' nudge dropped while the socket was down would strand a stale queue / lit
+      // pointer / projection. On reconnect (a second+ SUBSCRIBED after a drop — the first is the
+      // initial join, already covered by the store's activation fetch), reconcile all three (KTD5).
+      // The two backstops are meant to cover a background→foreground with no socket drop
+      // (onForeground) and a socket drop with no foreground transition (here) — the projection
+      // needs BOTH for the same reason the others do: a tab held continuously in the foreground
+      // gets no visibilitychange, so foreground reconciliation alone never fires for it.
       let hasSubscribed = false
       ch.subscribe((status) => {
         if (myToken !== activationToken) return
@@ -236,6 +236,10 @@ export function activateSessionRealtime(sessionId: string | null): void {
         if (hasSubscribed) {
           refreshQueue()
           void refreshLitProblem()
+          // Through the same debounce every other projection refetch in this file uses: a
+          // flapping socket resubscribes repeatedly, and an uncoalesced RPC per reconnect is
+          // worst exactly where reconnects cluster — bad gym wifi.
+          scheduleRefetch()
         }
         hasSubscribed = true
       })

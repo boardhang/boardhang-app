@@ -4,6 +4,18 @@ import { DEFAULT_FILTERS, type FilterState } from './filters'
 
 const READY: ChipContext = { inSession: false, statusReady: true }
 
+/** Session context. `applied` defaults true (healthy projection); pass false for paused. */
+function sessionCtx(
+  over: { members: number; applied?: boolean },
+  onClearAll: () => void = vi.fn(),
+): ChipContext {
+  return {
+    inSession: true,
+    statusReady: true,
+    sessionStatus: { applied: true, ...over, onClearAll },
+  }
+}
+
 function state(over: Partial<FilterState>): FilterState {
   return { ...DEFAULT_FILTERS, ...over }
 }
@@ -58,22 +70,19 @@ describe('describeActiveFilters', () => {
 
   it('drops the single-user status chips in a session (statusFilters is inert there)', () => {
     const s = state({ minStars: 2, statusFilters: ['sent'] })
-    const chips = describeActiveFilters(s, { inSession: true, statusReady: true })
+    const chips = describeActiveFilters(s, sessionCtx({ members: 0 }))
     expect(chips.map((c) => c.id)).toEqual(['stars'])
   })
 
   it('emits one collapsed "Status (n)" chip for the members filtered in a session', () => {
     const onClearAll = vi.fn()
     const s = state({ minStars: 2, statusFilters: ['sent'] })
-    const chips = describeActiveFilters(s, {
-      inSession: true,
-      statusReady: true,
-      sessionStatus: { members: 2, onClearAll },
-    })
+    const chips = describeActiveFilters(s, sessionCtx({ members: 2 }, onClearAll))
     // Same slot as the solo status chips (between Methods and Holds), one chip, member count.
     expect(chips.map((c) => c.id)).toEqual(['stars', 'status'])
     const status = chips.find((c) => c.id === 'status')!
     expect(status.label).toBe('Status (2)')
+    expect(status.paused).toBeFalsy()
     // Per-member status is store state — removal is a callback, never a FilterState patch.
     expect(status.patch).toBeUndefined()
     status.onRemove!()
@@ -81,12 +90,17 @@ describe('describeActiveFilters', () => {
   })
 
   it('emits no status chip in a session when no member row is selected', () => {
-    const chips = describeActiveFilters(state({ statusFilters: ['sent'] }), {
-      inSession: true,
-      statusReady: true,
-      sessionStatus: { members: 0, onClearAll: vi.fn() },
-    })
+    const chips = describeActiveFilters(state({ statusFilters: ['sent'] }), sessionCtx({ members: 0 }))
     expect(chips).toEqual([])
+  })
+
+  it('still emits the chip when the projection is paused, flagged so the UI can dim it', () => {
+    // Paused means applyFilters is not running the filter — but the selection exists and is
+    // removable, so dropping the chip would repeat the "filter on, header silent" bug.
+    const chips = describeActiveFilters(state({}), sessionCtx({ members: 2, applied: false }))
+    const status = chips.find((c) => c.id === 'status')!
+    expect(status.label).toBe('Status (2)')
+    expect(status.paused).toBe(true)
   })
 
   it('suppresses status chips when not statusReady (e.g. signed-out deep link)', () => {

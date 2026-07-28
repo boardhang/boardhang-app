@@ -18,7 +18,7 @@ import type { CatalogBoardDef } from '../board/boards'
 import { FONT_GRADES } from '../board/grades'
 import { HoldFilterPicker } from './HoldFilterPicker'
 import { SessionStatusRows } from './SessionStatusRows'
-import { hasStatusSelections, useSessionFilterRows } from './useSessionFilterRows'
+import { useSessionFilterRows } from './useSessionFilterRows'
 import { SourceToggles } from './SourceToggles'
 import {
   METHOD_LABELS,
@@ -35,6 +35,7 @@ import {
 import {
   facetActiveLabel,
   facetClearPatch,
+  facetPaused,
   isFacetActive,
   type FacetContext,
   type PinnableFacetId,
@@ -78,13 +79,19 @@ interface FacetControlPopoverProps {
 }
 
 /** Shared nav-trigger styling: the tinted accent "on" look when active (matching the pressed
- *  Benchmarks/Favorites toggles), a plain outline when not — never the loud solid primary. */
-function triggerClass(active: boolean): string {
+ *  Benchmarks/Favorites toggles), a plain outline when not — never the loud solid primary.
+ *
+ *  `paused` is the third state (session status only): selected but not being applied. It reads
+ *  as a dashed, dimmed outline — deliberately NOT the accent fill (nothing is filtering) and not
+ *  the plain outline either (something IS set). The dash carries it; opacity alone would read as
+ *  disabled, and the control is fully interactive. */
+function triggerClass(active: boolean, paused = false): string {
   return cn(
     'inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors',
     active
       ? 'border border-accent bg-accent text-accent-foreground'
       : 'border border-input bg-transparent text-foreground hover:bg-muted hover:text-foreground',
+    paused && 'border-dashed opacity-60',
   )
 }
 
@@ -98,6 +105,14 @@ export function FacetControlPopover({
 }: FacetControlPopoverProps) {
   const active = isFacetActive(facetId, filters, ctx)
   const label = facetActiveLabel(facetId, filters, ctx)
+  // Selected but not applied (stale/failed projection) — dimmed, and said out loud in the
+  // accessible name, since dimming reaches neither a screen reader nor a colour-blind user.
+  const paused = facetPaused(facetId, ctx)
+  const triggerLabel = paused ? `${label} — filtering paused, showing all problems` : label
+  // "Is there something to clear" — for session status that is the raw selection count, not
+  // `active` (which a paused projection correctly turns off).
+  const clearable =
+    facetId === 'status' && ctx.inSession ? ctx.sessionStatus.members > 0 : active
   const set = (patch: Partial<FilterState>) => onChange({ ...filters, ...patch })
 
   // Status-in-a-session renders the per-member rows instead of the single-user chips. Read
@@ -132,7 +147,14 @@ export function FacetControlPopover({
   return (
     <Popover>
       <PopoverTrigger
-        render={<button type="button" aria-label={label} className={triggerClass(active)} />}
+        render={
+          <button
+            type="button"
+            aria-label={triggerLabel}
+            title={paused ? 'Filtering paused — showing all problems' : undefined}
+            className={triggerClass(active, paused)}
+          />
+        }
       >
         {label}
         <ChevronRight aria-hidden className="size-3 rotate-90 opacity-60" />
@@ -156,8 +178,9 @@ export function FacetControlPopover({
         )}
         {/* Clear keys off "is there something to clear", which for session status is NOT the same
             as `active`: a paused projection makes the facet correctly read inactive (nothing is
-            being filtered) while the selections still exist in the rows below. */}
-        {(sessionStatus ? hasStatusSelections(sessionStatus) : active) && facetId !== 'sort' && (
+            being filtered) while the selections still exist in the rows below. Gating Clear on
+            `active` would strand a user with selections they can see and cannot remove. */}
+        {clearable && facetId !== 'sort' && (
           <Button
             variant="ghost"
             size="sm"

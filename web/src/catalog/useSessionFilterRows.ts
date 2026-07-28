@@ -18,6 +18,7 @@ import {
 import { refreshMemberAscents, useMemberAscents } from '../sessions/memberAscentsStore'
 import { memberInitials, memberLabel } from '../sessions/sessionsTypes'
 import type { StatusKey } from './filters'
+import type { SessionStatusFacet } from './pinnableFacets'
 
 /** One member's row in the per-member "Ascent status" section (U5). */
 export interface MemberFilterRow {
@@ -49,32 +50,18 @@ export interface SessionFilterUI {
 }
 
 /**
- * How many members are actually narrowing the list right now — the one place the header's
- * "is per-member status filtering?" question is answered, so the pinned control, its chip and
- * the sheet's badge can't drift apart.
+ * The header's whole view of per-member status: how many members are selected, and whether the
+ * list is applying them. One place, so the pinned control, its chip and the sheet can't disagree
+ * with each other or with applyFilters.
  *
- * Gated on `state === 'ready'` because that is exactly the gate applyFilters uses: with an
- * unready projection it skips the per-member clause entirely (`ctx.session.ready && ...` in
- * filters.ts) and widens the list to everything. Counting selections while paused would make the
- * header claim a filter the list is not applying — and `paused` is normal, not exceptional: the
- * projection carries a 5-minute max-age, so any session left open long enough reaches it.
+ * `members` is ungated on purpose — a paused selection still exists and must stay visible — while
+ * `applied` mirrors applyFilters' `ctx.session.ready` gate exactly. See SessionStatusFacet.
  */
-export function activeStatusMemberCount(session: SessionFilterUI | undefined): number {
-  if (!session || session.state !== 'ready') return 0
-  return session.rows.filter((r) => r.selected.length > 0).length
-}
-
-/**
- * Whether any member has a selection AT ALL, ignoring readiness — the separate question of "is
- * there something to clear?".
- *
- * Deliberately not the same predicate as activeStatusMemberCount: while the projection is paused
- * the selections still exist and reapply the moment it returns, so a Clear affordance must stay
- * reachable even though the header correctly reports nothing is being filtered. Gating Clear on
- * readiness would strand a user with selections they can see in the rows and cannot clear.
- */
-export function hasStatusSelections(session: SessionFilterUI | undefined): boolean {
-  return session?.rows.some((r) => r.selected.length > 0) ?? false
+export function sessionStatusFacet(session: SessionFilterUI | undefined): SessionStatusFacet {
+  return {
+    members: session?.rows.filter((r) => r.selected.length > 0).length ?? 0,
+    applied: session?.state === 'ready',
+  }
 }
 
 /**
