@@ -128,6 +128,67 @@ describe('ProblemEditorDrawer — tap cycle', () => {
     fireEvent.click(target('A1, end hold'))
     expect(target('A1, empty')).toBeInTheDocument()
   })
+
+  // A bare tap means what it most likely means on a real board: problems open with one or
+  // two start holds, and the finish lives on the top row (12 on the Mini, 18 full-size).
+  it('defaults the first two placements to start, then moves', async () => {
+    open()
+    await screen.findByRole('dialog')
+
+    fireEvent.click(target('A1, empty'))
+    expect(target('A1, start hold')).toBeInTheDocument()
+
+    fireEvent.click(target('B1, empty'))
+    expect(target('B1, start hold')).toBeInTheDocument()
+
+    fireEvent.click(target('A2, empty'))
+    expect(target('A2, right hold')).toBeInTheDocument()
+  })
+
+  it('defaults a top-row tap to the end hold, even as the first placement', async () => {
+    open()
+    await screen.findByRole('dialog')
+
+    fireEvent.click(target('A12, empty'))
+    expect(target('A12, end hold')).toBeInTheDocument()
+  })
+
+  it('caps end holds at two — the cycle skips end and the top row falls back', async () => {
+    open()
+    await screen.findByRole('dialog')
+
+    fireEvent.click(target('A12, empty'))
+    fireEvent.click(target('B12, empty'))
+    expect(target('A12, end hold')).toBeInTheDocument()
+    expect(target('B12, end hold')).toBeInTheDocument()
+
+    // A third top-row tap cannot become an end: it falls back to the ordinary default.
+    fireEvent.click(target('C12, empty'))
+    expect(target('C12, start hold')).toBeInTheDocument()
+
+    // And the cycle path can't over-assign either: right skips end, straight to empty.
+    fireEvent.click(target('A2, empty')) // second start
+    fireEvent.click(target('A3, empty')) // move (both starts placed)
+    expect(target('A3, right hold')).toBeInTheDocument()
+    fireEvent.click(target('A3, right hold'))
+    expect(target('A3, empty')).toBeInTheDocument()
+  })
+
+  it('offers start again once a start hold is removed', async () => {
+    open()
+    await screen.findByRole('dialog')
+
+    fireEvent.click(target('A1, empty'))
+    fireEvent.click(target('B1, empty')) // two starts placed
+    // Remove one: advance A1 through the ring to empty.
+    fireEvent.click(target('A1, start hold'))
+    fireEvent.click(target('A1, right hold'))
+    fireEvent.click(target('A1, end hold'))
+    expect(target('A1, empty')).toBeInTheDocument()
+
+    fireEvent.click(target('A2, empty'))
+    expect(target('A2, start hold')).toBeInTheDocument()
+  })
 })
 
 describe('ProblemEditorDrawer — role brush palette', () => {

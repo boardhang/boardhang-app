@@ -72,8 +72,9 @@ import {
  *  marker size so the target sits right on the drawn hold. */
 const TARGET_COLUMN_RATIO = 0.9
 
-/** The common-role tap cycle, matching the retired BuildScreen's: an empty position
- *  walks start → move → end → empty without ever touching the palette. */
+/** The common-role ring an assigned hold advances through on repeat taps:
+ *  start → move → end → empty. An EMPTY position doesn't enter at a fixed point —
+ *  see defaultRole: it starts at what the tap most likely means. */
 const CYCLE: (HoldType | null)[] = [null, 'start', 'right', 'end']
 
 /** Roles the palette paints. The cycle already reaches start and end; the palette exists
@@ -100,6 +101,22 @@ const VISIBILITIES: { value: Visibility; label: string }[] = [
 function nextInCycle(current: HoldType | null): HoldType | null {
   const i = CYCLE.findIndex((t) => t === current)
   return CYCLE[(i + 1) % CYCLE.length]
+}
+
+/** A real problem has at most two start holds and at most two end holds (one per hand);
+ *  the picker enforces that instead of letting an invalid problem reach Save. */
+const MAX_ROLE = 2
+
+/** What a bare tap on an EMPTY position means, mirroring how problems are actually set:
+ *  the finish lives on the board's top row (row 12 on the Mini, 18 on the full-size
+ *  boards), and a problem opens with one or two start holds. So the top row defaults to
+ *  end, the first two placements elsewhere default to start, and everything after is a
+ *  move. A full role (two ends, two starts) falls through to the next default rather
+ *  than over-assigning. Repeat taps still walk the CYCLE ring, so any default can be
+ *  re-roled or removed; the palette covers the beta roles. */
+function defaultRole(row: number, topRow: number, startCount: number, endCount: number): HoldType {
+  if (row === topRow && endCount < MAX_ROLE) return 'end'
+  return startCount < MAX_ROLE ? 'start' : 'right'
 }
 
 /** The draft an edit session starts from — the saved row as the editor's working shape. */
@@ -253,7 +270,20 @@ export function ProblemEditorDrawer({
     const current = roleAt.get(`${col}-${row}`) ?? null
     // With a brush down the tap is an assignment; tapping the brush's own role lifts it
     // again, so the palette can both paint and erase without a separate eraser mode.
-    const next = brush ? (current === brush ? null : brush) : nextInCycle(current)
+    // Without one, an empty position takes the smart default (top row = end, first two =
+    // start, then moves) and an assigned hold advances the ring — skipping `end` when two
+    // ends already exist, so the cap holds on the cycle path too. `start` is only ever
+    // created by the default (the ring never re-enters it), so its cap lives there alone.
+    const startCount = draft.holds.filter((h) => h.t === 'start').length
+    const endCount = draft.holds.filter((h) => h.t === 'end').length
+    let next = brush
+      ? current === brush
+        ? null
+        : brush
+      : current === null
+        ? defaultRole(row, g.rowTop, startCount, endCount)
+        : nextInCycle(current)
+    if (next === 'end' && endCount >= MAX_ROLE) next = nextInCycle('end')
     if (next === null) {
       update({ holds: draft.holds.filter((h) => !(h.c === col && h.r === row)) })
       return

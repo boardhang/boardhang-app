@@ -244,10 +244,14 @@ else on the route, and it is scoped to the routed board+angle.
   you're still editing. `?edit` resolves against the user-problems cache and bails back to the list
   for an unknown id, an imported catalog problem, someone else's row, or one drawn on another board.
 - **The grid.** Tap targets are children of `CatalogBoard`, so they sit exactly on the drawn holds
-  at any aspect ratio (the `HoldFilterPicker` pattern, not the retired `BoardGrid`). Tapping cycles
-  start → move → end → empty; the brush palette assigns the beta roles (left / right / match), and
-  tapping a hold that already carries the active brush removes it. Only positions owned by an
-  installed hold set are tappable — see [multi-board-model.md](multi-board-model.md).
+  at any aspect ratio (the `HoldFilterPicker` pattern, not the retired `BoardGrid`). A tap on an
+  empty position takes the role it most likely means: the board's top row defaults to the end hold,
+  the first two placements elsewhere default to start, and everything after is a move — capped at
+  two starts and two ends (one per hand), with a full role falling through to the next default.
+  Repeat taps cycle the hold onward (start → move → end → empty, skipping an over-cap end); the
+  brush palette assigns the beta roles (left / right / match), and tapping a hold that already
+  carries the active brush removes it. Only positions owned by an installed hold set are tappable —
+  see [multi-board-model.md](multi-board-model.md).
 - **Light-up** sends BLE directly and deliberately does **not** report a lit problem to an active
   session: an unsaved draft must never become the crew's shared "on the wall" problem.
 - **Drafts survive the tab going away.** The create editor persists its whole draft (holds, name,
