@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { readSlab, resyncSlab, syncSlab, type CatalogProblem } from './catalogSync'
 import {
   loadUserProblems,
+  refreshUserProblems,
   subscribeUserProblemsChanged,
   syncPublicUserProblems,
 } from './userProblemsStore'
@@ -63,17 +64,35 @@ export function useSlab(layoutId: number, angle: number): SlabState {
     return synced
   }, [layoutId, angle])
 
+  /**
+   * Pull the signed-in author's OWN rows (the `updated_at` cursor delta). Its own lane, and
+   * the only one that carries private problems and their edits and deletions — nothing else
+   * re-runs it once the cursor is warm, so without this a problem authored on another device
+   * would never arrive. Signed out it reports "nothing to pull", not a failure.
+   *
+   * Reports and repaints exactly like {@link pullPublicSnapshot}: rows land through the
+   * change subscription, and only the outcome comes back, folded into the same `degraded`.
+   */
+  const pullOwnProblems = useCallback(async (): Promise<boolean> => {
+    const { synced } = await refreshUserProblems().catch(() => ({ synced: false }))
+    if (!synced && slabRef.current.layoutId === layoutId && slabRef.current.angle === angle) {
+      setState((prev) => ({ ...prev, degraded: true }))
+    }
+    return synced
+  }, [layoutId, angle])
+
   const resync = useCallback(async (): Promise<boolean> => {
     const { problems, synced } = await resyncSlab(layoutId, angle)
     if (slabRef.current.layoutId === layoutId && slabRef.current.angle === angle) {
       setState({ problems, loading: false, degraded: !synced })
     }
-    // Always second, never in parallel: the snapshot's rows reach this state through the
-    // change subscription below, so a setState from here racing one from there could drop
-    // them. See the same ordering in load().
-    const publicSynced = await pullPublicSnapshot()
-    return synced && publicSynced
-  }, [layoutId, angle, pullPublicSnapshot])
+    // Always after the imported rows, never before: both these lanes reach this state through
+    // the change subscription below, so a setState from here racing one from there could drop
+    // them. They run together because neither writes `problems`. See the same ordering in
+    // load().
+    const [publicSynced, ownSynced] = await Promise.all([pullPublicSnapshot(), pullOwnProblems()])
+    return synced && publicSynced && ownSynced
+  }, [layoutId, angle, pullPublicSnapshot, pullOwnProblems])
 
   useEffect(() => {
     let cancelled = false
@@ -136,8 +155,9 @@ export function useSlab(layoutId: number, angle: number): SlabState {
 
   // The store's post-sign-in pull is fire-and-forget, so a user whose first pull failed
   // (offline at sign-in, a transient 5xx) would otherwise not see their own problems until
-  // the next sign-in. Opening a board retries it; a warm cache short-circuits without a
-  // network call, and every applied page repaints through the subscription above.
+  // the next sign-in. Opening a board retries it; a warm cache paints from IndexedDB and
+  // takes the delta in the background, and every applied page repaints through the
+  // subscription above.
   useEffect(() => {
     void loadUserProblems().catch(() => {
       // Best-effort: the merged slab still serves whatever is already cached.

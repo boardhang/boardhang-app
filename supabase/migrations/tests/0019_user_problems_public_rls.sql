@@ -9,14 +9,17 @@
 --   • The read policy: a LIVE PUBLIC row is readable by anon and by a second signed-in user; a
 --     private row, a tombstoned public row, and a retracted row are readable by neither. Writes
 --     stay owner-only — the new SELECT policy must not open an UPDATE/DELETE seam.
---   • The public-completeness CHECK: layout/angle/name/holds are only constrained when the row is
---     LIVE PUBLIC. Every one of those shapes stays legal on a private row, so the iOS-era rows in
---     production (empty name, null layout/angle, '[]' holds) survive untouched (R14).
+--   • The public-completeness CHECK: layout/angle/name/grade/holds are only constrained when the row
+--     is LIVE PUBLIC. Every one of those shapes stays legal on a private row, so the iOS-era rows in
+--     production (empty name, null layout/angle, '[]' holds) survive untouched (R14). The bounds are
+--     on SIZE as well as shape — a live public row is served to every visitor, so both grade and the
+--     coordinate literals are length-capped, not merely range-checked.
 --   • Attribution (KTD7): setter_user_id / setter_handle are server-owned. The client's values are
 --     overwritten from the caller's own profile on publish, publishing without a profile handle is
---     refused (the AE3 server backstop), retracting clears them, and a handle rename — including a
+--     refused (the AE3 server backstop), retracting clears them, a handle rename — including a
 --     rename that FREES a handle for someone else to take — re-stamps only the renamer's own live
---     public rows.
+--     public rows, and DELETING a profile retracts that setter's live publications rather than
+--     leaving credit attached to a handle anyone may now claim.
 --   • The per-user cap on live public problems, including that it fires on the private→public
 --     UPDATE (not just INSERT), excludes the row's own id, ignores tombstones, and actually
 --     serializes two concurrent publishers of the same user (see "Concurrency" below).
@@ -34,7 +37,8 @@
 
 -- Users. U is the setter under test; U2 is a second signed-in user who both reads U's public work
 -- and publishes their own. UNP has no profile row and UNH has one with no handle — the two shapes
--- the publish gate must refuse. UC exercises the cap, UL/UL2 the concurrency probes.
+-- the publish gate must refuse. UC exercises the cap, UL/UL2 the concurrency probes, and UD deletes
+-- their own profiles row while holding a publication.
 \set U   '11111111-1111-1111-1111-111111111111'
 \set U2  '22222222-2222-2222-2222-222222222222'
 \set UNP '33333333-3333-3333-3333-333333333333'
@@ -42,6 +46,7 @@
 \set UC  '55555555-5555-5555-5555-555555555555'
 \set UL  '66666666-6666-6666-6666-666666666666'
 \set UL2 '77777777-7777-7777-7777-777777777777'
+\set UD  '88888888-8888-8888-8888-888888888888'
 
 -- U's problems: a live public one, one published then retracted, a public tombstone, and two
 -- private rows carrying shapes the public branch forbids. P2 is U2's live public problem.
@@ -57,15 +62,21 @@
 \set PL1   'b0000000-0000-4000-8000-000000000030'
 \set PL2   'b0000000-0000-4000-8000-000000000031'
 \set PL3   'b0000000-0000-4000-8000-000000000032'
+-- Profile-deletion fixtures: UD's live publication, their public tombstone, their private draft.
+\set PDL   'b0000000-0000-4000-8000-000000000050'
+\set PDT   'b0000000-0000-4000-8000-000000000051'
+\set PDP   'b0000000-0000-4000-8000-000000000052'
 
-insert into auth.users (id) values (:'U'), (:'U2'), (:'UNP'), (:'UNH'), (:'UC'), (:'UL'), (:'UL2');
+insert into auth.users (id) values
+    (:'U'), (:'U2'), (:'UNP'), (:'UNH'), (:'UC'), (:'UL'), (:'UL2'), (:'UD');
 insert into public.profiles (id, handle, display_name) values
     (:'U',   'setter_one', 'Setter One'),
     (:'U2',  'reader_two', 'Reader Two'),
     (:'UNH', null,         'No Handle'),
     (:'UC',  'capper',     'Capper'),
     (:'UL',  'locker_a',   'Locker A'),
-    (:'UL2', 'locker_b',   'Locker B');
+    (:'UL2', 'locker_b',   'Locker B'),
+    (:'UD',  'quitter',    'Quitter');
 -- UNP deliberately gets NO profiles row.
 
 -- ── R14: 0019 left the legacy iOS row alone ──────────────────────────────────
@@ -109,13 +120,15 @@ end $$;
 -- ── Test helpers ─────────────────────────────────────────────────────────────
 -- Plain SECURITY INVOKER functions, so a call made while `set role authenticated` genuinely runs
 -- under RLS as that role. They exist only to keep the constraint matrix below readable.
+-- _grade defaults to '' so the shape cases below stay one line each; the grade-bound cases pass it.
 create or replace function public.expect_public_rejected(
-        _label text, _name text, _layout int, _angle int, _holds jsonb)
+        _label text, _name text, _layout int, _angle int, _holds jsonb, _grade text default '')
     returns void language plpgsql as $$
 begin
     begin
-        insert into public.user_problems (id, user_id, name, layout_id, angle, holds, visibility)
-            values (gen_random_uuid(), auth.uid(), _name, _layout, _angle, _holds, 'public');
+        insert into public.user_problems
+                (id, user_id, name, grade, layout_id, angle, holds, visibility)
+            values (gen_random_uuid(), auth.uid(), _name, _grade, _layout, _angle, _holds, 'public');
         raise exception 'FAIL: a LIVE PUBLIC row was accepted with %', _label;
     exception when check_violation then
         raise notice 'PASS: public rejected — %', _label;
@@ -123,11 +136,12 @@ begin
 end $$;
 
 create or replace function public.expect_private_accepted(
-        _label text, _name text, _layout int, _angle int, _holds jsonb)
+        _label text, _name text, _layout int, _angle int, _holds jsonb, _grade text default '')
     returns void language plpgsql as $$
 begin
-    insert into public.user_problems (id, user_id, name, layout_id, angle, holds, visibility)
-        values (gen_random_uuid(), auth.uid(), _name, _layout, _angle, _holds, 'private');
+    insert into public.user_problems
+            (id, user_id, name, grade, layout_id, angle, holds, visibility)
+        values (gen_random_uuid(), auth.uid(), _name, _grade, _layout, _angle, _holds, 'private');
     raise notice 'PASS: private accepted — % (R14)', _label;
 end $$;
 
@@ -289,11 +303,13 @@ declare _holds jsonb;
 begin
     select jsonb_agg(jsonb_build_object('c', i % 11, 'r', i % 18, 't', 'left'))
         into _holds from generate_series(1, 60) i;
-    perform public.expect_private_accepted('60-hold, 60-char boundary (sanity)',
-        repeat('n', 60), 7, 40, _holds);
-    insert into public.user_problems (id, user_id, name, layout_id, angle, holds, visibility)
-        values (gen_random_uuid(), auth.uid(), repeat('n', 60), 7, 40, _holds, 'public');
-    raise notice 'PASS: a public row at the exact name/holds boundary (60/60) is accepted';
+    perform public.expect_private_accepted('60-hold, 60-char-name, 8-char-grade boundary (sanity)',
+        repeat('n', 60), 7, 40, _holds, '8B+/8B++');
+    insert into public.user_problems
+            (id, user_id, name, grade, layout_id, angle, holds, visibility)
+        values (gen_random_uuid(), auth.uid(), repeat('n', 60), '8B+/8B++', 7, 40, _holds, 'public');
+    raise notice 'PASS: a public row at the exact name/grade/holds boundary (60/8/60) is accepted, '
+                 'with ordinary integer coordinates';
 end $$;
 
 -- The rejection matrix. Each shape is refused on a live public row …
@@ -338,6 +354,25 @@ begin
         'Negative', 7, 40, '[{"c":-1,"r":1,"t":"start"}]'::jsonb);
     perform public.expect_public_rejected('absurd coordinate',
         'Absurd', 7, 40, '[{"c":1,"r":99999,"t":"start"}]'::jsonb);
+
+    -- Payload size, not just value. jsonb keeps a number as `numeric` with every digit it was
+    -- handed, so an IN-RANGE coordinate can still be a multi-KB literal — and one capped account
+    -- could serve that to every visitor. The range checks pass these; the literal-length checks are
+    -- the only thing that refuses them.
+    perform public.expect_public_rejected('c in range but written as a 400-digit literal',
+        'Fat Column', 7, 40,
+        ('[{"c":31.' || repeat('0', 400) || '1,"r":1,"t":"start"}]')::jsonb);
+    perform public.expect_public_rejected('r in range but written as a 400-digit literal',
+        'Fat Row', 7, 40,
+        ('[{"c":1,"r":31.' || repeat('0', 400) || '1,"t":"start"}]')::jsonb);
+
+    -- Same reasoning for grade: free text on a row every visitor downloads.
+    perform public.expect_public_rejected('9-char grade',
+        'Long Grade', 7, 40, '[{"c":1,"r":1,"t":"start"},{"c":2,"r":2,"t":"end"}]'::jsonb,
+        repeat('8', 9));
+    perform public.expect_public_rejected('multi-KB grade',
+        'Blob Grade', 7, 40, '[{"c":1,"r":1,"t":"start"},{"c":2,"r":2,"t":"end"}]'::jsonb,
+        repeat('x', 5000));
 end $$;
 
 -- … and accepted on a PRIVATE row. This is R14 in test form: the constraint may not narrow what
@@ -356,6 +391,11 @@ begin
         'Junk', 7, 40, '[7, null, {"c":"1","r":1,"t":"dyno","x":1}]'::jsonb);
     perform public.expect_private_accepted('holds is not an array',
         'Object Holds', 7, 40, '{"c":1}'::jsonb);
+    perform public.expect_private_accepted('9-char grade',
+        'Long Grade', 7, 40, '[]'::jsonb, repeat('8', 9));
+    perform public.expect_private_accepted('400-digit coordinate literals',
+        'Fat Literals', 7, 40,
+        ('[{"c":31.' || repeat('0', 400) || '1,"r":31.' || repeat('0', 400) || '1,"t":"start"}]')::jsonb);
 end $$;
 
 -- Publishing is normally an UPDATE, not an INSERT — the constraint has to hold on that path too.
@@ -394,8 +434,8 @@ insert into public.user_problems (id, user_id, name, holds, layout_id, angle, vi
 -- ═════════════════════════════════════════════════════════════════════════════
 -- Cross-user reads: live public only, for a second signed-in user and for anon.
 -- ═════════════════════════════════════════════════════════════════════════════
--- U now owns 4 live public rows (PUB, PRET, PSTA, the 60/60 boundary row), 1 public tombstone
--- (PDEL) and 6 private rows; U2 owns 1 live public row (P2). So both readers below must see
+-- U now owns 4 live public rows (PUB, PRET, PSTA, the boundary row), 1 public tombstone (PDEL) and
+-- 8 private rows; U2 owns 1 live public row (P2). So both readers below must see
 -- exactly 5 rows — anything more is a policy hole, anything less breaks R11/R16.
 do $$
 declare _n int;
@@ -780,6 +820,121 @@ begin
            = 'user:b0000000-0000-4000-8000-000000000001',
         'FAIL: source_catalog_id drifted from the PK under 0019';
     raise notice 'PASS: the 0018 owner-read, tombstone and generated-id behaviors survive 0019';
+end $$;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- Deleting your own profile retracts your live publications.
+-- ═════════════════════════════════════════════════════════════════════════════
+-- 0001 lets a user delete their profiles row WITHOUT deleting their account, and the handle is
+-- unique — so that delete frees the handle for the next claimant. The rename re-stamp cannot cover
+-- this (it fires `after update of handle`, and there is no row left to read a handle from), so if
+-- the deleter's live public rows just kept their setter_handle, whoever claims 'quitter' next would
+-- inherit visible credit for someone else's problems.
+--
+-- UD is the only user here who deletes a profile, and every fixture below is created AFTER the
+-- cross-user counts above, so nothing earlier shifts.
+set role authenticated;
+select set_config('test.uid', :'UD', false);
+insert into public.user_problems (id, user_id, name, holds, layout_id, angle, visibility)
+    values (:'PDL', :'UD', 'Quitter Live',
+            '[{"c":3,"r":3,"t":"start"},{"c":6,"r":13,"t":"end"}]'::jsonb, 7, 40, 'public'),
+           (:'PDT', :'UD', 'Quitter Tombstone',
+            '[{"c":4,"r":4,"t":"start"},{"c":6,"r":14,"t":"end"}]'::jsonb, 7, 40, 'public');
+update public.user_problems set deleted = true where id = :'PDT';
+insert into public.user_problems (id, user_id, name, layout_id, angle, holds)
+    values (:'PDP', :'UD', 'Quitter Draft', null, null, '[]'::jsonb);
+do $$
+begin
+    assert (select setter_handle from public.user_problems
+            where id = 'b0000000-0000-4000-8000-000000000050') = 'quitter',
+        'FAIL: the profile-deletion fixture was never attributed, so retracting it would prove nothing';
+    raise notice 'PASS: the departing setter starts with an attributed live publication';
+end $$;
+
+-- Capture the three baselines in their own statement — now() is the transaction timestamp, so a
+-- capture inside the delete's transaction would compare equal no matter what the trigger did.
+reset role;
+insert into public.probe_scratch (k, ts)
+    select 'pdl_before_delete', updated_at from public.user_problems where id = :'PDL';
+insert into public.probe_scratch (k, ts)
+    select 'pdt_before_delete', updated_at from public.user_problems where id = :'PDT';
+insert into public.probe_scratch (k, ts)
+    select 'pdp_before_delete', updated_at from public.user_problems where id = :'PDP';
+
+-- The delete a real client makes: the user's own row, through the 0001 owner DELETE policy.
+set role authenticated;
+select set_config('test.uid', :'UD', false);
+delete from public.profiles where id = :'UD';
+do $$
+begin
+    assert (select count(*) from public.profiles
+            where id = '88888888-8888-8888-8888-888888888888') = 0,
+        'FAIL: the user could not delete their own profiles row — the retraction never got a chance '
+        'to fire, so the assertions below would pass vacuously';
+    raise notice 'PASS: a user deleted their own profiles row (0001 owner DELETE policy)';
+end $$;
+
+reset role;
+do $$
+declare _r record;
+begin
+    select * into _r from public.user_problems where id = 'b0000000-0000-4000-8000-000000000050';
+    assert _r.visibility = 'private' and not _r.deleted,
+        'FAIL: deleting a profile left the setter''s publication live (visibility = '
+        || _r.visibility || ') — a new claimant of the freed handle inherits the credit';
+    assert _r.setter_user_id is null and _r.setter_handle is null,
+        'FAIL: the retracted row kept attribution (' || coalesce(_r.setter_handle, '<null>')
+        || ') — the stamp trigger''s clear did not run on the retraction';
+    assert _r.updated_at > (select ts from public.probe_scratch where k = 'pdl_before_delete'),
+        'FAIL: the retraction did not bump updated_at — the author''s other devices never learn the '
+        'problem came down';
+
+    select * into _r from public.user_problems where id = 'b0000000-0000-4000-8000-000000000051';
+    assert _r.visibility = 'public' and _r.deleted,
+        'FAIL: the retraction rewrote a public TOMBSTONE (nobody can read it — nothing to retract)';
+    assert _r.updated_at = (select ts from public.probe_scratch where k = 'pdt_before_delete'),
+        'FAIL: the retraction churned updated_at on a tombstone';
+
+    select * into _r from public.user_problems where id = 'b0000000-0000-4000-8000-000000000052';
+    assert _r.visibility = 'private',
+        'FAIL: the retraction rewrote an already-private row';
+    assert _r.updated_at = (select ts from public.probe_scratch where k = 'pdp_before_delete'),
+        'FAIL: the retraction churned updated_at on an already-private row';
+
+    select * into _r from public.user_problems where id = 'b0000000-0000-4000-8000-000000000001';
+    assert _r.visibility = 'public' and not _r.deleted,
+        'FAIL: one user deleting their profile retracted a DIFFERENT setter''s publication';
+    assert _r.setter_handle = 'setter_uno',
+        'FAIL: one user deleting their profile disturbed a DIFFERENT setter''s attribution';
+    raise notice 'PASS: deleting a profile retracts exactly that setter''s live publications and '
+                 'clears their attribution, leaving tombstones, private rows and other setters alone';
+end $$;
+
+-- And the retraction is real for readers, not just in the row: the whole point is that the freed
+-- handle can no longer be seen next to anyone's work.
+set role authenticated;
+select set_config('test.uid', :'U2', false);
+do $$
+begin
+    assert (select count(*) from public.user_problems
+            where id = 'b0000000-0000-4000-8000-000000000050') = 0,
+        'FAIL: a publication retracted by profile deletion is still readable by a second signed-in user';
+    assert (select count(*) from public.user_problems
+            where id = 'b0000000-0000-4000-8000-000000000001') = 1,
+        'FAIL: an unrelated setter''s publication stopped being readable';
+    raise notice 'PASS: the profile-deletion retraction is invisible to a second signed-in user';
+end $$;
+reset role;
+set role anon;
+do $$
+begin
+    assert (select count(*) from public.user_problems
+            where id = 'b0000000-0000-4000-8000-000000000050') = 0,
+        'FAIL: a publication retracted by profile deletion is still readable by anon';
+    assert (select count(*) from public.user_problems
+            where id = 'b0000000-0000-4000-8000-000000000001') = 1,
+        'FAIL: an unrelated setter''s publication stopped being readable by anon';
+    raise notice 'PASS: the profile-deletion retraction is invisible to anon';
 end $$;
 
 reset role;

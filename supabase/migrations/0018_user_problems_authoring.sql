@@ -75,9 +75,14 @@ create unique index if not exists user_problems_source_catalog_id_key
 -- Account deletion: no change needed. user_problems already FKs auth.users ON DELETE CASCADE
 -- (0002), so the 0001 public.delete_user() sweeps these rows — new columns and all.
 --
--- Manual step (no SQL equivalent): apply this migration to the Supabase project (SQL Editor →
--- paste + Run, or `supabase db push`) BEFORE deploying the client bundle that authors problems —
--- the web editor writes layout_id/angle/visibility and reads source_catalog_id back, so an
--- unapplied migration fails those writes outright. It is additive and changes no policy, so the
--- shipped iOS client keeps syncing across it unchanged. See docs/social-accounts-login-SETUP.md.
+-- Manual step (no SQL equivalent): apply 0018 AND 0019, in that order, to the Supabase project (SQL
+-- Editor → paste + Run, or `supabase db push`) BEFORE deploying this branch's client bundle. They
+-- are one deploy unit, not two independent steps: 0018 alone unblocks nothing, because the client's
+-- shared column list names setter_user_id / setter_handle — 0019 columns — so on a 0018-only project
+-- EVERY user_problems query fails with 42703 (undefined_column), not just the publish path. 0019's
+-- own footer carries the rest of the ordering it needs (it must land before the bundle that
+-- publishes, and it retracts any row already marked public).
+--
+-- 0018 itself is additive and changes no policy, so the shipped iOS client keeps syncing across it
+-- unchanged. See docs/social-accounts-login-SETUP.md.
 -- ─────────────────────────────────────────────────────────────────────────────

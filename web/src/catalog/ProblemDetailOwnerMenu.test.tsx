@@ -190,6 +190,18 @@ describe('ProblemDetail owner controls', () => {
     expect(screen.getByRole('menuitem', { name: 'Delete problem' })).toBeInTheDocument()
   })
 
+  it('omits Edit on a legacy row that names no board, keeping Delete and visibility', async () => {
+    // A row imported from the iOS app recorded no layout/angle, so no slab can host the
+    // editor and the edit callback would silently no-op. Deleting it is still legitimate.
+    ownsRow({ ...userProblem(OWN_ID, 'private'), layoutId: null, angle: null })
+    mount(problem(OWN_ID, 'Mine'), { onEditProblem: () => {} })
+
+    await openOwnerMenu()
+    expect(screen.queryByRole('menuitem', { name: 'Edit problem' })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Make public' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Delete problem' })).toBeInTheDocument()
+  })
+
   it("leaves the six-cell toolbar untouched on another author's public problem", async () => {
     // The `user:` prefix alone is not ownership — this row is not in the own-ids set.
     vi.mocked(ownUserProblemIds).mockResolvedValue(new Set([OWN_ID]))

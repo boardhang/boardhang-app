@@ -47,7 +47,7 @@ export const USER_PROBLEMS_PAGE_SIZE = 1000
 const PAGE_RETRIES = 2
 const RETRY_BASE_MS = 250
 
-// Cache generation (KTD-I9 async-identity guard). clearOwnUserProblems() bumps this; every
+// Cache generation (KTD-I9 async-identity guard). Both clears bump this; every
 // cache write that follows a network await captures the generation it started under and
 // drops itself if the generation has since changed. Without it, a pull or a mutation
 // reconcile in flight when the user signed out would resolve under the OLD user's RLS and
@@ -140,28 +140,44 @@ export async function eachUserProblemDeltaPage(
   }
 }
 
-/** One `range()` window, retried past transient failures. Throws the last error. */
-async function fetchPage(
+/**
+ * Run one `range()` window, retried past transient failures. Throws the last error.
+ *
+ * Shared by both lanes so the delta and the snapshot can never drift apart on retry count,
+ * backoff or error text. `query` is a thunk, not a promise: a PostgREST builder is awaited
+ * once, so each attempt has to build a fresh one. Deliberately not shared with catalogSync's
+ * own copy — the two modules stay independent.
+ */
+async function fetchPageWithRetry(
+  query: () => PromiseLike<{ data: unknown; error: unknown }>,
+): Promise<UserProblemRow[]> {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= PAGE_RETRIES; attempt++) {
+    if (attempt > 0) await delay(RETRY_BASE_MS * attempt)
+    const { data, error } = await query()
+    if (!error) return (data ?? []) as UserProblemRow[]
+    lastError = error
+  }
+  throw lastError
+}
+
+/** One `range()` window of the own-rows delta. */
+function fetchPage(
   client: NonNullable<typeof supabase>,
   userId: string,
   cursor: string,
   from: number,
 ): Promise<UserProblemRow[]> {
-  let lastError: unknown
-  for (let attempt = 0; attempt <= PAGE_RETRIES; attempt++) {
-    if (attempt > 0) await delay(RETRY_BASE_MS * attempt)
-    const { data, error } = await client
+  return fetchPageWithRetry(() =>
+    client
       .from('user_problems')
       .select(USER_PROBLEM_COLUMNS)
       .eq('user_id', userId)
       .gte('updated_at', cursor)
       .order('updated_at', { ascending: true })
       .order('id', { ascending: true })
-      .range(from, from + USER_PROBLEMS_PAGE_SIZE - 1)
-    if (!error) return (data ?? []) as unknown as UserProblemRow[]
-    lastError = error
-  }
-  throw lastError
+      .range(from, from + USER_PROBLEMS_PAGE_SIZE - 1),
+  )
 }
 
 /**
@@ -235,8 +251,12 @@ export interface PublicSnapshotHooks {
    * {@link evictCachedUserProblems}; the store passes its `evictUserProblems`, which also
    * prunes the dangling id from recents and favorites and fires the change notification —
    * so production evictions repaint the open list and the test default stays dependency-free.
+   *
+   * `gen` is the generation the snapshot was captured under, to be dropped on the same terms
+   * as every other post-await write: the ids were resolved against the previous identity's
+   * view of the cache, so an identity switch in between invalidates the whole decision.
    */
-  evict?: (ids: string[]) => Promise<void>
+  evict?: (ids: string[], gen?: number) => Promise<void>
   /** Fired once per applied page, like {@link syncUserProblems}'s `onApplied`. */
   onApplied?: () => void
 }
@@ -265,17 +285,15 @@ export async function eachPublicUserProblemPage(
   }
 }
 
-/** One `range()` window of the snapshot, retried past transient failures. */
-async function fetchPublicPage(
+/** One `range()` window of the snapshot. */
+function fetchPublicPage(
   client: NonNullable<typeof supabase>,
   layoutId: number,
   angle: number,
   from: number,
 ): Promise<UserProblemRow[]> {
-  let lastError: unknown
-  for (let attempt = 0; attempt <= PAGE_RETRIES; attempt++) {
-    if (attempt > 0) await delay(RETRY_BASE_MS * attempt)
-    const { data, error } = await client
+  return fetchPageWithRetry(() =>
+    client
       .from('user_problems')
       .select(USER_PROBLEM_COLUMNS)
       .eq('layout_id', layoutId)
@@ -287,11 +305,8 @@ async function fetchPublicPage(
       .eq('visibility', 'public')
       .eq('deleted', false)
       .order('id', { ascending: true })
-      .range(from, from + USER_PROBLEMS_PAGE_SIZE - 1)
-    if (!error) return (data ?? []) as unknown as UserProblemRow[]
-    lastError = error
-  }
-  throw lastError
+      .range(from, from + USER_PROBLEMS_PAGE_SIZE - 1),
+  )
 }
 
 /**
@@ -345,7 +360,7 @@ export async function syncPublicUserProblemsForSlab(
   const absent = cached
     .filter((p) => p.userId !== ownUserId && !listed.has(p.sourceCatalogId))
     .map((p) => p.sourceCatalogId)
-  if (absent.length > 0) await (hooks.evict ?? evictCachedUserProblems)(absent)
+  if (absent.length > 0) await (hooks.evict ?? evictCachedUserProblems)(absent, gen)
   return { synced: true }
 }
 
@@ -504,6 +519,44 @@ export async function clearOwnUserProblems(userId: string): Promise<void> {
     )
     for (const key of keys) store.delete(key)
     await txDone(tx)
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * Belt to {@link clearOwnUserProblems}'s braces: drop every cached PRIVATE row, whoever owns
+ * it, plus the cursor. Called on a sign-out even when the identity gate already reads ''.
+ *
+ * The gate lives in shared IndexedDB while the cache generation is per-tab module state, so
+ * two tabs signed in as the same user race: tab 1 clears and advances the gate, tab 2's
+ * in-flight delta page — still holding tab 2's unchanged generation — writes the private rows
+ * back, and tab 2's own sign-out handler then finds the gate already advanced and does
+ * nothing. Sweeping by visibility needs no identity to be trusted: a private row can only
+ * ever have reached this cache as the cached identity's own (the snapshot lane refuses to
+ * write anything else), so once nobody is signed in, no private row belongs here.
+ *
+ * @returns whether anything was actually swept, so the caller repaints an open list only
+ *          when a row really left it.
+ */
+export async function clearPrivateUserProblems(): Promise<boolean> {
+  // Bump first, exactly as clearOwnUserProblems does, so a page still in flight in THIS tab
+  // drops its write instead of landing behind the sweep.
+  cacheGeneration++
+  localStorage.removeItem(CURSOR_KEY)
+  const db = await openDB()
+  try {
+    const tx = db.transaction(STORE, 'readwrite')
+    const store = tx.objectStore(STORE)
+    const rows = await requestResult<UserProblemRow[]>(store.getAll())
+    let swept = false
+    for (const row of rows) {
+      if (row.visibility !== 'private') continue
+      store.delete(row.source_catalog_id)
+      swept = true
+    }
+    await txDone(tx)
+    return swept
   } finally {
     db.close()
   }

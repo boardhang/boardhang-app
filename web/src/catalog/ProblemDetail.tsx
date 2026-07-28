@@ -589,7 +589,11 @@ export function ProblemDetail({
               <MoreHorizontal className="size-5" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              {onEditProblem && (
+              {/* Edit only for a row that names a board. A legacy iOS row recorded no
+                  layout/angle (0018/KTD1), so there is no slab for the editor to bind to and
+                  every caller's edit callback would no-op — a dead menu item. Delete and the
+                  visibility toggle are board-agnostic, so they stay offered. */}
+              {onEditProblem && ownRow.layoutId != null && (
                 <DropdownMenuItem onClick={() => onEditProblem(currentId)}>
                   Edit problem
                 </DropdownMenuItem>

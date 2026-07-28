@@ -24,7 +24,7 @@
 // already-saved problem (`editing`). An edit session is deliberately NOT persisted — see
 // `persistDraft` below.
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Loader2 } from 'lucide-react'
 import { bleClient, connectBoard, isConnected, setBleError, useBle } from '../ble/useBle'
 import { describeBleError } from '../ble/moonboard'
@@ -48,6 +48,7 @@ import {
   type Visibility,
 } from './problemDraftStore'
 import { createUserProblem, updateUserProblem } from './userProblemsStore'
+import { errorMessage } from './userProblemsSync'
 import type { UserProblem } from './userProblemsTypes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -109,10 +110,6 @@ function draftFrom(problem: UserProblem): ProblemDraft {
     grade: problem.grade,
     visibility: problem.visibility,
   }
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 interface Pos {
@@ -181,16 +178,25 @@ export function ProblemEditorDrawer({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // The editing session this component instance is on. The drawer is mounted with an `open`
+  // prop rather than keyed, so the instance survives a close and reopen — and a connect/send
+  // still in flight from the previous sitting would otherwise paint its busy/error state onto
+  // the next one. Each open bumps this; lightUp captures it and drops any stale post-await
+  // write (useLightUp's targetRef idiom, keyed on the sitting instead of the problem).
+  const sessionRef = useRef(0)
+
   // Restore on open (and on a board/angle/target switch), which is also the mount path when
   // the editor opens straight from a `?new=1` / `?edit=<id>` deep link.
   useEffect(() => {
     if (!open) return
+    sessionRef.current++
     setDraft(editing ? draftFrom(editing) : readDraft(board.layoutId, angle))
     setBrush(null)
     setDirty(false)
     setSendError(null)
     setSaveError(null)
     setSaveOpen(false)
+    setBusy(null)
     setResume(editing === undefined && readSaveIntent(board.layoutId, angle))
   }, [open, board.layoutId, angle, editing])
 
@@ -354,9 +360,13 @@ export function ProblemEditorDrawer({
     if (busy) return
     setSendError(null)
     setBleError(null)
+    // Captured before the first await; every state write past one is gated on it still
+    // being the live sitting (the open-effect already reset busy/error for the new one).
+    const session = sessionRef.current
     if (!isConnected()) {
       setBusy('connecting')
       await connectBoard()
+      if (sessionRef.current !== session) return
       if (!isConnected()) {
         setBusy(null)
         return // cancelled, or the connection error is already in the shared BLE state
@@ -369,9 +379,9 @@ export function ProblemEditorDrawer({
         { rows: g.numRows, flipped: getFlipped(board.layoutId), showBeta: true },
       )
     } catch (err) {
-      setSendError(describeBleError(err))
+      if (sessionRef.current === session) setSendError(describeBleError(err))
     } finally {
-      setBusy(null)
+      if (sessionRef.current === session) setBusy(null)
     }
   }
 

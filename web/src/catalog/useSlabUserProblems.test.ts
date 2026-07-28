@@ -13,7 +13,7 @@ import { cacheUserProblems, readUserProblemsForSlab } from './userProblemsSync'
 import type { UserProblemRow } from './userProblemsTypes'
 import { useSlab } from './useSlab'
 
-const h = vi.hoisted(() => ({ tables: [] as string[] }))
+const h = vi.hoisted(() => ({ tables: [] as string[], eqArgs: [] as Array<[string, unknown]> }))
 
 // One builder for both shapes the code drives: the paged `.select().eq().range()` pulls and
 // the `.insert().select().single()` write. Every pull returns an empty page (nothing to
@@ -27,7 +27,10 @@ vi.mock('../supabase/client', () => {
       return builder
     },
     select: () => builder,
-    eq: () => builder,
+    eq: (col: string, val: unknown) => {
+      h.eqArgs.push([col, val])
+      return builder
+    },
     gte: () => builder,
     order: () => builder,
     range: () => Promise.resolve({ data: [], error: null }),
@@ -67,6 +70,7 @@ beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
   localStorage.clear()
   h.tables = []
+  h.eqArgs = []
 })
 
 describe('useSlab and user problems', () => {
@@ -146,6 +150,22 @@ describe('useSlab and user problems', () => {
     await waitFor(async () => expect(await readUserProblemsForSlab(7, 40)).toEqual([]))
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.problems).toEqual([])
+  })
+
+  it('re-pulls the author’s own rows on pull-to-refresh, not only the public snapshot', async () => {
+    const { result } = renderHook(() => useSlab(7, 40))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    h.eqArgs = []
+
+    await act(async () => {
+      await result.current.resync()
+    })
+
+    // Two different queries: the own-rows delta is scoped by `user_id`, the per-slab snapshot
+    // by `visibility`. A refresh that fired only the second one would leave a problem edited
+    // on another device — or any private one — permanently stale on this device.
+    expect(h.eqArgs).toContainEqual(['user_id', 'author-1'])
+    expect(h.eqArgs).toContainEqual(['visibility', 'public'])
   })
 
   it('keeps this user’s own problem, which no public snapshot can list', async () => {

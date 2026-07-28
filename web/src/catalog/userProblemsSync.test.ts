@@ -6,6 +6,7 @@ import { userProblemCatalogId, type UserProblemRow } from './userProblemsTypes'
 import {
   cacheUserProblems,
   clearOwnUserProblems,
+  clearPrivateUserProblems,
   currentCacheGeneration,
   eachUserProblemDeltaPage,
   evictCachedUserProblems,
@@ -290,6 +291,23 @@ describe('syncPublicUserProblemsForSlab — per-slab snapshot (KTD5)', () => {
     expect((await readUserProblemsForSlab(7, 40)).map((p) => p.id)).toEqual(['cached'])
   })
 
+  it('hands the eviction the generation the snapshot was captured under', async () => {
+    // The eviction is decided before an await and applied after it, so it carries the same
+    // generation guard every other post-await write does — an identity switch in between
+    // must drop it rather than delete rows the new identity is entitled to.
+    await cacheUserProblems([publicRow('retracted', '2026-02-01T00:00:00+00:00')])
+    h.pages = []
+    const gens: Array<number | undefined> = []
+
+    await syncPublicUserProblemsForSlab(7, 40, OWNER, {
+      evict: async (_ids, gen) => {
+        gens.push(gen)
+      },
+    })
+
+    expect(gens).toEqual([currentCacheGeneration()])
+  })
+
   it('drops a snapshot that started under the previous generation', async () => {
     await setCachedUserId(OWNER)
     h.deferred = { release: () => {} }
@@ -386,6 +404,28 @@ describe('identity clearing', () => {
     // someone else carries no private data, so it survives the sign-out.
     expect((await readUserProblemsForSlab(7, 40)).map((p) => p.id)).toEqual(['theirs'])
     expect(hasUserProblemsCursor()).toBe(false)
+  })
+
+  it('sweeps every private row regardless of owner, and drops later writes', async () => {
+    // The owner-scoped clear needs a known identity; this one is the belt for when we have
+    // none to trust, so it keys on the only thing that is always true of a private row here:
+    // it is somebody's own, and nobody signed in owns it.
+    await cacheUserProblems([
+      row('mine', '2026-01-01T00:00:00+00:00'),
+      row('stale', '2026-01-01T00:00:00+00:00', { user_id: 'user-Z' }),
+      row('theirs', '2026-01-01T00:00:00+00:00', { user_id: 'user-B', visibility: 'public' }),
+    ])
+    localStorage.setItem(CURSOR_KEY, '2026-01-02T00:00:00+00:00')
+    const gen = currentCacheGeneration()
+
+    await clearPrivateUserProblems()
+
+    expect((await readUserProblemsForSlab(7, 40)).map((p) => p.id)).toEqual(['theirs'])
+    expect(hasUserProblemsCursor()).toBe(false)
+    // The generation moves, so a delta page still in flight in this tab can't write the rows
+    // back after the sweep.
+    await cacheUserProblems([row('late', '2026-06-01T00:00:00+00:00')], gen)
+    expect((await readUserProblemsForSlab(7, 40)).map((p) => p.id)).toEqual(['theirs'])
   })
 
   it('drops an in-flight pull that started under the previous generation', async () => {

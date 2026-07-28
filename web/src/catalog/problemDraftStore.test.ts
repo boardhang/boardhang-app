@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { EMPTY_DRAFT, clearDraft, readDraft, writeDraft } from './problemDraftStore'
+import {
+  EMPTY_DRAFT,
+  clearAllProblemDrafts,
+  clearDraft,
+  readDraft,
+  readSaveIntent,
+  writeDraft,
+  writeSaveIntent,
+} from './problemDraftStore'
 
 beforeEach(() => {
   localStorage.clear()
@@ -25,6 +33,20 @@ describe('problemDraftStore', () => {
     writeDraft(7, 40, { ...EMPTY_DRAFT, holds: [{ c: 1, r: 2, t: 'end' }] })
     clearDraft(7, 40)
     expect(readDraft(7, 40)).toEqual(EMPTY_DRAFT)
+  })
+
+  it('clears every slab’s draft and intent, leaving unrelated storage alone', () => {
+    writeDraft(7, 40, { ...EMPTY_DRAFT, name: 'A' })
+    writeSaveIntent(7, 40, true)
+    writeDraft(5, 25, { ...EMPTY_DRAFT, name: 'B' })
+    localStorage.setItem('catalogRecents_7_40', JSON.stringify(['user:x']))
+
+    clearAllProblemDrafts()
+
+    expect(readDraft(7, 40)).toEqual(EMPTY_DRAFT)
+    expect(readSaveIntent(7, 40)).toBe(false)
+    expect(readDraft(5, 25)).toEqual(EMPTY_DRAFT)
+    expect(localStorage.getItem('catalogRecents_7_40')).toBe(JSON.stringify(['user:x']))
   })
 
   it('fills the fields a draft written by an earlier build is missing', () => {

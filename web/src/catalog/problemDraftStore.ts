@@ -24,8 +24,10 @@ export interface ProblemDraft {
 
 export const EMPTY_DRAFT: ProblemDraft = { holds: [], name: '', grade: '', visibility: 'private' }
 
-const key = (layoutId: number, angle: number) => `problemDraft_${layoutId}_${angle}`
-const intentKey = (layoutId: number, angle: number) => `problemSaveIntent_${layoutId}_${angle}`
+const KEY_PREFIX = 'problemDraft_'
+const INTENT_PREFIX = 'problemSaveIntent_'
+const key = (layoutId: number, angle: number) => `${KEY_PREFIX}${layoutId}_${angle}`
+const intentKey = (layoutId: number, angle: number) => `${INTENT_PREFIX}${layoutId}_${angle}`
 
 const HOLD_TYPES: readonly HoldType[] = ['start', 'left', 'right', 'match', 'end']
 
@@ -77,6 +79,32 @@ export function clearDraft(layoutId: number, angle: number): void {
     localStorage.removeItem(intentKey(layoutId, angle))
   } catch {
     // Best-effort.
+  }
+}
+
+/**
+ * Drop every slab's draft and pending save intent. These keys are identity-blind — one
+ * draft per board+angle, no user in the key — so on a shared device the editor would happily
+ * restore the previous author's work, and its resume effect would reopen their save sheet,
+ * for whoever signs in next. Called from the user-problems identity hook when an identity
+ * actually departs (see syncUserProblemsIdentity).
+ *
+ * The trade-off, accepted: a user who signs out with a draft parked loses it. Not being
+ * shown somebody else's unsaved problem — and not saving it under your own account by
+ * accident — is worth more than resuming your own after a sign-out.
+ */
+export function clearAllProblemDrafts(): void {
+  try {
+    // Collect before removing: removing during the enumeration reindexes localStorage and
+    // would skip keys (same two-phase sweep as recentsStore's prune).
+    const doomed: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k?.startsWith(KEY_PREFIX) || k?.startsWith(INTENT_PREFIX)) doomed.push(k)
+    }
+    for (const k of doomed) localStorage.removeItem(k)
+  } catch {
+    // Best-effort (private mode / disabled storage).
   }
 }
 

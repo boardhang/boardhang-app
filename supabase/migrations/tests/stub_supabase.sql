@@ -65,7 +65,7 @@ alter table storage.objects enable row level security;
 -- one anyway — so THIS file, not 0001, is the profiles definition every case chains against).
 -- Real 0001 has more columns; `id` + `avatar_url` + the owner RLS matter for the avatar_url
 -- CHECK test (0009), and `handle` for the setter-attribution triggers (0019). `display_name`
--- is included so a realistic insert works. Owner policies mirror 0001 (self insert/update;
+-- is included so a realistic insert works. Owner policies mirror 0001 (self insert/update/delete;
 -- world-readable select).
 --
 -- `handle` deviates from 0001 in two harmless ways: it is `text` rather than `citext` (the
@@ -90,6 +90,11 @@ create policy "Users insert their own profile"
 create policy "Users update their own profile"
     on public.profiles for update to authenticated
     using (id = auth.uid()) with check (id = auth.uid());
+-- 0001 grants an owner DELETE too, and 0019's profile-delete retraction trigger only means anything
+-- if a USER can fire it — a superuser delete would prove the trigger runs, not that the path a real
+-- client takes reaches it. So the quartet is completed here.
+create policy "Users delete their own profile"
+    on public.profiles for delete to authenticated using (id = auth.uid());
 
 -- pg_net stub. Real Supabase provides net.http_post (the pg_net extension) for the
 -- beta-submission notification trigger in 0011. The throwaway Postgres has no pg_net, so stub a

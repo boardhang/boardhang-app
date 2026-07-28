@@ -15,10 +15,12 @@
 
 import { supabase } from '../supabase/client'
 import { pruneFavorites } from './favoritesStore'
+import { clearAllProblemDrafts } from './problemDraftStore'
 import { pruneRecents } from './recentsStore'
 import {
   cacheUserProblems,
   clearOwnUserProblems,
+  clearPrivateUserProblems,
   currentCacheGeneration,
   errorMessage,
   evictCachedUserProblems,
@@ -107,7 +109,7 @@ const PUBLISH_REJECTIONS: Array<[RegExp, string]> = [
   ],
   [
     /user_problems_public_complete|holds_valid/i,
-    'A public problem needs a name of 60 characters or fewer and a valid set of holds.',
+    'A public problem needs a name of 60 characters or fewer and between 1 and 60 holds.',
   ],
 ]
 
@@ -122,20 +124,31 @@ function writeError(err: unknown, offlineMessage: string): Error {
 
 // ─── Loads ────────────────────────────────────────────────────────────────────
 
-/** Cached-first load: a warm cache paints with no network, a cold one does a single pull.
- *  Signed out (or unconfigured) there is nothing owner-scoped to fetch. */
+/**
+ * Cached-first load: a cold cache does a single blocking pull; a warm one paints from cache
+ * and pulls the delta BEHIND that paint. The background half is what keeps a second device
+ * current — own rows have no snapshot lane, so without it a problem authored or edited
+ * elsewhere would not arrive until the cursor was thrown away by a sign-out.
+ *
+ * Signed out (or unconfigured) there is nothing owner-scoped to fetch, which is "nothing to
+ * pull", not a failure — the same degradation syncPublicUserProblemsForSlab makes, so a
+ * signed-out visitor doesn't render as offline.
+ */
 export async function loadUserProblems(): Promise<{ synced: boolean }> {
   const userId = await currentUserId()
-  if (!userId) return { synced: false }
-  if (hasUserProblemsCursor()) return { synced: true }
-  return refreshUserProblems()
+  if (!userId) return { synced: true }
+  if (!hasUserProblemsCursor()) return refreshUserProblems()
+  // Fire-and-forget: the cached rows are already on screen and each applied page repaints
+  // through the change notification, so nothing is waiting on this.
+  void syncUserProblems(userId, notifyUserProblemsChanged)
+  return { synced: true }
 }
 
 /** Explicit pull (pull-to-refresh, post-sign-in). Notifies per applied page so a mounted
  *  catalog list fills in progressively. */
 export async function refreshUserProblems(): Promise<{ synced: boolean }> {
   const userId = await currentUserId()
-  if (!userId) return { synced: false }
+  if (!userId) return { synced: true }
   const { synced } = await syncUserProblems(userId, notifyUserProblemsChanged)
   return { synced }
 }
@@ -305,9 +318,12 @@ export async function deleteUserProblem(sourceCatalogId: string): Promise<void> 
  * Drop cached problems that no longer resolve (a public row whose author unpublished or
  * deleted it), local-only. Same dangling-id cleanup as a delete.
  */
-export async function evictUserProblems(sourceCatalogIds: string[]): Promise<void> {
+export async function evictUserProblems(sourceCatalogIds: string[], gen?: number): Promise<void> {
   if (sourceCatalogIds.length === 0) return
-  await evictCachedUserProblems(sourceCatalogIds)
+  // Guarded as a whole, not just the cache write: an eviction decided under the previous
+  // identity must not prune the new one's recents and favorites either.
+  if (gen !== undefined && gen !== currentCacheGeneration()) return
+  await evictCachedUserProblems(sourceCatalogIds, gen)
   forgetDanglingIds(sourceCatalogIds)
   notifyUserProblemsChanged()
 }
@@ -347,8 +363,10 @@ async function rollback(
 /**
  * Reconcile the cache with the signed-in identity, called from AuthProvider's
  * onAuthStateChange as the fourth identity hook. A same-user launch (restored session) is a
- * no-op, preserving the warm cache; any real change clears the OUTGOING user's own rows —
- * cached rows authored by somebody else are public and survive — then advances the gate.
+ * no-op, preserving the warm cache; any real change clears the OUTGOING user's own rows and
+ * their parked draft — cached rows authored by somebody else are public and survive — then
+ * advances the gate. A sign-out additionally sweeps private rows by visibility, which is the
+ * one thing that stays true when the gate can't be trusted.
  *
  * The clear runs FIRST and the gate advances only after it resolves. If the clear rejects
  * (IndexedDB quota / private mode / VersionError) the gate stays un-advanced so the next
@@ -358,7 +376,19 @@ async function rollback(
 export async function syncUserProblemsIdentity(userId: string | null): Promise<void> {
   const next = userId ?? ''
   const prev = await readCachedUserId()
-  if (prev === next) return
+  // Unconditional on a sign-out, including the no-op below: with nobody signed in, no
+  // private row belongs in this cache whatever the gate says. That covers the multi-tab race
+  // clearOwnUserProblems can't — see clearPrivateUserProblems.
+  const swept = next ? false : await clearPrivateUserProblems()
+  if (prev === next) {
+    // Nothing else notifies on this path, and the sweep may just have emptied an open list.
+    if (swept) notifyUserProblemsChanged()
+    return
+  }
+  // A draft is keyed by slab alone, so it outlives the author unless somebody drops it. Only
+  // on a real departure: the '' → user transition is a signed-out author coming back from
+  // the sign-in redirect, whose draft is the entire point of persisting it (AE1).
+  if (prev) clearAllProblemDrafts()
   await clearOwnUserProblems(prev)
   await setCachedUserId(next)
   notifyUserProblemsChanged()

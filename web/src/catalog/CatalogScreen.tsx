@@ -48,7 +48,7 @@ import { useSessionQueue } from '../sessions/queueStore'
 import { useMemberAscents, withSelfSends } from '../sessions/memberAscentsStore'
 import { useBoardSelfSends } from './useBoardSelfSends'
 import { useMemberSenders } from './useMemberSenders'
-import { getUserProblemsByIds } from './userProblemsSync'
+import { getUserProblemsByIds, ownUserProblemIds } from './userProblemsSync'
 import type { UserProblem } from './userProblemsTypes'
 import type { CatalogProblem } from './catalogSync'
 
@@ -339,14 +339,19 @@ export function CatalogScreen() {
       setEditTarget(null)
       closeEditor()
     }
-    void getUserProblemsByIds([editId])
-      .then((found) => {
+    // Ownership is the own-ids set, exactly as ProblemDetail's owner menu resolves it: the
+    // cache also holds OTHER setters' public rows, carrying a real layout_id, so the board
+    // check alone would open a working editor over someone else's problem — whose Save would
+    // clobber the local copy, then fail RLS server-side. Signed out the set is empty, so
+    // nothing is editable.
+    void Promise.all([getUserProblemsByIds([editId]), ownUserProblemIds()])
+      .then(([found, own]) => {
         if (cancelled) return
         const problem = found.get(editId)
         // An unknown id, an imported catalog problem, someone else's row, or one drawn on
         // a different board: nothing this slab's editor can open, so drop back to the list
         // rather than showing an editor bound to the wrong geometry.
-        if (problem && problem.layoutId === board.layoutId) setEditTarget(problem)
+        if (problem && problem.layoutId === board.layoutId && own.has(editId)) setEditTarget(problem)
         else giveUp()
       })
       .catch(() => {

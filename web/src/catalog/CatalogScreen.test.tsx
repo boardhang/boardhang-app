@@ -10,7 +10,7 @@ import { useSlab } from './useSlab'
 import { useAscents, useEnsureAscentsLoaded } from '../logbook/ascents'
 import type { Ascent } from '../logbook/ascents'
 import { useAuth } from '../auth/AuthProvider'
-import { getUserProblemsByIds } from './userProblemsSync'
+import { getUserProblemsByIds, ownUserProblemIds } from './userProblemsSync'
 import { createUserProblem } from './userProblemsStore'
 import type { UserProblem } from './userProblemsTypes'
 import type { SavedList } from '../lists/listsTypes'
@@ -176,13 +176,26 @@ function activeSessionValue(boardLayoutId = LAYOUT): Record<string, unknown> {
   }
 }
 
-// `?edit=<id>` resolves its target through the user-problems cache. Stub the read so the
-// suite picks what a given id resolves to; the default (nothing cached) is what every
+// `?edit=<id>` resolves its target through the user-problems cache AND the cached own-ids
+// set (the cache also holds other setters' public rows). Stub both reads so the suite picks
+// what a given id resolves to; the default (nothing cached, nothing owned) is what every
 // pre-existing test wants.
 vi.mock('./userProblemsSync', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./userProblemsSync')>()
-  return { ...actual, getUserProblemsByIds: vi.fn(async () => new Map()) }
+  return {
+    ...actual,
+    getUserProblemsByIds: vi.fn(async () => new Map()),
+    ownUserProblemIds: vi.fn(async () => new Set<string>()),
+  }
 })
+
+/** Put a row in the cache, saying whether it belongs to the signed-in user. */
+function cached(row: UserProblem, { owned = true } = {}) {
+  vi.mocked(getUserProblemsByIds).mockResolvedValue(new Map([[row.sourceCatalogId, row]]))
+  vi.mocked(ownUserProblemIds).mockResolvedValue(
+    new Set(owned ? [row.sourceCatalogId] : []),
+  )
+}
 
 // The editor's save call. Partial so the store's other exports (the identity hook
 // AuthProvider calls, the change subscription) stay real.
@@ -236,6 +249,7 @@ beforeEach(() => {
   vi.mocked(useAscents).mockImplementation(() => vi.mocked(useEnsureAscentsLoaded)())
   // Nothing authored is cached by default, so ?edit resolves to nothing unless a test says so.
   vi.mocked(getUserProblemsByIds).mockResolvedValue(new Map())
+  vi.mocked(ownUserProblemIds).mockResolvedValue(new Set())
   // Reset the saved-list mocks to their inert defaults so a list-filter test can't leak.
   listsMock.saved = { status: 'loaded', lists: [], error: null }
   listsMock.members = { ids: new Set<string>(), ready: true }
@@ -590,9 +604,7 @@ describe('CatalogScreen — problem editor (?new=1)', () => {
 describe('CatalogScreen — editing an authored problem (?edit=<id>)', () => {
   it('opens the editor pre-populated from the cached problem', async () => {
     addBoard(LAYOUT)
-    vi.mocked(getUserProblemsByIds).mockResolvedValue(
-      new Map([['user:p-1', authored()]]),
-    )
+    cached(authored())
 
     renderWithRouter(`/board/${LAYOUT}/catalog?edit=user:p-1`)
 
@@ -614,14 +626,27 @@ describe('CatalogScreen — editing an authored problem (?edit=<id>)', () => {
 
   it('closes back to the catalog when the problem belongs to another board', async () => {
     addBoard(LAYOUT)
-    vi.mocked(getUserProblemsByIds).mockResolvedValue(
-      new Map([['user:p-1', { ...authored(), layoutId: 5 }]]),
-    )
+    cached({ ...authored(), layoutId: 5 })
 
     const { router } = renderWithRouter(`/board/${LAYOUT}/catalog?edit=user:p-1`)
 
     await waitFor(() => expect(router.state.location.search).not.toMatchObject({ edit: 'user:p-1' }))
     expect(screen.queryByText('Edit problem')).toBeNull()
+  })
+
+  it('closes back to the catalog when the cached row belongs to another setter', async () => {
+    // The public snapshot caches OTHER setters' rows into the same database, with a real
+    // layout_id — so a shared ?edit= link resolves to a row on this very board. Only the
+    // own-ids set separates it from an editable one; without that check the editor would
+    // open and its Save would clobber the cached copy before failing RLS server-side.
+    addBoard(LAYOUT)
+    cached({ ...authored(), userId: 'someone-else' }, { owned: false })
+
+    const { router } = renderWithRouter(`/board/${LAYOUT}/catalog?edit=user:p-1`)
+
+    await waitFor(() => expect(router.state.location.search).not.toMatchObject({ edit: 'user:p-1' }))
+    expect(screen.queryByText('Edit problem')).toBeNull()
+    expect(await screen.findByText('Visible')).toBeInTheDocument()
   })
 })
 

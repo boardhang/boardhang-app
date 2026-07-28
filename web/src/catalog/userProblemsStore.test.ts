@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   errorMessage: 'boom',
   clock: 0,
   writePayloads: [] as Record<string, unknown>[],
+  selectFilters: [] as Array<[string, unknown]>,
 }))
 
 function stamp(): string {
@@ -61,8 +62,13 @@ function resolve(table: string, steps: Step[]): { data: unknown; error: unknown 
     return { data: matched[0] ?? null, error: null }
   }
 
-  // Selects here are only the identity-hook's delta pull; nothing in these tests depends on
-  // its rows, so an empty page terminates it immediately.
+  // Selects here are only pulls — the identity hook's, the warm-cache background delta, the
+  // public snapshot. Nothing in these tests depends on their rows, so an empty page
+  // terminates them immediately; their filters are recorded so a test can tell the own-rows
+  // delta (`user_id`) from the per-slab snapshot (`visibility`).
+  for (const step of steps) {
+    if (step.m === 'eq') h.selectFilters.push(step.args as [string, unknown])
+  }
   return { data: [], error: null }
 }
 
@@ -113,9 +119,11 @@ vi.mock('../supabase/client', () => ({
 
 import { countSlab } from './catalogSync'
 import { getFavoriteIds, toggleFavorite } from './favoritesStore'
+import { EMPTY_DRAFT, readDraft, readSaveIntent, writeDraft, writeSaveIntent } from './problemDraftStore'
 import { getRecentIds, recordRecent } from './recentsStore'
 import {
   cacheUserProblems,
+  currentCacheGeneration,
   getUserProblemsByIds,
   readCachedUserId,
   readUserProblemsForSlab,
@@ -125,6 +133,7 @@ import {
   createUserProblem,
   deleteUserProblem,
   evictUserProblems,
+  loadUserProblems,
   setUserProblemVisibility,
   subscribeUserProblemsChanged,
   syncPublicUserProblems,
@@ -174,6 +183,28 @@ beforeEach(() => {
   h.errorMessage = 'boom'
   h.clock = 0
   h.writePayloads = []
+  h.selectFilters = []
+})
+
+describe('loadUserProblems', () => {
+  it('paints a warm cache immediately and still pulls the own-rows delta behind it', async () => {
+    // Without the background pull a problem authored on another device never arrives: the
+    // cursor short-circuits every load, and only a sign-out/in would re-pull.
+    localStorage.setItem('userProblemsCursor', '2026-01-01T00:00:00+00:00')
+
+    const { synced } = await loadUserProblems()
+
+    expect(synced).toBe(true)
+    await vi.waitFor(() => expect(h.selectFilters).toContainEqual(['user_id', 'user-A']))
+  })
+
+  it('reports "nothing to pull" rather than a failure when signed out', async () => {
+    // useSlab folds this into the same degraded flag the catalog sync uses, so a signed-out
+    // visitor must not read as offline.
+    h.session = null
+    expect(await loadUserProblems()).toEqual({ synced: true })
+    expect(h.selectFilters).toEqual([])
+  })
 })
 
 describe('createUserProblem', () => {
@@ -301,6 +332,21 @@ describe('evictUserProblems', () => {
     // Local only — nothing was written to the server.
     expect(h.writePayloads).toEqual([])
   })
+
+  it('drops an eviction whose captured generation is stale', async () => {
+    // The snapshot decides what to evict before the identity switch and applies it after;
+    // the id it resolved belongs to the previous user's view of the cache, so the write —
+    // and the recents/favorites pruning that rides with it — has to be dropped whole.
+    await cacheUserProblems([cachedRow('gone', { user_id: 'user-B', visibility: 'public' })])
+    recordRecent(LAYOUT, ANGLE, 'user:gone')
+    const gen = currentCacheGeneration()
+
+    await syncUserProblemsIdentity('user-B')
+    await evictUserProblems(['user:gone'], gen)
+
+    expect((await readUserProblemsForSlab(LAYOUT, ANGLE)).map((p) => p.id)).toEqual(['gone'])
+    expect(getRecentIds(LAYOUT, ANGLE)).toEqual(['user:gone'])
+  })
 })
 
 describe('syncPublicUserProblems', () => {
@@ -364,8 +410,10 @@ describe('publish rejections', () => {
     h.errorMessage =
       'new row for relation "user_problems" violates check constraint "user_problems_public_complete"'
 
+    // Both bounds named: "a valid set of holds" left an author guessing what invalidated
+    // theirs, and 0019 caps the array at 60 (and rejects an empty one).
     await expect(createUserProblem(newProblem({ visibility: 'public' }))).rejects.toThrow(
-      /name.*holds|holds.*name/i,
+      /60 characters or fewer.*between 1 and 60 holds/i,
     )
   })
 })
@@ -429,5 +477,63 @@ describe('syncUserProblemsIdentity', () => {
 
     expect(await readUserProblemsForSlab(LAYOUT, ANGLE)).toEqual([])
     expect(await readCachedUserId()).toBe('user-B')
+  })
+
+  it('sweeps private rows on sign-out even when the gate says the cache is already clean', async () => {
+    // The multi-tab race: another tab cleared the gate first, so this tab's own sign-out
+    // handler sees prev === next and used to return before doing anything — while its own
+    // in-flight delta page had already written the previous user's private rows back.
+    await setCachedUserId('')
+    await cacheUserProblems([
+      cachedRow('mine'),
+      cachedRow('theirs', { user_id: 'user-B', visibility: 'public' }),
+    ])
+    const seen = vi.fn()
+    subscribeUserProblemsChanged(seen)
+
+    await syncUserProblemsIdentity(null)
+
+    expect((await readUserProblemsForSlab(LAYOUT, ANGLE)).map((p) => p.id)).toEqual(['theirs'])
+    // Nothing else on this path tells a mounted list the rows went.
+    expect(seen).toHaveBeenCalled()
+  })
+})
+
+describe('drafts across an identity change', () => {
+  const DRAFT = { holds: [{ c: 1, r: 2, t: 'start' as const }], name: 'Parked', grade: '6B', visibility: 'private' as const }
+
+  it('drops a parked draft and its save intent when the user departs', async () => {
+    await setCachedUserId('user-A')
+    writeDraft(LAYOUT, ANGLE, DRAFT)
+    writeSaveIntent(LAYOUT, ANGLE, true)
+
+    await syncUserProblemsIdentity('user-B')
+
+    // Otherwise the drawer's resume effect reopens user A's save sheet for user B.
+    expect(readDraft(LAYOUT, ANGLE)).toEqual(EMPTY_DRAFT)
+    expect(readSaveIntent(LAYOUT, ANGLE)).toBe(false)
+  })
+
+  it('drops them on sign-out too', async () => {
+    await setCachedUserId('user-A')
+    writeDraft(LAYOUT, ANGLE, DRAFT)
+    writeSaveIntent(LAYOUT, ANGLE, true)
+
+    await syncUserProblemsIdentity(null)
+
+    expect(readDraft(LAYOUT, ANGLE)).toEqual(EMPTY_DRAFT)
+    expect(readSaveIntent(LAYOUT, ANGLE)).toBe(false)
+  })
+
+  it('keeps the draft a signed-out author parked before signing in (AE1)', async () => {
+    // The whole point of persisting the draft: Save signed out opens the sign-in dialog, and
+    // Google OAuth takes the page away. That '' → user transition must never clear it.
+    writeDraft(LAYOUT, ANGLE, DRAFT)
+    writeSaveIntent(LAYOUT, ANGLE, true)
+
+    await syncUserProblemsIdentity('user-A')
+
+    expect(readDraft(LAYOUT, ANGLE)).toEqual(DRAFT)
+    expect(readSaveIntent(LAYOUT, ANGLE)).toBe(true)
   })
 })

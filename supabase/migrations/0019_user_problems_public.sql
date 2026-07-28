@@ -20,7 +20,9 @@
 --      not the enforcement. On any other write it CLEARS both columns. Overwrite rather than a
 --      WITH CHECK pin, following 0011's clamp philosophy: a client that sends a forged setter is
 --      corrected, not rejected, and there is no shape of client write that can leave a false
---      attribution on a readable row.
+--      attribution on a readable row. Two triggers on public.profiles keep that attribution honest
+--      from the other side: a handle rename re-stamps the denormalized copy, and deleting a profile
+--      retracts the deleter's live publications rather than leaving credit on a freed handle.
 --   4. A per-user cap on LIVE PUBLIC problems, as a SECURITY DEFINER trigger taking a per-user
 --      transaction advisory lock. Unlike 0011's INSERT-only cap this fires on INSERT **or**
 --      UPDATE — publishing here is normally a private→public UPDATE, and an INSERT-only cap is
@@ -89,6 +91,12 @@ update public.user_problems set visibility = 'private'
 -- contains while still bounding the payload (~2 KB), and 0–63 is a sanity floor/ceiling far outside
 -- any real board — both reject abuse, neither can reject a problem a person actually drew.
 --
+-- The 0–63 range alone does NOT deliver that ~2 KB bound. jsonb stores a number as `numeric` and
+-- keeps every digit it was handed, so `31.000…0001` carrying a thousand decimals is still greater
+-- than 0 and less than 63 and would sail through the comparison. The per-coordinate LITERAL is
+-- therefore capped as well — that is what makes the payload bound real, and it matters here in a
+-- way it never did in 0018 because a live public row is served to every visitor, not just its owner.
+--
 -- search_path is pinned empty: every function and operator used below lives in pg_catalog, which is
 -- always implicitly searched, so nothing here can be shadowed by a schema a caller controls.
 create or replace function public.user_problem_holds_valid(_holds jsonb)
@@ -119,6 +127,11 @@ begin
         if jsonb_typeof(_e -> 'c') <> 'number' or jsonb_typeof(_e -> 'r') <> 'number' then
             return false;
         end if;
+        -- Literal size, not just value (see the numeric note above). A coordinate the editor can
+        -- actually produce is one or two digits; 4 chars covers 0–63 with room to spare.
+        if char_length(_e ->> 'c') > 4 or char_length(_e ->> 'r') > 4 then
+            return false;
+        end if;
         -- jsonb-to-jsonb comparison, so a non-number would have been rejected above and this can
         -- never raise on a bad cast.
         if _e -> 'c' < '0'::jsonb or _e -> 'c' > '63'::jsonb
@@ -134,12 +147,18 @@ begin
 end $$;
 
 comment on function public.user_problem_holds_valid(jsonb) is
-    'True when holds is an array of 1-60 {c,r,t} objects with numeric in-range coordinates and a known role. IMMUTABLE so the public-completeness CHECK can call it.';
+    'True when holds is an array of 1-60 {c,r,t} objects with numeric coordinates that are both in range and written as short literals, and a known role. IMMUTABLE so the public-completeness CHECK can call it.';
 
 -- Public-completeness. Every clause hangs off "live public", so a private row and a tombstone stay
 -- exactly as writable as they were in 0018 — which is what keeps the iOS-era rows (empty name, null
 -- layout/angle, '[]' holds) legal (R14). Added NOT VALID then validated, as in 0011, so the ADD
 -- takes only a brief lock and a re-run after a partial apply is clean.
+--
+-- grade is bounded but not required: publishing a problem you have not graded is legitimate ("no
+-- idea what this is"), so an empty grade stays legal — but the column is free text on a row every
+-- visitor downloads, so it gets a ceiling like name and holds. 8 chars fits any Font grade the
+-- client can produce ('8B+' and friends) and, being a public-branch clause, leaves the iOS-era rows
+-- and every private draft exactly as writable as before (R14).
 do $$
 begin
     if not exists (select 1 from pg_constraint where conname = 'user_problems_public_complete') then
@@ -152,6 +171,7 @@ begin
                     and angle is not null
                     and name <> ''
                     and char_length(name) <= 60
+                    and char_length(grade) <= 8
                     and setter_user_id is not null
                     and setter_handle is not null
                     and public.user_problem_holds_valid(holds)
@@ -234,6 +254,43 @@ create trigger profiles_restamp_setter_handle
     for each row when (new.handle is distinct from old.handle)
     execute function public.restamp_user_problem_setter_handle();
 
+-- Profile deletion. 0001 lets a user DELETE their own profiles row without deleting their account,
+-- and the handle is citext-UNIQUE — so that delete FREES the handle for the next claimant while the
+-- deleter's published rows still carry it. The re-stamp above cannot cover this: it fires `after
+-- update of handle`, and there is no row left to read a new handle from anyway.
+--
+-- So this RETRACTS rather than re-stamps. A setter with no profile must not have live public rows —
+-- that is the same invariant the stamp trigger enforces at publish time (it refuses to publish
+-- without a handle), and the completeness CHECK forbids null attribution on a live public row, so
+-- clearing the columns in place is not an option. Flipping to private is: the work is preserved and
+-- the author can re-publish once they pick a handle again. Each UPDATE bumps updated_at (via 0002's
+-- trigger), which is what propagates the retraction to the author's other devices on their next
+-- sync, and passes through the stamp trigger, whose else-branch empties the now-meaningless
+-- attribution. (On a service-role delete auth.uid() is null and the stamp trigger passes through, so
+-- the columns survive on a private row — inert, since nobody but the owner can read it.)
+--
+-- Tombstones and already-private rows are left alone for the usual reason: nobody can read them, so
+-- churning updated_at on them buys nothing.
+create or replace function public.retract_user_problems_on_profile_delete()
+    returns trigger
+    language plpgsql
+    security definer
+    set search_path = ''   -- pin search_path (advisor hardening, as in 0002); every reference below is schema-qualified
+as $$
+begin
+    update public.user_problems
+       set visibility = 'private'
+     where setter_user_id = old.id
+       and visibility = 'public'
+       and not deleted;
+    return null;
+end $$;
+
+drop trigger if exists profiles_retract_public_problems on public.profiles;
+create trigger profiles_retract_public_problems
+    after delete on public.profiles
+    for each row execute function public.retract_user_problems_on_profile_delete();
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 4. Per-user cap on live public problems.
 --
@@ -308,11 +365,14 @@ create policy "Anyone reads live public user problems"
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Account deletion: unchanged. user_problems still cascades from auth.users via user_id (0002), so
 -- public.delete_user() (0001) removes a departing user's published problems along with everything
--- else. The setter_user_id FK is ON DELETE SET NULL and never gets the chance to fire.
+-- else. The setter_user_id FK is ON DELETE SET NULL and never gets the chance to fire, and the
+-- profile-delete retraction above is harmless on this path — it flips rows the same cascade is
+-- about to remove.
 --
 -- Manual step (no SQL equivalent): apply this migration to the Supabase project (SQL Editor →
--- paste + Run, or `supabase db push`) BEFORE deploying the client bundle that publishes problems.
--- Note that applying it RETRACTS any row already carrying visibility='public' (see 2 above) — on a
--- dev project where Phase A was exercised, expect to re-publish those by hand. See
--- docs/social-accounts-login-SETUP.md.
+-- paste + Run, or `supabase db push`) directly after 0018 and BEFORE deploying the client bundle —
+-- the two are one deploy unit, because this branch's client names 0019's setter columns in every
+-- user_problems select (see 0018's footer). Note that applying it RETRACTS any row already carrying
+-- visibility='public' (see 2 above) — on a dev project where Phase A was exercised, expect to
+-- re-publish those by hand. See docs/social-accounts-login-SETUP.md.
 -- ─────────────────────────────────────────────────────────────────────────────

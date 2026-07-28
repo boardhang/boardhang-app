@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { boardByLayoutId, type CatalogBoardDef } from '../board/boards'
 import { ProblemEditorDrawer } from './ProblemEditorDrawer'
@@ -199,6 +199,38 @@ describe('ProblemEditorDrawer — light up', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Light up' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Board out of range')
+  })
+
+  it('drops a send that settles after the editor was closed and reopened', async () => {
+    // The component is mounted with an `open` prop, not keyed, so it survives close+reopen —
+    // a send left in flight must not paint the previous sitting's busy/error onto the new one.
+    vi.mocked(ble.useBle).mockReturnValue({ state: 'connected', deviceName: 'MB', error: null })
+    vi.mocked(ble.isConnected).mockReturnValue(true)
+    let rejectSend!: () => void
+    vi.mocked(ble.bleClient.send).mockReturnValueOnce(
+      new Promise<void>((_, rej) => {
+        rejectSend = () => rej(new Error('Board out of range'))
+      }),
+    )
+    const props = { board, angle: ANGLE, onOpenChange: vi.fn(), onSaved: vi.fn() }
+    const { rerender } = render(<ProblemEditorDrawer {...props} open />)
+    await screen.findByRole('dialog')
+    fireEvent.click(target('A1, empty'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Light up' }))
+    expect(screen.getByRole('button', { name: /Sending/ })).toBeInTheDocument()
+
+    rerender(<ProblemEditorDrawer {...props} open={false} />)
+    rerender(<ProblemEditorDrawer {...props} open />)
+    await screen.findByRole('dialog')
+
+    await act(async () => {
+      rejectSend()
+    })
+
+    // The new sitting is idle and clean: no stale "Sending…" and no stale error.
+    expect(await screen.findByRole('button', { name: 'Light up' })).toBeEnabled()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })
 
