@@ -8,8 +8,8 @@ import type { SavedList } from '../lists/listsTypes'
 
 // The bar (and the Status control it renders) read session rows from the store hook; control
 // them here so the session cases don't need a live sessions/projection store. Only the HOOK is
-// replaced — activeStatusMemberCount / hasStatusSelections keep their real implementations, so
-// the readiness gate these tests assert is the one that actually ships.
+// replaced — sessionStatusFacet keeps its real implementation, so the readiness gate these tests
+// assert is the one that actually ships.
 const h = vi.hoisted(() => ({ session: undefined as SessionFilterUI | undefined }))
 vi.mock('./useSessionFilterRows', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./useSessionFilterRows')>()),

@@ -128,14 +128,21 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
 - **`memberAscentsStore.ts`** — the projection: per-member `{ sentIds, loggedIds }` Set-pairs,
   seeded from the server-consistent snapshot (marker rows → empty Sets, so a zero-ascent
   member is never dropped from the AND-across predicate). Refetched on active-session change, on
-  foreground (`visibilitychange`), on realtime reconnect, on manual refresh, and — while the tab
-  is **visible** — once the map passes `REFRESH_AFTER_MS` (4 min), so it is *replaced* rather than
-  dropped. That last trigger exists because a tab held continuously in the foreground (the normal
-  way this is used at a gym) never fires `visibilitychange`, so nothing refetched and the map died
-  under the user mid-scroll — and an unready projection makes `applyFilters` skip the whole
-  per-member clause, widening the list from a filtered handful to every problem. It needs no
-  retry bookkeeping: a failed fetch leaves `fetchedAt` untouched, so the drop still lands on the
-  original deadline and then stops the retries by construction (`fetchedAt === null`).
+  foreground (`visibilitychange`), on realtime reconnect (debounced with the other nudges), on
+  manual refresh, and — while the projection is **in use**, meaning the tab is visible AND at
+  least one component is subscribed — once the map passes `REFRESH_AFTER_MS`, so it is *replaced*
+  rather than dropped. That last trigger exists because a tab held continuously in the foreground
+  (the normal way this is used at a gym) never fires `visibilitychange`, so nothing refetched and
+  the map died under the user mid-scroll — and an unready projection makes `applyFilters` skip the
+  whole per-member clause, widening the list from a filtered handful to every problem. The
+  subscriber half of "in use" is load-bearing: the store stays activated for the session's
+  lifetime (the hook has no teardown), so a visibility check alone would keep pulling the crew's
+  data while the user sits on Settings. Once dropped, it retries at `RETRY_AFTER_MS` so a brief
+  outage is not permanent — the pre-expiry branch cannot re-arm itself, since the drop nulls
+  `fetchedAt`. Every response is gated on a monotonic `fetchToken`, bumped on each fetch and on
+  every invalidation, because a session-id check alone cannot tell a current response from one
+  superseded by a newer fetch or by the drop itself — landing a stale response would resurrect a
+  purged map *and* stamp it with a fresh deadline.
   A **max-age** (5 min) drops the cached map — enforced by both a timer and an on-read age check,
   the latter scheduling a `notify()` so the drop reaches subscribers that did not trigger it —
   bounding a departed member's residual exposure. The drop is evaluated **before** the refresh on
@@ -447,8 +454,11 @@ Backend: [`supabase/migrations/0017_session_lit_problem.sql`](../supabase/migrat
 ## v1 / v2 boundary
 
 **v1 (this):** event-driven pull for the status projection (open / foreground / realtime reconnect
-/ manual refresh, plus one pre-expiry refresh while visible — not a poll: it fires only against a
-map already near its max-age, and stops entirely once dropped);
+/ manual refresh) plus a low-frequency timer refresh — call it what it is: while the tab is
+visible AND something is subscribed, the existing 30s staleness tick re-pulls a map that has
+passed `REFRESH_AFTER_MS`, so an in-use projection is replaced rather than dropped, recurring for
+as long as it stays in use (~one pull per 4 min). It idles to nothing the moment the tab is
+hidden or the last consumer unmounts;
 realtime `queue-changed` / sent-status nudges; a shared session queue (playlist); static roster;
 board-scoped; status-only projection.
 

@@ -185,7 +185,13 @@ export function facetActiveLabel(id: PinnableFacetId, s: FilterState, ctx?: Face
  */
 export function facetPaused(id: PinnableFacetId, ctx: FacetContext): boolean {
   if (id !== 'status' || !ctx.inSession) return false
-  return ctx.sessionStatus.members > 0 && !ctx.sessionStatus.applied
+  return isStatusPaused(ctx.sessionStatus)
+}
+
+/** The paused rule itself, over the two facts alone — so the chip (which holds a ChipContext, not
+ *  a FacetContext) decides it the same way the pinned control does instead of re-deriving it. */
+export function isStatusPaused(s: SessionStatusFacet): boolean {
+  return s.members > 0 && !s.applied
 }
 
 /** The patch that clears a facet (used by rich facets' popover "Clear"). Sort has no cleared

@@ -13,7 +13,7 @@
 //   - grade only for a real sub-range (`gradeRange` non-null; null = full span).
 
 import { FONT_GRADES } from '../board/grades'
-import type { SessionStatusFacet } from './pinnableFacets'
+import { isStatusPaused, type SessionStatusFacet } from './pinnableFacets'
 import {
   BENCHMARK_LABEL,
   FAVORITES_LABEL,
@@ -123,7 +123,13 @@ export function describeActiveFilters(state: FilterState, ctx: ChipContext): Fil
     // so hiding it would repeat the "filter on, header silent" bug. `paused` carries the
     // difference to the renderer.
     if (members > 0) {
-      chips.push({ id: 'status', label: `Status (${members})`, paused: !applied, onRemove: onClearAll })
+      chips.push({
+        id: 'status',
+        label: `Status (${members})`,
+        // Same rule the pinned control uses — one predicate, so the two can't drift.
+        paused: isStatusPaused({ members, applied }),
+        onRemove: onClearAll,
+      })
     }
   } else if (ctx.statusReady) {
     for (const key of STATUS_KEYS) {

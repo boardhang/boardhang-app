@@ -373,6 +373,32 @@ describe('sessionRealtime', () => {
     expect(h.queueRefreshCalls).toBe(1)
   })
 
+  it('reconciles the member-ascents projection on reconnect too', async () => {
+    // Same reasoning as the queue and lit pointer: broadcast has no replay, so an
+    // 'ascents-changed' nudge sent while the socket was down is gone. Foreground reconciliation
+    // is not a substitute — a tab held continuously in the foreground never fires
+    // visibilitychange, which is exactly the case this whole change exists to cover.
+    activateSessionRealtime('S1')
+    await flush()
+    expect(h.refetchCalls).toBe(0) // initial join SUBSCRIBED is not a reconnect
+    fireStatus('SUBSCRIBED')
+    expect(h.refetchCalls).toBe(0) // debounced, like every other projection refetch here
+    vi.advanceTimersByTime(NUDGE_DEBOUNCE_MS)
+    expect(h.refetchCalls).toBe(1)
+  })
+
+  it('coalesces a flapping socket into one projection refetch', async () => {
+    // Bad gym wifi resubscribes repeatedly; without the shared debounce that would be one
+    // uncoalesced RPC per reconnect, worst exactly where reconnects cluster.
+    activateSessionRealtime('S1')
+    await flush()
+    fireStatus('SUBSCRIBED')
+    fireStatus('SUBSCRIBED')
+    fireStatus('SUBSCRIBED')
+    vi.advanceTimersByTime(NUDGE_DEBOUNCE_MS)
+    expect(h.refetchCalls).toBe(1)
+  })
+
   it('reconciles the lit pointer on reconnect too (#97)', async () => {
     activateSessionRealtime('S1')
     await flush()

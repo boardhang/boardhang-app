@@ -236,7 +236,10 @@ export function activateSessionRealtime(sessionId: string | null): void {
         if (hasSubscribed) {
           refreshQueue()
           void refreshLitProblem()
-          void refreshMemberAscents()
+          // Through the same debounce every other projection refetch in this file uses: a
+          // flapping socket resubscribes repeatedly, and an uncoalesced RPC per reconnect is
+          // worst exactly where reconnects cluster — bad gym wifi.
+          scheduleRefetch()
         }
         hasSubscribed = true
       })
