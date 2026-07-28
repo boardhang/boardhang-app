@@ -27,8 +27,14 @@ run_case() {
   echo "→ starting throwaway postgres ($IMAGE)…"
   docker run -d --name "$container" -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=app "$IMAGE" >/dev/null
 
-  for _ in $(seq 1 30); do
-    if docker exec "$container" pg_isready -U postgres -d app >/dev/null 2>&1; then break; fi
+  # Wait for the REAL server, over TCP. The image's entrypoint first runs a temporary
+  # bootstrap server that listens on the unix socket only (and already has POSTGRES_DB), then
+  # stops it and restarts for real — so a unix-socket `pg_isready` goes green during bootstrap and
+  # the case then races the restart ("database \"app\" does not exist"). Only the final server
+  # accepts TCP, so probe that.
+  for _ in $(seq 1 60); do
+    if docker exec -e PGPASSWORD=pw "$container" \
+         psql -h 127.0.0.1 -U postgres -d app -c 'select 1' >/dev/null 2>&1; then break; fi
     sleep 0.5
   done
 
@@ -66,6 +72,12 @@ begin
   -- 0015 chain: the queue RLS assertions insert/select/update session_queue as `authenticated`.
   if to_regclass('public.session_queue') is not null then
     execute 'grant select, insert, update, delete on public.session_queue to anon, authenticated';
+  end if;
+  -- 0018 chain (0002 → 0018): the user_problems assertions select/insert/update/delete as both
+  -- `authenticated` and `anon`, so they need the table-level grants real Supabase hands those roles
+  -- — otherwise a denial would only prove a missing grant, not the owner-only POLICY.
+  if to_regclass('public.user_problems') is not null then
+    execute 'grant select, insert, update, delete on public.user_problems to anon, authenticated';
   end if;
   -- 0017 chain (keyed on its column, so earlier session chains keep their narrower grants):
   -- the direct-UPDATE assertion needs the table-level UPDATE grant real Supabase gives
@@ -158,5 +170,15 @@ run_case "$HERE/0017_session_lit_problem_rls.sql" \
   "$HERE/../0007_collaboration_sessions.sql" \
   "$HERE/stub_realtime.sql" \
   "$HERE/../0017_session_lit_problem.sql"
+
+# 0018: user-problem authoring schema — the board-scoping columns (layout_id/angle), the
+# visibility CHECK + private default, and the generated `user:<id>` source_catalog_id lane. Also the
+# FIRST coverage of the owner-only RLS quartet 0002 gave user_problems, which 0018 leaves untouched
+# (the public read path is 0019). seed_legacy_user_problems.sql sits MID-CHAIN on purpose: 0018 must
+# apply to a table that already holds iOS-era rows, or R14 goes untested.
+run_case "$HERE/0018_user_problems_authoring_rls.sql" \
+  "$HERE/../0002_logbook_sync.sql" \
+  "$HERE/seed_legacy_user_problems.sql" \
+  "$HERE/../0018_user_problems_authoring.sql"
 
 echo "✅ ALL RLS CASES PASSED"
