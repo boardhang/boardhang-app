@@ -55,6 +55,24 @@ export function toggleFavorite(id: string): void {
   emit()
 }
 
+/**
+ * Drop ids that no longer resolve to a problem — a deleted custom problem, or a cached
+ * public one evicted from the offline cache. A dangling favorite would otherwise sit in the
+ * favorites filter forever, silently shrinking its result count with nothing to show.
+ */
+export function pruneFavorites(ids: string[]): void {
+  const drop = new Set(ids)
+  if (drop.size === 0) return
+  const next = read()
+  let changed = false
+  for (const id of drop) {
+    if (next.delete(id)) changed = true
+  }
+  if (!changed) return
+  write(next)
+  emit()
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)

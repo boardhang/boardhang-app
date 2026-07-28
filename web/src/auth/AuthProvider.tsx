@@ -13,6 +13,7 @@ import { isConfigured, supabase } from '../supabase/client'
 import { syncListsIdentity } from '../lists/listsStore'
 import { syncSessionsIdentity } from '../sessions/sessionsStore'
 import { syncBetaIdentity } from '../beta/betaStore'
+import { syncUserProblemsIdentity } from '../catalog/userProblemsStore'
 import { normalizeHandle } from './handle'
 import { profileFromRow, type AuthStatus, type Profile, type ProfileRow } from './types'
 import { isAvatarPath } from './avatarStorage'
@@ -128,6 +129,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Beta clips carry a per-viewer "isMine" flag, so drop the beta cache on an identity change
       // to force ownership re-resolution on the next problem open. Sync + in-memory only.
       syncBetaIdentity(session?.user.id ?? null)
+      // Same cross-account safety for authored problems: drop the outgoing user's OWN rows
+      // (cached public rows from others carry no private data and survive) and warm the new
+      // identity's cache in the background. Same clear-then-advance-the-gate ordering as
+      // syncListsIdentity, and guarded for the same reason — a failed cache-clear must not
+      // stall auth restore, and it leaves its gate un-advanced so a later event retries.
+      try {
+        await syncUserProblemsIdentity(session?.user.id ?? null)
+      } catch {
+        // Best-effort; see syncUserProblemsIdentity. Auth must proceed.
+      }
       if (!session) {
         applyProfile(null)
         setStatus('signedOut')
