@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { readSlab } from './catalogSync'
+import { countSlab } from './catalogSync'
 import { userProblemCatalogId, type UserProblemRow } from './userProblemsTypes'
 import {
   cacheUserProblems,
@@ -200,8 +200,10 @@ describe('cache reads', () => {
     await cacheUserProblems([row('a', '2026-01-01T00:00:00+00:00')])
     expect((await readUserProblemsForSlab(7, 40)).map((p) => p.sourceCatalogId)).toEqual(['user:a'])
     expect(await readUserProblemsForSlab(7, 25)).toEqual([])
-    // Separate IndexedDB database (KTD3) — the catalog cache is untouched.
-    expect(await readSlab(7, 40)).toEqual([])
+    // Separate IndexedDB database (KTD3) — nothing lands in the catalog cache. Counted, not
+    // read: readSlab merges the two databases, so only countSlab sees the imported store
+    // alone, which is the store a rebuild wipes.
+    expect(await countSlab(7, 40)).toBe(0)
   })
 
   it('never surfaces a legacy row with no board in a slab read, but still resolves it by id', async () => {

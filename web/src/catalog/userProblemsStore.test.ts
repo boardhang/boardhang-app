@@ -105,7 +105,7 @@ vi.mock('../supabase/client', () => ({
   },
 }))
 
-import { readSlab } from './catalogSync'
+import { countSlab } from './catalogSync'
 import { getFavoriteIds, toggleFavorite } from './favoritesStore'
 import { getRecentIds, recordRecent } from './recentsStore'
 import {
@@ -175,8 +175,9 @@ describe('createUserProblem', () => {
     const cached = await getUserProblemsByIds([saved.sourceCatalogId])
     expect(cached.get(saved.sourceCatalogId)?.name).toBe('Crimp Ladder')
     // Separate IndexedDB database (KTD3): the catalog's `problems` store is untouched, so
-    // Settings → "Rebuild catalog" can never destroy an authored problem.
-    expect(await readSlab(LAYOUT, ANGLE)).toEqual([])
+    // Settings → "Rebuild catalog" can never destroy an authored problem. Counted rather
+    // than read, because readSlab merges the two databases and would report the row.
+    expect(await countSlab(LAYOUT, ANGLE)).toBe(0)
     expect((await readUserProblemsForSlab(LAYOUT, ANGLE)).map((p) => p.id)).toEqual([saved.id])
   })
 

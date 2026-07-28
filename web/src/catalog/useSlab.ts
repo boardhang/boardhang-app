@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { readSlab, resyncSlab, syncSlab, type CatalogProblem } from './catalogSync'
+import { loadUserProblems, subscribeUserProblemsChanged } from './userProblemsStore'
 
 export interface SlabState {
   /** The slab's problems (cached, then refreshed). */
@@ -74,6 +75,37 @@ export function useSlab(layoutId: number, angle: number): SlabState {
       cancelled = true
     }
   }, [layoutId, angle])
+
+  // Custom problems are merged into the slab from a second database that this hook never
+  // syncs, so a save, edit or delete reaches an already-open list only through the store's
+  // change notification (R7). Re-read rather than patch state: readSlab owns the merge and
+  // the sort. The notification also fires per applied pull page, so this runs repeatedly
+  // during a cold pull — each run is an idempotent read.
+  useEffect(() => {
+    let cancelled = false
+    async function reread() {
+      const problems = await readSlab(layoutId, angle).catch(() => null)
+      if (cancelled || problems === null) return
+      // Only `problems` — a re-read must not clear a `degraded` flag the sync set, nor
+      // resolve `loading` before the first sync attempt has actually finished.
+      setState((prev) => ({ ...prev, problems }))
+    }
+    const unsubscribe = subscribeUserProblemsChanged(() => void reread())
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [layoutId, angle])
+
+  // The store's post-sign-in pull is fire-and-forget, so a user whose first pull failed
+  // (offline at sign-in, a transient 5xx) would otherwise not see their own problems until
+  // the next sign-in. Opening a board retries it; a warm cache short-circuits without a
+  // network call, and every applied page repaints through the subscription above.
+  useEffect(() => {
+    void loadUserProblems().catch(() => {
+      // Best-effort: the merged slab still serves whatever is already cached.
+    })
+  }, [])
 
   return { ...state, resync }
 }

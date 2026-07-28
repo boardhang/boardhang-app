@@ -5,10 +5,13 @@ import {
   clearSlab,
   countSlab,
   fetchCatalogDeltas,
+  getCatalogProblemsByIds,
   readSlab,
   rebuildSlab,
   syncSlab,
 } from './catalogSync'
+import { cacheUserProblems } from './userProblemsSync'
+import type { UserProblemRow } from './userProblemsTypes'
 
 // The module-level supabase client `syncSlab` uses. One fake, reconfigured per test via
 // `h`: `pages` is served window-by-window keyed on the `range()` offset, and any offset in
@@ -246,5 +249,114 @@ describe('syncSlab cache maintenance', () => {
     const recovered = await syncSlab(7, 40)
     expect(recovered.synced).toBe(true)
     expect(recovered.problems).toHaveLength(1)
+  })
+})
+
+// ─── Merging user-authored problems (the second database) ─────────────────────
+
+const userRow = (id: string, over: Partial<UserProblemRow> = {}): UserProblemRow => ({
+  id,
+  user_id: 'author-1',
+  name: `Custom ${id}`,
+  grade: '6C',
+  holds: [{ c: 3, r: 4, t: 'start' }],
+  layout_id: 7,
+  angle: 40,
+  visibility: 'private',
+  source_catalog_id: `user:${id}`,
+  updated_at: '2026-01-01T00:00:00+00:00',
+  deleted: false,
+  ...over,
+})
+
+describe('merging user-authored problems into the catalog', () => {
+  beforeEach(() => {
+    globalThis.indexedDB = new IDBFactory()
+    localStorage.clear()
+    h.pages = []
+    h.failFrom = []
+    h.rangeCalls = []
+  })
+
+  it('lists imported and custom rows together, sorted, and only for the slab asked for', async () => {
+    h.pages = [
+      [
+        catalogRow('imported-b', '2026-01-01T00:00:00+00:00', { name: 'Beta', grade: '6B' }),
+        catalogRow('imported-z', '2026-01-01T00:00:00+00:00', { name: 'Zeta', grade: '7A' }),
+      ],
+    ]
+    await syncSlab(7, 40)
+    await cacheUserProblems([
+      userRow('one', { name: 'Alpha', grade: '6A' }),
+      userRow('two', { name: 'Aardvark', grade: '6B' }),
+      userRow('elsewhere', { name: 'Other board', layout_id: 5, angle: 25 }),
+    ])
+
+    // One list ordered by (grade, name) across both databases — a custom problem is not
+    // appended after the imported ones, it sorts among them.
+    expect((await readSlab(7, 40)).map((p) => p.name)).toEqual([
+      'Alpha',
+      'Aardvark',
+      'Beta',
+      'Zeta',
+    ])
+    // The custom row authored on another board+angle stays out of this slab.
+    expect((await readSlab(5, 25)).map((p) => p.name)).toEqual(['Other board'])
+  })
+
+  it('resolves catalog ids and user ids in one call, leaving unknown ids absent', async () => {
+    h.pages = [[catalogRow('imported', '2026-01-01T00:00:00+00:00')]]
+    await syncSlab(7, 40)
+    await cacheUserProblems([userRow('one')])
+
+    const found = await getCatalogProblemsByIds(['imported', 'user:one', 'user:gone', 'nope'])
+
+    expect([...found.keys()].sort()).toEqual(['imported', 'user:one'])
+    expect(found.get('user:one')?.name).toBe('Custom one')
+  })
+
+  it('gives a custom problem the zero-values of the imported catalog stats it has none of', async () => {
+    await cacheUserProblems([userRow('one')])
+    const resolved = (await getCatalogProblemsByIds(['user:one'])).get('user:one')
+
+    expect(resolved).toMatchObject({
+      source_catalog_id: 'user:one',
+      layout_id: 7,
+      angle: 40,
+      name: 'Custom one',
+      grade: '6C',
+      user_grade: null,
+      setter: '',
+      stars: 0,
+      repeats: 0,
+      is_benchmark: false,
+      method: null,
+      holds: [{ c: 3, r: 4, t: 'start' }],
+    })
+  })
+
+  it('keeps custom problems through a rebuild, which only wipes the imported cache (AE4)', async () => {
+    h.pages = [[catalogRow('imported', '2026-01-01T00:00:00+00:00', { name: 'Imported' })]]
+    await syncSlab(7, 40)
+    await cacheUserProblems([userRow('one', { name: 'Mine' })])
+    expect(await readSlab(7, 40)).toHaveLength(2)
+
+    // Settings → "Rebuild catalog": the destructive path. It must not be able to destroy
+    // something the user authored — that data exists nowhere else on this device.
+    const rebuilt = await rebuildSlab(7, 40)
+    expect(rebuilt.synced).toBe(true)
+    expect(rebuilt.problems.map((p) => p.name)).toEqual(['Imported', 'Mine'])
+    // countSlab reports the imported cache only, which is what the rebuild acts on.
+    expect(await countSlab(7, 40)).toBe(1)
+  })
+
+  it('never lists a legacy row with no board, but still resolves it by id (R14)', async () => {
+    await cacheUserProblems([
+      userRow('legacy', { name: 'From iOS', layout_id: null, angle: null }),
+    ])
+
+    expect(await readSlab(7, 40)).toEqual([])
+    const resolved = (await getCatalogProblemsByIds(['user:legacy'])).get('user:legacy')
+    expect(resolved?.name).toBe('From iOS')
   })
 })

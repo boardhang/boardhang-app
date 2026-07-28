@@ -158,9 +158,10 @@ export function CatalogCacheSection() {
                 Rebuild {confirming?.board.name} {confirming?.angle}°?
               </DialogTitle>
               <DialogDescription>
-                Deletes this board's problems from this device and downloads them all again —
-                up to tens of thousands. Use Wi-Fi, and keep this screen open until it
-                finishes. Other boards, your logbook, lists and favourites are untouched.
+                Deletes this board's downloaded problems from this device and downloads them
+                all again — up to tens of thousands. Use Wi-Fi, and keep this screen open
+                until it finishes. Problems you've created are untouched, as are other
+                boards, your logbook, lists and favourites.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

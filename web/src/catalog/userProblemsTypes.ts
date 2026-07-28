@@ -3,7 +3,7 @@
 // No Supabase, no IndexedDB: userProblemsSync and userProblemsStore both import from here and
 // this file stays trivially unit-testable. Mirrors lists/listsTypes.ts.
 
-import type { CatalogHold } from './catalogSync'
+import type { CatalogHold, CatalogProblem } from './catalogSync'
 
 /** Sharing intent (0018). `public` is storable now but serves nobody until 0019 adds the
  *  cross-user read policy — the client may record the intent either way. */
@@ -97,6 +97,38 @@ export function fromUserProblemRow(r: UserProblemRow): UserProblem {
     visibility: r.visibility,
     updatedAt: r.updated_at,
     deleted: r.deleted,
+  }
+}
+
+/**
+ * View a user-authored problem as a {@link CatalogProblem}, so every catalog surface —
+ * lists, detail, logbook enrichment, session queues — renders it without knowing it came
+ * from the other database. catalogSync merges through this on both read paths (KTD3).
+ *
+ * The imported-catalog statistics have no counterpart on an authored problem and take
+ * their zero-values: nobody has starred, repeated, or benchmarked it, and it carries no
+ * separate setter-suggested grade or ascent method. `setter` is empty until 0019/U7 adds
+ * `setter_handle` — that migration turns this into `p.setterHandle ?? ''`.
+ *
+ * `layout_id`/`angle` fall back to 0 for a legacy iOS row that recorded no board (they are
+ * non-null on `CatalogProblem`, which every imported row satisfies). Such a row only ever
+ * arrives here through a by-id resolve — the slab index excludes it from any listing — so
+ * the 0 is never used to pick a board, only rendered as an unknown angle.
+ */
+export function toCatalogProblem(p: UserProblem): CatalogProblem {
+  return {
+    source_catalog_id: p.sourceCatalogId,
+    layout_id: p.layoutId ?? 0,
+    angle: p.angle ?? 0,
+    name: p.name,
+    grade: p.grade,
+    user_grade: null,
+    setter: '',
+    stars: 0,
+    repeats: 0,
+    is_benchmark: false,
+    method: null,
+    holds: p.holds,
   }
 }
 
