@@ -139,7 +139,7 @@ begin
             return false;
         end if;
         if jsonb_typeof(_e -> 't') <> 'string'
-           or (_e ->> 't') not in ('start', 'left', 'right', 'match', 'end') then
+           or (_e ->> 't') not in ('start', 'left', 'right', 'match', 'end', 'foot') then
             return false;
         end if;
     end loop;

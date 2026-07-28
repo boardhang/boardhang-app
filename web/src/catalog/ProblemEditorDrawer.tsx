@@ -38,6 +38,7 @@ import { DEFAULT_GRADE, FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
 import { holdSetContext, setIdAt } from '../board/holdSetMembership'
 import { center } from '../board/renderGeometry'
 import { holdColor, holdLabel, type HoldType } from '../types'
+import type { CatalogHold } from './catalogSync'
 import {
   clearDraft,
   readDraft,
@@ -52,6 +53,7 @@ import { errorMessage } from './userProblemsSync'
 import type { UserProblem } from './userProblemsTypes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import {
   Dialog,
@@ -77,9 +79,16 @@ const TARGET_COLUMN_RATIO = 0.9
  *  see defaultRole: it starts at what the tap most likely means. */
 const CYCLE: (HoldType | null)[] = [null, 'start', 'right', 'end']
 
-/** Roles the palette paints. The cycle already reaches start and end; the palette exists
- *  for the beta moves, which have no place in a three-step cycle (KTD8). */
-const BRUSH_ROLES: HoldType[] = ['left', 'right', 'match']
+/** Roles the palette paints — the beta annotations (hand-specific holds, matches, and
+ *  footholds), which have no place in the tap cycle (KTD8). The palette only renders
+ *  while the Beta toggle is on; without it a problem is plain start/hold/end. */
+const BRUSH_ROLES: HoldType[] = ['left', 'match', 'foot']
+
+/** Whether a draft carries beta annotations — flips the Beta toggle on when a draft or
+ *  edit target restores with them, so its holds don't render collapsed and mysterious. */
+function hasBetaHolds(holds: CatalogHold[]): boolean {
+  return holds.some((h) => h.t === 'left' || h.t === 'match' || h.t === 'foot')
+}
 
 /** Grades an author can pick, floored at 6A+ like every other grade surface (issue #96). */
 const AUTHORABLE_GRADES = FONT_GRADES.slice(GRADE_FILTER_FLOOR)
@@ -177,6 +186,10 @@ export function ProblemEditorDrawer({
     editing ? draftFrom(editing) : readDraft(board.layoutId, angle),
   )
   const [brush, setBrush] = useState<HoldType | null>(null)
+  // Beta annotations off by default: most problems are plain start/hold/end, and the
+  // palette only matters when the author wants hand/foot beta. Auto-enabled when a
+  // restored draft or edit target already carries beta holds (see the open effect).
+  const [beta, setBeta] = useState(false)
   // Dirty *since open* (KTD10): a restored draft alone must not demand a discard
   // confirmation — only edits made in this sitting do. In edit mode the state starts at the
   // loaded snapshot, so the same flag means "differs from what was loaded".
@@ -207,7 +220,9 @@ export function ProblemEditorDrawer({
   useEffect(() => {
     if (!open) return
     sessionRef.current++
-    setDraft(editing ? draftFrom(editing) : readDraft(board.layoutId, angle))
+    const restored = editing ? draftFrom(editing) : readDraft(board.layoutId, angle)
+    setDraft(restored)
+    setBeta(hasBetaHolds(restored.holds))
     setBrush(null)
     setDirty(false)
     setSendError(null)
@@ -406,7 +421,7 @@ export function ProblemEditorDrawer({
     try {
       await bleClient.send(
         draft.holds.map((h) => ({ col: h.c, row: h.r, type: h.t })),
-        { rows: g.numRows, flipped: getFlipped(board.layoutId), showBeta: true },
+        { rows: g.numRows, flipped: getFlipped(board.layoutId), showBeta: beta },
       )
     } catch (err) {
       if (sessionRef.current === session) setSendError(describeBleError(err))
@@ -453,34 +468,51 @@ export function ProblemEditorDrawer({
               </div>
             </div>
 
-            {/* Role palette. No brush = the tap cycle; a brush paints its role directly. */}
+            {/* Beta row. Off (the default): plain problems — taps place start/hold/end and
+                beta holds render collapsed blue. On: the brush palette paints the beta
+                annotations (left / match / foot). No brush = the tap cycle either way. */}
             <div className="flex shrink-0 items-center gap-2 overflow-x-auto px-4 pb-3">
-              <Button
-                variant={brush === null ? 'secondary' : 'ghost'}
-                size="sm"
-                aria-pressed={brush === null}
-                onClick={() => setBrush(null)}
-              >
-                Cycle
-              </Button>
-              {BRUSH_ROLES.map((role) => (
-                <Button
-                  key={role}
-                  variant={brush === role ? 'secondary' : 'ghost'}
-                  size="sm"
-                  aria-label={`${holdLabel[role]} brush`}
-                  aria-pressed={brush === role}
-                  className="gap-2"
-                  onClick={() => setBrush(brush === role ? null : role)}
-                >
-                  <span
-                    aria-hidden
-                    className="size-3 rounded-full border"
-                    style={{ backgroundColor: `${holdColor[role]}59`, borderColor: holdColor[role] }}
-                  />
-                  {holdLabel[role]}
-                </Button>
-              ))}
+              <span className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+                <Switch
+                  aria-label="Beta annotations"
+                  checked={beta}
+                  onCheckedChange={(on) => {
+                    setBeta(on)
+                    if (!on) setBrush(null)
+                  }}
+                />
+                Beta
+              </span>
+              {beta && (
+                <>
+                  <Button
+                    variant={brush === null ? 'secondary' : 'ghost'}
+                    size="sm"
+                    aria-pressed={brush === null}
+                    onClick={() => setBrush(null)}
+                  >
+                    Cycle
+                  </Button>
+                  {BRUSH_ROLES.map((role) => (
+                    <Button
+                      key={role}
+                      variant={brush === role ? 'secondary' : 'ghost'}
+                      size="sm"
+                      aria-label={`${holdLabel[role]} brush`}
+                      aria-pressed={brush === role}
+                      className="gap-2"
+                      onClick={() => setBrush(brush === role ? null : role)}
+                    >
+                      <span
+                        aria-hidden
+                        className="size-3 rounded-full border"
+                        style={{ backgroundColor: `${holdColor[role]}59`, borderColor: holdColor[role] }}
+                      />
+                      {holdLabel[role]}
+                    </Button>
+                  ))}
+                </>
+              )}
             </div>
 
             <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3">
@@ -491,7 +523,7 @@ export function ProblemEditorDrawer({
                 className="flex h-full max-w-full items-center justify-center"
                 style={{ aspectRatio: `${g.width} / ${g.height}` }}
               >
-                <CatalogBoard board={board} holds={draft.holds} showBeta visibleHoldSetIds={visible}>
+                <CatalogBoard board={board} holds={draft.holds} showBeta={beta} visibleHoldSetIds={visible}>
                   {positions.map(({ col, row, x, y }) => {
                     const role = roleAt.get(`${col}-${row}`) ?? null
                     return (

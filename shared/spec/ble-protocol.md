@@ -39,9 +39,11 @@ Example: `l#S0,P14,P40,E131#` — start at LED 0, moves at 14 and 40, end at 131
 | `P`    | move / plain (beta-off collapse, single-LED calibration) | blue |
 
 `P` is what the firmware documents as a plain "move" LED. When beta is off the app
-collapses left/right/match to a single move color (see data-model.md); the Swift
+collapses left/right/match/foot to a single move color (see data-model.md); the Swift
 `message(for:)` emits the *displayed* role's protocol letter, so with beta off those
-tokens go out as the blue "right"/move letter.
+tokens go out as the blue "right"/move letter. The web-added `foot` role has no
+firmware letter of its own and always goes out as `P` — its turquoise color exists on
+screen only.
 
 ### Special messages
 

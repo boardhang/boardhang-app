@@ -192,9 +192,23 @@ describe('ProblemEditorDrawer — tap cycle', () => {
 })
 
 describe('ProblemEditorDrawer — role brush palette', () => {
-  it('assigns left and match with an explicit brush, and un-assigns a same-role tap', async () => {
+  it('hides the palette until the Beta toggle is switched on (off by default)', async () => {
     open()
     await screen.findByRole('dialog')
+
+    expect(screen.queryByRole('button', { name: 'Left brush' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Foot brush' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Beta annotations' }))
+    expect(screen.getByRole('button', { name: 'Left brush' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Match brush' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Foot brush' })).toBeInTheDocument()
+  })
+
+  it('assigns left, match and foot with an explicit brush, and un-assigns a same-role tap', async () => {
+    open()
+    await screen.findByRole('dialog')
+    fireEvent.click(screen.getByRole('switch', { name: 'Beta annotations' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Left brush' }))
     fireEvent.click(target('A1, empty'))
@@ -204,11 +218,31 @@ describe('ProblemEditorDrawer — role brush palette', () => {
     fireEvent.click(target('B2, empty'))
     expect(target('B2, match hold')).toBeInTheDocument()
 
+    fireEvent.click(screen.getByRole('button', { name: 'Foot brush' }))
+    fireEvent.click(target('A2, empty'))
+    expect(target('A2, foot hold')).toBeInTheDocument()
+
     // Tapping a hold that already carries the active brush's role removes it.
-    fireEvent.click(target('B2, match hold'))
-    expect(target('B2, empty')).toBeInTheDocument()
-    // The left hold, painted with a different brush, is untouched.
+    fireEvent.click(target('A2, foot hold'))
+    expect(target('A2, empty')).toBeInTheDocument()
+    // Holds painted with other brushes are untouched.
     expect(target('A1, left hold')).toBeInTheDocument()
+    expect(target('B2, match hold')).toBeInTheDocument()
+  })
+
+  it('drops the active brush when Beta toggles off, so taps fall back to the plain roles', async () => {
+    open()
+    await screen.findByRole('dialog')
+    const toggle = () => screen.getByRole('switch', { name: 'Beta annotations' })
+
+    fireEvent.click(toggle())
+    fireEvent.click(screen.getByRole('button', { name: 'Left brush' }))
+    fireEvent.click(toggle())
+    expect(screen.queryByRole('button', { name: 'Left brush' })).toBeNull()
+
+    // The next tap is a plain default (first placement = start), not a leftover left brush.
+    fireEvent.click(target('A1, empty'))
+    expect(target('A1, start hold')).toBeInTheDocument()
   })
 })
 
@@ -243,7 +277,8 @@ describe('ProblemEditorDrawer — light up', () => {
     await waitFor(() =>
       expect(ble.bleClient.send).toHaveBeenCalledWith(
         [{ col: 0, row: 1, type: 'start' }],
-        expect.objectContaining({ rows: board.geometry.numRows, showBeta: true }),
+        // Beta is off by default, so the wall lights the plain collapsed colors.
+        expect.objectContaining({ rows: board.geometry.numRows, showBeta: false }),
       ),
     )
     expect(reportProblemLit).not.toHaveBeenCalled()

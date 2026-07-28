@@ -16,6 +16,12 @@ color the firmware lights on the strip.
 | right  | `R`             | blue                     |
 | match  | `M`             | pink                     |
 | end    | `E`             | red                      |
+| foot   | `P` (see note)  | turquoise (screen only)  |
+
+`foot` is a web-added beta role (a foothold). The firmware's letter set predates it and
+has no foothold color, so on the wall a foot hold lights as the plain move LED (`P`,
+blue); the turquoise is display-only. A future firmware revision could add a dedicated
+letter.
 
 ### Beta-collapse rule
 
@@ -23,7 +29,7 @@ The "Show beta" setting controls whether the individual hand roles are shown:
 
 - **Beta on:** every role displays/lights as itself (green / violet / blue / pink /
   red).
-- **Beta off:** the move roles **left, right, match all collapse to `right`** (blue).
+- **Beta off:** the move roles **left, right, match, foot all collapse to `right`** (blue).
   Only start (green), the collapsed move (blue), and end (red) remain. The BLE message
   is built from the *displayed* role, so with beta off those holds go out as the blue
   move letter.

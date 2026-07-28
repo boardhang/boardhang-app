@@ -310,6 +310,17 @@ begin
         values (gen_random_uuid(), auth.uid(), repeat('n', 60), '8B+/8B++', 7, 40, _holds, 'public');
     raise notice 'PASS: a public row at the exact name/grade/holds boundary (60/8/60) is accepted, '
                  'with ordinary integer coordinates';
+
+    -- Every role the client can place, incl. the foothold role the beta toggle paints.
+    -- Hard-deleted again straight away (owner DELETE, 0002) so the cross-user row counts
+    -- asserted further down stay untouched by this probe.
+    insert into public.user_problems
+            (id, user_id, name, grade, layout_id, angle, holds, visibility)
+        values ('b0000000-0000-4000-8000-000000000099', auth.uid(), 'All Roles', '6B+', 7, 40,
+                '[{"c":0,"r":1,"t":"start"},{"c":1,"r":2,"t":"left"},{"c":2,"r":3,"t":"right"},{"c":3,"r":4,"t":"match"},{"c":4,"r":5,"t":"foot"},{"c":5,"r":12,"t":"end"}]'::jsonb,
+                'public');
+    raise notice 'PASS: a public row using all six roles (start/left/right/match/foot/end) is accepted';
+    delete from public.user_problems where id = 'b0000000-0000-4000-8000-000000000099';
 end $$;
 
 -- The rejection matrix. Each shape is refused on a live public row …

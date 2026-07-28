@@ -248,10 +248,13 @@ else on the route, and it is scoped to the routed board+angle.
   empty position takes the role it most likely means: the board's top row defaults to the end hold,
   the first two placements elsewhere default to start, and everything after is a move — capped at
   two starts and two ends (one per hand), with a full role falling through to the next default.
-  Repeat taps cycle the hold onward (start → move → end → empty, skipping an over-cap end); the
-  brush palette assigns the beta roles (left / right / match), and tapping a hold that already
-  carries the active brush removes it. Only positions owned by an installed hold set are tappable —
-  see [multi-board-model.md](multi-board-model.md).
+  Repeat taps cycle the hold onward (start → move → end → empty, skipping an over-cap end). A
+  Beta toggle (off by default) reveals the brush palette for the beta annotations — left / match /
+  foot (foot is turquoise on screen; the firmware has no foothold color, so it lights as a plain
+  move) — and drives the board's and light-up's show-beta rendering; toggling it off drops the
+  active brush. It auto-enables when a restored draft or edit target already carries beta holds.
+  Tapping a hold that already carries the active brush removes it. Only positions owned by an
+  installed hold set are tappable — see [multi-board-model.md](multi-board-model.md).
 - **Light-up** sends BLE directly and deliberately does **not** report a lit problem to an active
   session: an unsaved draft must never become the crew's shared "on the wall" problem.
 - **Drafts survive the tab going away.** The create editor persists its whole draft (holds, name,

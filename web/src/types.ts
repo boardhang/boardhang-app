@@ -1,25 +1,30 @@
 // Hold roles + placed holds. TS mirror of shared/spec/data-model.md
 // (ported from ios/MoonBoardLED/Models/HoldType.swift).
 
-/** The official MoonBoard hold roles. */
-export type HoldType = 'start' | 'left' | 'right' | 'match' | 'end'
+/** The official MoonBoard hold roles, plus `foot` (a foothold — beta info like left/match). */
+export type HoldType = 'start' | 'left' | 'right' | 'match' | 'end' | 'foot'
 
-/** Letter sent in the BLE message (e.g. the "S" in "S0"). */
+/** Letter sent in the BLE message (e.g. the "S" in "S0"). The firmware's letter set has
+ *  no foothold color (see shared/spec/ble-protocol.md), so `foot` goes out as the plain
+ *  move LED (`P`, blue) — on screen it stays turquoise. */
 export const protocolLetter: Record<HoldType, string> = {
   start: 'S',
   left: 'L',
   right: 'R',
   match: 'M',
   end: 'E',
+  foot: 'P',
 }
 
-/** On-screen color, chosen to mirror the firmware's LED colors. */
+/** On-screen color, chosen to mirror the firmware's LED colors (foot has no firmware
+ *  color — turquoise is screen-only). */
 export const holdColor: Record<HoldType, string> = {
   start: '#22c55e', // green
   left: '#a855f7', // violet
   right: '#3b82f6', // blue
   match: '#ec4899', // pink
   end: '#ef4444', // red
+  foot: '#2dd4bf', // turquoise
 }
 
 /** Human label for a role. */
@@ -29,6 +34,7 @@ export const holdLabel: Record<HoldType, string> = {
   right: 'Right',
   match: 'Match',
   end: 'End',
+  foot: 'Foot',
 }
 
 /**
