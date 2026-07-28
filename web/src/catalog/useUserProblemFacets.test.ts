@@ -17,6 +17,8 @@ function row(over: Partial<UserProblemRow> & { id: string; user_id: string }): U
     source_catalog_id: userProblemCatalogId(over.id),
     updated_at: '2026-07-01T00:00:00Z',
     deleted: false,
+    setter_user_id: null,
+    setter_handle: null,
     ...over,
   }
 }

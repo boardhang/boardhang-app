@@ -2,10 +2,18 @@
 // immediately for a fast first paint, then refreshes it via the best-effort
 // delta sync. Surfaces loading and a `degraded` flag so the UI can show cached
 // results with an offline banner (see the catalog list, U8).
+//
+// It is also where the two problem sources meet: opening a board (and pulling to refresh)
+// syncs the imported catalog AND the slab's public custom problems, whose snapshot is what
+// retracts a problem its author unpublished (KTD5).
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { readSlab, resyncSlab, syncSlab, type CatalogProblem } from './catalogSync'
-import { loadUserProblems, subscribeUserProblemsChanged } from './userProblemsStore'
+import {
+  loadUserProblems,
+  subscribeUserProblemsChanged,
+  syncPublicUserProblems,
+} from './userProblemsStore'
 
 export interface SlabState {
   /** The slab's problems (cached, then refreshed). */
@@ -34,13 +42,38 @@ export function useSlab(layoutId: number, angle: number): SlabState {
   const slabRef = useRef({ layoutId, angle })
   slabRef.current = { layoutId, angle }
 
+  /**
+   * Pull the slab's public custom problems (KTD5). Fired from the same two places the
+   * imported catalog syncs — screen open and pull-to-refresh — and for signed-out visitors
+   * too, since public rows are anon-readable.
+   *
+   * It never sets `problems`: the rows land in the user-problems database and reach this
+   * hook through the change subscription below, which owns the merged re-read. All that
+   * comes back here is the sync outcome, folded into `degraded` so a failed snapshot shows
+   * up in the same offline banner an imported-catalog failure does — quietly, with whatever
+   * is cached still on screen.
+   */
+  const pullPublicSnapshot = useCallback(async (): Promise<boolean> => {
+    const { synced } = await syncPublicUserProblems(layoutId, angle).catch(() => ({
+      synced: false,
+    }))
+    if (!synced && slabRef.current.layoutId === layoutId && slabRef.current.angle === angle) {
+      setState((prev) => ({ ...prev, degraded: true }))
+    }
+    return synced
+  }, [layoutId, angle])
+
   const resync = useCallback(async (): Promise<boolean> => {
     const { problems, synced } = await resyncSlab(layoutId, angle)
     if (slabRef.current.layoutId === layoutId && slabRef.current.angle === angle) {
       setState({ problems, loading: false, degraded: !synced })
     }
-    return synced
-  }, [layoutId, angle])
+    // Always second, never in parallel: the snapshot's rows reach this state through the
+    // change subscription below, so a setState from here racing one from there could drop
+    // them. See the same ordering in load().
+    const publicSynced = await pullPublicSnapshot()
+    return synced && publicSynced
+  }, [layoutId, angle, pullPublicSnapshot])
 
   useEffect(() => {
     let cancelled = false
@@ -68,13 +101,17 @@ export function useSlab(layoutId: number, angle: number): SlabState {
         const cached = await readSlab(layoutId, angle).catch(() => [] as CatalogProblem[])
         if (!cancelled) setState({ problems: cached, loading: false, degraded: true })
       }
+
+      // Last, so the imported rows paint without waiting on it and no setState from here
+      // can lose a repaint the snapshot's own notification triggered.
+      if (!cancelled) await pullPublicSnapshot()
     }
 
     void load()
     return () => {
       cancelled = true
     }
-  }, [layoutId, angle])
+  }, [layoutId, angle, pullPublicSnapshot])
 
   // Custom problems are merged into the slab from a second database that this hook never
   // syncs, so a save, edit or delete reaches an already-open list only through the store's

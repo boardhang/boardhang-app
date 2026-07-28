@@ -25,6 +25,7 @@ import {
   hasUserProblemsCursor,
   readCachedUserId,
   setCachedUserId,
+  syncPublicUserProblemsForSlab,
   syncUserProblems,
 } from './userProblemsSync'
 import {
@@ -91,9 +92,39 @@ function isOfflineError(err: unknown): boolean {
   )
 }
 
+/**
+ * The server-side publish rules (migration 0019) are plpgsql `raise exception`s and CHECK
+ * constraints, and they reach the client as raw postgres text — a constraint name is not
+ * something to show an author. Each entry maps a stable fragment of the server's wording to
+ * copy that says what to do about it.
+ *
+ * Fragments, not whole sentences: the exact server strings live in the migration and may be
+ * reworded, and matching a fragment keeps that from silently degrading into a leaked
+ * constraint name. Anything unmatched falls through to the raw message — a wrong-but-honest
+ * error beats a friendly one that hides which rule fired.
+ */
+const PUBLISH_REJECTIONS: Array<[RegExp, string]> = [
+  [
+    /profile handle/i,
+    'Pick a profile handle before publishing — a public problem is credited to its setter.',
+  ],
+  [
+    /public problem (limit|cap)/i,
+    "You've published as many public problems as the limit allows. Make one private or delete one before publishing another.",
+  ],
+  [
+    /user_problems_public_complete|holds_valid/i,
+    'A public problem needs a name of 60 characters or fewer and a valid set of holds.',
+  ],
+]
+
 function writeError(err: unknown, offlineMessage: string): Error {
   if (isOfflineError(err)) return new Error(offlineMessage)
-  return err instanceof Error ? err : new Error(errorMessage(err))
+  const message = errorMessage(err)
+  for (const [pattern, readable] of PUBLISH_REJECTIONS) {
+    if (pattern.test(message)) return new Error(readable)
+  }
+  return err instanceof Error ? err : new Error(message)
 }
 
 // ─── Loads ────────────────────────────────────────────────────────────────────
@@ -114,6 +145,39 @@ export async function refreshUserProblems(): Promise<{ synced: boolean }> {
   if (!userId) return { synced: false }
   const { synced } = await syncUserProblems(userId, notifyUserProblemsChanged)
   return { synced }
+}
+
+/**
+ * Pull one slab's public problems and reconcile the cache against that snapshot (KTD5).
+ * Runs on catalog screen open and pull-to-refresh, signed in or not — public rows are
+ * anon-readable, and a signed-out visitor browses the same catalog a signed-in one does.
+ *
+ * This is the store's half of the split: it resolves who "own" is and supplies the eviction
+ * that prunes recents/favorites and repaints the list, while userProblemsSync owns the pull
+ * and the reconcile.
+ */
+export async function syncPublicUserProblems(
+  layoutId: number,
+  angle: number,
+): Promise<{ synced: boolean }> {
+  const { synced } = await syncPublicUserProblemsForSlab(layoutId, angle, await ownUserId(), {
+    evict: evictUserProblems,
+    onApplied: notifyUserProblemsChanged,
+  })
+  return { synced }
+}
+
+/**
+ * Whose rows the snapshot must not touch. The live session is authoritative, but a cache
+ * whose identity clear failed (IndexedDB quota, private mode) can still hold the previous
+ * user's rows while the session reads null — so the cached identity is the fallback fence.
+ * Getting this wrong deletes somebody's own problems, and there is no server copy of a
+ * private row we could re-pull.
+ */
+async function ownUserId(): Promise<string | null> {
+  const session = await currentUserId()
+  if (session) return session
+  return (await readCachedUserId()) || null
 }
 
 // ─── Mutations (optimistic, write-through, rollback on error) ─────────────────
@@ -148,6 +212,10 @@ export async function createUserProblem(input: NewUserProblem): Promise<UserProb
     // from pulled rows, so a client clock skew here can't skip a delta.
     updated_at: new Date().toISOString(),
     deleted: false,
+    // Attribution is the server's to stamp (KTD7). Optimistically claiming a handle here
+    // would show the author a credit the server might refuse to grant.
+    setter_user_id: null,
+    setter_handle: null,
   }
   await cacheUserProblems([optimistic], gen)
   notifyUserProblemsChanged()
@@ -174,8 +242,10 @@ export async function updateUserProblem(
   return patchUserProblem(sourceCatalogId, patch)
 }
 
-/** Publish or unpublish a problem. Storing `public` is allowed today; nobody else can read
- *  it until 0019 adds the cross-user read policy. */
+/** Publish or unpublish a problem. Publishing is where the server's rules bite — the handle
+ *  gate, the public cap, the completeness CHECK — so its failures come back as the readable
+ *  messages {@link PUBLISH_REJECTIONS} maps. Retracting propagates to other devices by
+ *  absence from their next slab snapshot (R12/AE2), never as a message we send. */
 export async function setUserProblemVisibility(
   sourceCatalogId: string,
   visibility: UserProblemVisibility,

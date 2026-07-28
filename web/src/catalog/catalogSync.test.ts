@@ -266,6 +266,8 @@ const userRow = (id: string, over: Partial<UserProblemRow> = {}): UserProblemRow
   source_catalog_id: `user:${id}`,
   updated_at: '2026-01-01T00:00:00+00:00',
   deleted: false,
+  setter_user_id: null,
+  setter_handle: null,
   ...over,
 })
 
@@ -333,6 +335,24 @@ describe('merging user-authored problems into the catalog', () => {
       method: null,
       holds: [{ c: 3, r: 4, t: 'start' }],
     })
+  })
+
+  it('attributes a public custom problem to its setter, like an imported one', async () => {
+    // `setter_handle` is stamped server-side on publish (0019/KTD7) and is what the catalog
+    // row and detail render as "by <handle>" — the same field the imported catalog uses, so
+    // no surface needs to know where the problem came from.
+    await cacheUserProblems([
+      userRow('shared', {
+        user_id: 'author-2',
+        visibility: 'public',
+        setter_user_id: 'author-2',
+        setter_handle: 'lorna',
+      }),
+    ])
+
+    const resolved = (await getCatalogProblemsByIds(['user:shared'])).get('user:shared')
+
+    expect(resolved?.setter).toBe('lorna')
   })
 
   it('keeps custom problems through a rebuild, which only wipes the imported cache (AE4)', async () => {

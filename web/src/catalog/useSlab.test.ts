@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CatalogProblem, SyncResult } from './catalogSync'
 import { readSlab, resyncSlab, syncSlab } from './catalogSync'
+import { loadUserProblems, syncPublicUserProblems } from './userProblemsStore'
 import { useSlab } from './useSlab'
 
 vi.mock('./catalogSync', () => ({
@@ -10,9 +11,18 @@ vi.mock('./catalogSync', () => ({
   resyncSlab: vi.fn(),
 }))
 
+// The user-problems lane is stubbed here; useSlabUserProblems.test.ts drives the real one
+// (both IndexedDB databases, only Supabase faked) end to end.
+vi.mock('./userProblemsStore', () => ({
+  loadUserProblems: vi.fn(),
+  syncPublicUserProblems: vi.fn(),
+  subscribeUserProblemsChanged: vi.fn(() => () => {}),
+}))
+
 const readSlabMock = vi.mocked(readSlab)
 const syncSlabMock = vi.mocked(syncSlab)
 const resyncSlabMock = vi.mocked(resyncSlab)
+const syncPublicMock = vi.mocked(syncPublicUserProblems)
 
 function problem(id: string): CatalogProblem {
   return {
@@ -44,6 +54,8 @@ function defer<T>() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(loadUserProblems).mockResolvedValue({ synced: true })
+  syncPublicMock.mockResolvedValue({ synced: true })
 })
 
 describe('useSlab', () => {
@@ -143,6 +155,35 @@ describe('useSlab', () => {
       expect(ok).toBe(false)
     })
     expect(result.current.degraded).toBe(true)
+  })
+
+  it('pulls the slab’s public snapshot on open and again on pull-to-refresh', async () => {
+    readSlabMock.mockResolvedValue([])
+    syncSlabMock.mockResolvedValue(synced([]))
+    resyncSlabMock.mockResolvedValue(synced([]))
+
+    const { result } = renderHook(() => useSlab(7, 40))
+    await waitFor(() => expect(syncPublicMock).toHaveBeenCalledWith(7, 40))
+
+    await act(async () => {
+      await result.current.resync()
+    })
+    expect(syncPublicMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('flags degraded when only the public snapshot fails, keeping the imported rows', async () => {
+    const cached = [problem('e')]
+    readSlabMock.mockResolvedValue(cached)
+    syncSlabMock.mockResolvedValue(synced(cached))
+    syncPublicMock.mockResolvedValue({ synced: false })
+
+    const { result } = renderHook(() => useSlab(7, 40))
+
+    await waitFor(() => expect(result.current.degraded).toBe(true))
+    // A failed snapshot is a degraded sync, not an empty catalog: the imported rows that did
+    // arrive still paint, and the cached public rows stay put (nothing is evicted).
+    expect(result.current.problems).toEqual(cached)
+    expect(result.current.loading).toBe(false)
   })
 
   it('discards a stale slab response that resolves after a newer one', async () => {

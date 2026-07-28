@@ -75,6 +75,12 @@ function rejectServerOwnedColumns(
   if ('updated_at' in payload) {
     return { data: null, error: { message: 'updated_at is trigger-owned' } }
   }
+  // 0019's attribution columns are stamped by trigger from auth.uid() and the caller's
+  // profile (KTD7). A client that sent them would be trying to publish under someone else's
+  // name, so the fake refuses them the way the trigger's re-stamp effectively does.
+  if ('setter_user_id' in payload || 'setter_handle' in payload) {
+    return { data: null, error: { message: 'setter attribution is trigger-owned' } }
+  }
   return null
 }
 
@@ -121,6 +127,7 @@ import {
   evictUserProblems,
   setUserProblemVisibility,
   subscribeUserProblemsChanged,
+  syncPublicUserProblems,
   syncUserProblemsIdentity,
   updateUserProblem,
 } from './userProblemsStore'
@@ -152,6 +159,8 @@ function cachedRow(id: string, overrides: Partial<UserProblemRow> = {}): UserPro
     source_catalog_id: `user:${id}`,
     updated_at: '2026-01-01T00:00:00+00:00',
     deleted: false,
+    setter_user_id: null,
+    setter_handle: null,
     ...overrides,
   }
 }
@@ -291,6 +300,73 @@ describe('evictUserProblems', () => {
     expect(getFavoriteIds().has('user:gone')).toBe(false)
     // Local only — nothing was written to the server.
     expect(h.writePayloads).toEqual([])
+  })
+})
+
+describe('syncPublicUserProblems', () => {
+  it('evicts a retracted public row, prunes its dangling ids, and repaints the list', async () => {
+    // The fake serves an empty snapshot, i.e. user B retracted everything they had published.
+    await cacheUserProblems([cachedRow('gone', { user_id: 'user-B', visibility: 'public' })])
+    recordRecent(LAYOUT, ANGLE, 'user:gone')
+    toggleFavorite('user:gone')
+    const seen = vi.fn()
+    subscribeUserProblemsChanged(seen)
+
+    const { synced } = await syncPublicUserProblems(LAYOUT, ANGLE)
+
+    expect(synced).toBe(true)
+    expect(await readUserProblemsForSlab(LAYOUT, ANGLE)).toEqual([])
+    expect(getRecentIds(LAYOUT, ANGLE)).toEqual([])
+    expect(getFavoriteIds().has('user:gone')).toBe(false)
+    // The eviction has to reach a mounted catalog list — nothing else tells it the row went.
+    expect(seen).toHaveBeenCalled()
+    // Local only: a snapshot never writes back.
+    expect(h.writePayloads).toEqual([])
+  })
+
+  it('keeps the signed-in user’s own rows, which the public snapshot never lists', async () => {
+    await cacheUserProblems([cachedRow('mine'), cachedRow('theirs', { user_id: 'user-B' })])
+
+    await syncPublicUserProblems(LAYOUT, ANGLE)
+
+    expect((await readUserProblemsForSlab(LAYOUT, ANGLE)).map((p) => p.id)).toEqual(['mine'])
+  })
+})
+
+describe('publish rejections', () => {
+  // 0019 enforces the publish rules with plpgsql `raise exception`, which reaches the client
+  // as the raw postgres message. These assert the store turns each into copy an author can
+  // act on — keyed on a stable fragment, not the whole sentence.
+  it('explains a missing profile handle', async () => {
+    const saved = await createUserProblem(newProblem())
+    h.errorOn.add('user_problems.update')
+    h.errorMessage =
+      'Pick a profile handle before publishing a problem — a public problem is credited to its setter.'
+
+    await expect(setUserProblemVisibility(saved.sourceCatalogId, 'public')).rejects.toThrow(
+      /profile handle/i,
+    )
+  })
+
+  it('explains the public cap without leaking the postgres wording', async () => {
+    const saved = await createUserProblem(newProblem())
+    h.errorOn.add('user_problems.update')
+    h.errorMessage =
+      'Public problem limit reached: 50 already published (max 50). Make one private or delete it before publishing another.'
+
+    await expect(setUserProblemVisibility(saved.sourceCatalogId, 'public')).rejects.toThrow(
+      /make one private or delete one/i,
+    )
+  })
+
+  it('explains a rejected public row instead of quoting the check constraint', async () => {
+    h.errorOn.add('user_problems.insert')
+    h.errorMessage =
+      'new row for relation "user_problems" violates check constraint "user_problems_public_complete"'
+
+    await expect(createUserProblem(newProblem({ visibility: 'public' }))).rejects.toThrow(
+      /name.*holds|holds.*name/i,
+    )
   })
 })
 

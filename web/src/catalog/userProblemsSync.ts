@@ -25,6 +25,13 @@ import {
   type UserProblemRow,
 } from './userProblemsTypes'
 
+// Two lanes feed this cache and they must not fight over the same rows (KTD4/KTD5):
+// OWN rows arrive on the `updated_at` cursor delta above, tombstones included; OTHER users'
+// PUBLIC rows arrive as a full per-slab snapshot below, where absence — not a tombstone — is
+// what retracts a row. The snapshot never applies own rows even though the query returns
+// them: the delta lane already owns them, and a snapshot page fetched moments before an
+// optimistic delete would otherwise resurrect a problem its author just removed.
+
 const DB_NAME = 'moonboard-user-problems'
 const DB_VERSION = 1
 const STORE = 'problems'
@@ -215,6 +222,129 @@ async function applyPage(rows: UserProblemRow[], gen: number): Promise<string> {
  *  paint from cache with no automatic network. */
 export function hasUserProblemsCursor(): boolean {
   return localStorage.getItem(CURSOR_KEY) !== null
+}
+
+// ─── Public per-slab snapshot (KTD5) ──────────────────────────────────────────
+
+/** The two policy decisions the snapshot doesn't own, injected by userProblemsStore. */
+export interface PublicSnapshotHooks {
+  /**
+   * How to drop the rows the snapshot no longer lists. Defaults to the cache-only
+   * {@link evictCachedUserProblems}; the store passes its `evictUserProblems`, which also
+   * prunes the dangling id from recents and favorites and fires the change notification —
+   * so production evictions repaint the open list and the test default stays dependency-free.
+   */
+  evict?: (ids: string[]) => Promise<void>
+  /** Fired once per applied page, like {@link syncUserProblems}'s `onApplied`. */
+  onApplied?: () => void
+}
+
+/**
+ * Page one slab's full list of live public problems. No cursor and no tombstones: this is a
+ * snapshot, so the caller compares it against the cache and treats ABSENCE as retraction.
+ *
+ * Ordered by `id`, not `updated_at`: a snapshot is paged across several round-trips, and a
+ * row edited between two of them would slide to the end of an `updated_at` ordering and be
+ * missed entirely (it would then be evicted as "absent" until the next sync). `id` never
+ * changes, so only genuine inserts and deletes shift the windows. The set is small by design
+ * — per-user cap × active setters, per slab — so sorting it costs nothing.
+ */
+export async function eachPublicUserProblemPage(
+  client: NonNullable<typeof supabase>,
+  layoutId: number,
+  angle: number,
+  onPage: (page: UserProblemRow[]) => void | Promise<void>,
+): Promise<void> {
+  for (let from = 0; ; ) {
+    const page = await fetchPublicPage(client, layoutId, angle, from)
+    if (page.length === 0) break
+    await onPage(page)
+    from += page.length
+  }
+}
+
+/** One `range()` window of the snapshot, retried past transient failures. */
+async function fetchPublicPage(
+  client: NonNullable<typeof supabase>,
+  layoutId: number,
+  angle: number,
+  from: number,
+): Promise<UserProblemRow[]> {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= PAGE_RETRIES; attempt++) {
+    if (attempt > 0) await delay(RETRY_BASE_MS * attempt)
+    const { data, error } = await client
+      .from('user_problems')
+      .select(USER_PROBLEM_COLUMNS)
+      .eq('layout_id', layoutId)
+      .eq('angle', angle)
+      // Explicit, not left to RLS: 0019's public policy ORs with the owner policy, so an
+      // unfiltered select would hand the caller their own private rows and tombstones as
+      // part of the "public" snapshot — and every own row missing from it would then read
+      // as a retraction.
+      .eq('visibility', 'public')
+      .eq('deleted', false)
+      .order('id', { ascending: true })
+      .range(from, from + USER_PROBLEMS_PAGE_SIZE - 1)
+    if (!error) return (data ?? []) as unknown as UserProblemRow[]
+    lastError = error
+  }
+  throw lastError
+}
+
+/**
+ * Reconcile the cache with one slab's public snapshot: upsert every listed row from another
+ * setter, then evict the cached public rows the list no longer contains. That single rule
+ * covers retraction, deletion, account deletion and re-publishing with no extra machinery —
+ * the list is ground truth (KTD5, R12/AE2).
+ *
+ * `ownUserId` is the fence: own rows are never applied and never evicted. They can't be
+ * evicted safely — a private row is absent from a public snapshot by definition, so
+ * eviction-by-absence would delete the author's own work — and they don't need applying,
+ * because the cursor delta lane already syncs them, tombstones and all. Signed out
+ * (`ownUserId` null) nothing is fenced: every row that can be cached is somebody else's
+ * public one.
+ *
+ * Best-effort like every other pull. A failed page leaves the cache exactly as it was —
+ * crucially including NO eviction, so an offline device keeps browsing what it has rather
+ * than reading a failed pull as "everything was retracted".
+ */
+export async function syncPublicUserProblemsForSlab(
+  layoutId: number,
+  angle: number,
+  ownUserId: string | null,
+  hooks: PublicSnapshotHooks = {},
+): Promise<UserProblemsSyncResult> {
+  // Unconfigured Supabase is "nothing to pull", not a failure — the same degradation
+  // catalogSync's syncSlab makes, so an unconfigured build doesn't render as offline.
+  if (!supabase) return { synced: true }
+  const gen = cacheGeneration
+  const listed = new Set<string>()
+  try {
+    await eachPublicUserProblemPage(supabase, layoutId, angle, async (page) => {
+      // An identity switch mid-pull abandons the remaining pages rather than fetching a
+      // snapshot nobody will apply — the same bail-out the delta pull makes.
+      if (gen !== cacheGeneration) throw new StaleGenerationError()
+      // Own rows count as listed (nothing may evict them) but are not written.
+      for (const row of page) listed.add(row.source_catalog_id)
+      const others = page.filter((row) => row.user_id !== ownUserId)
+      if (others.length === 0) return
+      await cacheUserProblems(others, gen)
+      hooks.onApplied?.()
+    })
+  } catch (err) {
+    if (err instanceof StaleGenerationError) return { synced: false }
+    return { synced: false, error: errorMessage(err) }
+  }
+  // Re-checked after the last page: an identity switch mid-pull means this snapshot was read
+  // under the previous user's session, and its evictions would be theirs, not ours.
+  if (gen !== cacheGeneration) return { synced: false }
+  const cached = await readUserProblemsForSlab(layoutId, angle)
+  const absent = cached
+    .filter((p) => p.userId !== ownUserId && !listed.has(p.sourceCatalogId))
+    .map((p) => p.sourceCatalogId)
+  if (absent.length > 0) await (hooks.evict ?? evictCachedUserProblems)(absent)
+  return { synced: true }
 }
 
 /**

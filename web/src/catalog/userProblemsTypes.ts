@@ -5,8 +5,8 @@
 
 import type { CatalogHold, CatalogProblem } from './catalogSync'
 
-/** Sharing intent (0018). `public` is storable now but serves nobody until 0019 adds the
- *  cross-user read policy — the client may record the intent either way. */
+/** Sharing intent (0018). 0019 gives `public` its cross-user read policy, so a public row is
+ *  what every other client's per-slab snapshot pulls. */
 export type UserProblemVisibility = 'private' | 'public'
 
 /**
@@ -19,6 +19,11 @@ export type UserProblemVisibility = 'private' | 'public'
  * `source_catalog_id` is GENERATED ALWAYS ('user:' || id) server-side. It is the cache key
  * and IS selected on every read — but it must NEVER appear in an INSERT/UPDATE payload:
  * PostgREST treats it as read-only and the write would fail outright.
+ *
+ * `setter_user_id` / `setter_handle` are trigger-stamped by 0019 (KTD7) on any transition
+ * into public and nulled on the way back out. Same rule as the generated column: read them,
+ * never write them. They are null on every private row and on a row cached by an older
+ * bundle, which is why the mapper below coalesces rather than trusting the field to exist.
  */
 export interface UserProblemRow {
   id: string
@@ -32,16 +37,19 @@ export interface UserProblemRow {
   source_catalog_id: string
   updated_at: string
   deleted: boolean
+  setter_user_id: string | null
+  setter_handle: string | null
 }
 
 /**
  * The explicit column projection for every `user_problems` read and write-reconcile —
- * NEVER `*`. Keeping it in one constant is what stops a future column (0019's attribution,
- * say) from silently entering the offline cache unreviewed. Writes use
- * {@link userProblemInsertPayload} / {@link userProblemUpdatePayload}, never this list.
+ * NEVER `*`. Keeping it in one constant is what stops a future column from silently
+ * entering the offline cache unreviewed. Writes use {@link userProblemInsertPayload} /
+ * {@link userProblemUpdatePayload}, never this list: both are allowlists, so a column added
+ * here for reading cannot leak into a write payload.
  */
 export const USER_PROBLEM_COLUMNS =
-  'id, user_id, name, grade, holds, layout_id, angle, visibility, source_catalog_id, updated_at, deleted'
+  'id, user_id, name, grade, holds, layout_id, angle, visibility, source_catalog_id, updated_at, deleted, setter_user_id, setter_handle'
 
 /** The prefix migration 0018 generates onto every user problem's text id. Chosen so it
  *  cannot collide with the UUIDv5 catalog ids sharing the same lane. */
@@ -62,6 +70,11 @@ export interface UserProblem {
   visibility: UserProblemVisibility
   updatedAt: string
   deleted: boolean
+  /** Who published it, server-stamped. Null on a private row (KTD7). */
+  setterUserId: string | null
+  /** The setter's profile handle at publish time, denormalized so an anon reader — who
+   *  cannot read `profiles` at all — can still see who set a public problem. */
+  setterHandle: string | null
 }
 
 /** The text id a given user-problem uuid is referenced by — the client-side mirror of the
@@ -97,6 +110,10 @@ export function fromUserProblemRow(r: UserProblemRow): UserProblem {
     visibility: r.visibility,
     updatedAt: r.updated_at,
     deleted: r.deleted,
+    // Coalesced, not read straight through: a row cached by the pre-0019 bundle has neither
+    // key, and an undefined `setter` would render as the string "undefined" downstream.
+    setterUserId: r.setter_user_id ?? null,
+    setterHandle: r.setter_handle ?? null,
   }
 }
 
@@ -107,8 +124,9 @@ export function fromUserProblemRow(r: UserProblemRow): UserProblem {
  *
  * The imported-catalog statistics have no counterpart on an authored problem and take
  * their zero-values: nobody has starred, repeated, or benchmarked it, and it carries no
- * separate setter-suggested grade or ascent method. `setter` is empty until 0019/U7 adds
- * `setter_handle` — that migration turns this into `p.setterHandle ?? ''`.
+ * separate setter-suggested grade or ascent method. `setter` is the server-stamped
+ * `setter_handle`, so a public problem is attributed the same way an imported one is; a
+ * private row has no setter and renders like the imported rows that never had one.
  *
  * `layout_id`/`angle` fall back to 0 for a legacy iOS row that recorded no board (they are
  * non-null on `CatalogProblem`, which every imported row satisfies). Such a row only ever
@@ -123,7 +141,7 @@ export function toCatalogProblem(p: UserProblem): CatalogProblem {
     name: p.name,
     grade: p.grade,
     user_grade: null,
-    setter: '',
+    setter: p.setterHandle ?? '',
     stars: 0,
     repeats: 0,
     is_benchmark: false,
@@ -145,11 +163,15 @@ export function toUserProblemRow(p: UserProblem): UserProblemRow {
     source_catalog_id: p.sourceCatalogId,
     updated_at: p.updatedAt,
     deleted: p.deleted,
+    setter_user_id: p.setterUserId,
+    setter_handle: p.setterHandle,
   }
 }
 
-/** The INSERT payload for a new row. Deliberately omits `source_catalog_id` (generated) and
- *  `updated_at` (trigger-stamped) — supplying either makes the write fail or drift. */
+/** The INSERT payload for a new row — an allowlist, so nothing server-owned can reach the
+ *  wire. Deliberately omits `source_catalog_id` (generated), `updated_at` (trigger-stamped)
+ *  and `setter_user_id`/`setter_handle` (trigger-stamped, 0019): supplying any of them makes
+ *  the write fail or silently drift from what the server stands behind. */
 export function userProblemInsertPayload(row: UserProblemRow): Record<string, unknown> {
   return {
     id: row.id,

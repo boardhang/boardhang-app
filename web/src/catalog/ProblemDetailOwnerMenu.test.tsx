@@ -131,6 +131,9 @@ function userProblem(id: string, visibility: 'private' | 'public'): UserProblem 
     visibility,
     updatedAt: '2026-07-28T00:00:00Z',
     deleted: false,
+    // Server-stamped on publish, so a public fixture carries the handle the detail shows.
+    setterUserId: visibility === 'public' ? 'me' : null,
+    setterHandle: visibility === 'public' ? 'mine' : null,
   }
 }
 

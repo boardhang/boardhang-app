@@ -94,6 +94,8 @@ function userProblem(over: Partial<UserProblem> = {}): UserProblem {
     visibility: 'private',
     updatedAt: '2026-07-28T00:00:00Z',
     deleted: false,
+    setterUserId: null,
+    setterHandle: null,
     ...over,
   }
 }

@@ -9,6 +9,8 @@ import { IDBFactory } from 'fake-indexeddb'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createUserProblem, deleteUserProblem } from './userProblemsStore'
+import { cacheUserProblems, readUserProblemsForSlab } from './userProblemsSync'
+import type { UserProblemRow } from './userProblemsTypes'
 import { useSlab } from './useSlab'
 
 const h = vi.hoisted(() => ({ tables: [] as string[] }))
@@ -112,5 +114,50 @@ describe('useSlab and user problems', () => {
   it("pulls own problems on mount, so a failed post-sign-in pull isn't the only chance", async () => {
     renderHook(() => useSlab(7, 40))
     await waitFor(() => expect(h.tables).toContain('user_problems'))
+  })
+
+  // AE2, this device's half: user A retracted a problem user B had synced, so it is simply
+  // absent from B's next per-slab snapshot (the fake serves an empty one) and has to leave
+  // both the cache and the open list. B's logbook is untouched — an ascent row renders from
+  // its own denormalized name/grade (AscentRow reads `ascent.problemName`), which
+  // ProblemDetailOwnerMenu.test.tsx already asserts for the stronger case of a deletion.
+  it('drops another setter’s retracted problem from the mounted list on the next sync (AE2)', async () => {
+    const retracted: UserProblemRow = {
+      id: 'a-1',
+      user_id: 'author-A',
+      name: 'Was public',
+      grade: '7B',
+      holds: [],
+      layout_id: 7,
+      angle: 40,
+      visibility: 'public',
+      source_catalog_id: 'user:a-1',
+      updated_at: '2026-07-01T00:00:00+00:00',
+      deleted: false,
+      setter_user_id: 'author-A',
+      setter_handle: 'lorna',
+    }
+    await cacheUserProblems([retracted])
+    expect(await readUserProblemsForSlab(7, 40)).toHaveLength(1)
+
+    const { result } = renderHook(() => useSlab(7, 40))
+
+    // The cache first, because `problems` starts empty and would pass vacuously.
+    await waitFor(async () => expect(await readUserProblemsForSlab(7, 40)).toEqual([]))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.problems).toEqual([])
+  })
+
+  it('keeps this user’s own problem, which no public snapshot can list', async () => {
+    let saved!: { sourceCatalogId: string }
+    await act(async () => {
+      saved = await createUserProblem({ layoutId: 7, angle: 40, name: 'Mine', grade: '6C', holds: [] })
+    })
+
+    const { result } = renderHook(() => useSlab(7, 40))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    // The snapshot is empty, and evicting by absence would delete the author's own work.
+    expect(result.current.problems.map((p) => p.source_catalog_id)).toEqual([saved.sourceCatalogId])
   })
 })
