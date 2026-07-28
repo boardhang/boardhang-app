@@ -13,6 +13,7 @@
 //   - grade only for a real sub-range (`gradeRange` non-null; null = full span).
 
 import { FONT_GRADES } from '../board/grades'
+import { isStatusPaused, type SessionStatusFacet } from './pinnableFacets'
 import {
   BENCHMARK_LABEL,
   FAVORITES_LABEL,
@@ -26,6 +27,10 @@ interface ChipBase {
   /** Stable key so React never reshuffles pills on removal. */
   id: string
   label: string
+  /** Set (and therefore removable) but NOT currently applied to the list — only reachable for
+   *  session status, whose projection can go stale. The component renders it dimmed and says so
+   *  in the accessible name; see facetPaused. */
+  paused?: boolean
 }
 
 /**
@@ -38,18 +43,31 @@ export type FilterChip =
   | (ChipBase & { patch: Partial<FilterState>; onRemove?: never })
   | (ChipBase & { patch?: never; onRemove: () => void })
 
-export interface ChipContext {
-  /** A collab session targets this board — status is filtered per-member, not via
-   *  `statusFilters`. */
-  inSession: boolean
-  /** Signed in AND ascents loaded — gates the status dimension exactly like
-   *  activeFilterCount. */
-  statusReady: boolean
-  /** In a session only: how many members have ≥1 status chip selected, and how to clear them
-   *  all. Supplied by the caller (which reads the sessions store) so this module stays a pure
-   *  function of FilterState. Omitted/zero → the status slot emits nothing. */
-  sessionStatus?: { members: number; onClearAll: () => void }
-}
+/**
+ * A UNION, not an interface with an optional field — same reasoning as FacetContext: in a
+ * session the status slot can only be answered from per-member state, so a caller that says
+ * `inSession: true` must supply it. As an optional field, forgetting it silently emitted no chip
+ * — an active filter with no header trace, the bug this chip exists to prevent.
+ */
+export type ChipContext =
+  | {
+      /** No collab session targets this board — the single-user `statusFilters` path applies. */
+      inSession: false
+      /** Signed in AND ascents loaded — gates the status dimension exactly like
+       *  activeFilterCount. */
+      statusReady: boolean
+      sessionStatus?: undefined
+    }
+  | {
+      /** A collab session targets this board — status is filtered per-member, not via
+       *  `statusFilters`. */
+      inSession: true
+      statusReady: boolean
+      /** Members selected, whether the list is applying them, and how to clear them all.
+       *  Supplied by the caller (which reads the sessions store) so this module stays a pure
+       *  function of FilterState. */
+      sessionStatus: SessionStatusFacet & { onClearAll: () => void }
+    }
 
 /**
  * Removable-pill descriptors for the given filter state, in fixed category order:
@@ -100,12 +118,17 @@ export function describeActiveFilters(state: FilterState, ctx: ChipContext): Fil
   // means the per-member rows, collapsed to one chip — the same "Status (n)" the pinned control
   // shows, so unpinning the facet doesn't change what the header reads.
   if (ctx.inSession) {
-    const members = ctx.sessionStatus?.members ?? 0
+    const { members, applied, onClearAll } = ctx.sessionStatus
+    // Emitted whether or not it is applied: a paused selection is still set and still removable,
+    // so hiding it would repeat the "filter on, header silent" bug. `paused` carries the
+    // difference to the renderer.
     if (members > 0) {
       chips.push({
         id: 'status',
         label: `Status (${members})`,
-        onRemove: ctx.sessionStatus!.onClearAll,
+        // Same rule the pinned control uses — one predicate, so the two can't drift.
+        paused: isStatusPaused({ members, applied }),
+        onRemove: onClearAll,
       })
     }
   } else if (ctx.statusReady) {

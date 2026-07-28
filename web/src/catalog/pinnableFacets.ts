@@ -57,18 +57,51 @@ export const FACET_BY_ID: Record<PinnableFacetId, PinnableFacet> = Object.fromEn
   CANONICAL_ORDER.map((f) => [f.id, f]),
 ) as Record<PinnableFacetId, PinnableFacet>
 
-/** Gating context — mirrors describeActiveFilters/activeFilterCount so a facet reads "active"
- *  only when it is actually narrowing the list. */
-export interface FacetContext {
-  /** A collab session targets this board — status is per-member, so single-user status is off. */
-  inSession: boolean
-  /** Signed in AND ascents loaded — gates the status dimension. */
-  statusReady: boolean
-  /** In a session only: how many members have ≥1 status chip selected. Per-member status lives
-   *  in the sessions store, not FilterState, so this — not `statusFilters` — decides whether the
-   *  status facet reads active and what its control is labelled. */
-  sessionStatusMembers?: number
+/**
+ * Per-member status as the header needs to describe it. Two facts, deliberately separate,
+ * because a selection can exist without being applied:
+ *
+ * `members` is how many climbers you have picked statuses for — what the control is LABELLED
+ * with, and what makes it worth showing at all. `applied` is whether applyFilters is actually
+ * using them: it skips the whole per-member clause while the projection is unready
+ * (`ctx.session.ready` in filters.ts) and widens the list to everything. That happens routinely,
+ * not just on error — the projection carries a 5-minute max-age.
+ *
+ * Collapsing these two into one boolean is what produced the two bugs this facet has had: count
+ * without `applied` and the header claims a filter the list isn't running; drop the count when
+ * unapplied and a filter you set vanishes from the header with no trace. The header needs both,
+ * so it can say "set, but paused".
+ */
+export interface SessionStatusFacet {
+  /** Members with ≥1 status chip selected. */
+  members: number
+  /** Whether applyFilters is currently applying them (the projection is ready). */
+  applied: boolean
 }
+
+/**
+ * Gating context — mirrors describeActiveFilters/activeFilterCount so a facet reads "active"
+ * only when it is actually narrowing the list.
+ *
+ * A UNION, not an interface with an optional field: in a session, per-member status is the only
+ * thing that can answer the status facet, so `sessionStatus` must be present. As an optional
+ * field a new caller could pass `inSession: true` and silently get "no status filter" — exactly
+ * the bug this facet shipped with. The compiler now rejects that.
+ */
+export type FacetContext =
+  | {
+      /** No collab session targets this board — the single-user `statusFilters` path applies. */
+      inSession: false
+      /** Signed in AND ascents loaded — gates the status dimension. */
+      statusReady: boolean
+      sessionStatus?: undefined
+    }
+  | {
+      /** A collab session targets this board — status is per-member; single-user status is off. */
+      inSession: true
+      statusReady: boolean
+      sessionStatus: SessionStatusFacet
+    }
 
 /**
  * Whether a facet is currently narrowing the list. Sort is never "active" (it always has a
@@ -90,8 +123,9 @@ export function isFacetActive(id: PinnableFacetId, s: FilterState, ctx: FacetCon
       return s.minStars > 0
     case 'status':
       // In a session the single-user `statusFilters` clause is inert (applyFilters takes the
-      // per-member path), so "active" means "some member row has a selection".
-      if (ctx.inSession) return (ctx.sessionStatusMembers ?? 0) > 0
+      // per-member path), so "active" means "members are selected AND the list is applying them".
+      // A paused selection is not active — see facetPaused for the state it gets instead.
+      if (ctx.inSession) return ctx.sessionStatus.members > 0 && ctx.sessionStatus.applied
       return ctx.statusReady && s.statusFilters.length > 0
     case 'methods':
       return s.methods.length > 0
@@ -122,7 +156,10 @@ export function facetActiveLabel(id: PinnableFacetId, s: FilterState, ctx?: Face
       return s.methods.length === 1 ? s.methods[0] : `Methods (${s.methods.length})`
     case 'status': {
       if (ctx?.inSession) {
-        const members = ctx.sessionStatusMembers ?? 0
+        // Counts members REGARDLESS of `applied`: a paused selection still exists and still
+        // reapplies on refresh, so the header keeps naming it — facetPaused carries the "not
+        // running right now" part, which a bare count could never express.
+        const { members } = ctx.sessionStatus
         return members === 0 ? FACET_BY_ID.status.label : `Status (${members})`
       }
       const keys = s.statusFilters
@@ -134,6 +171,27 @@ export function facetActiveLabel(id: PinnableFacetId, s: FilterState, ctx?: Face
     default:
       return FACET_BY_ID[id].label
   }
+}
+
+/**
+ * The third state, between active and off: the user has picked statuses but the list is not
+ * applying them, because the cross-member projection went stale (5-minute max-age) or its first
+ * fetch failed. Only status can be paused — every other facet reads straight off FilterState,
+ * which is always applied.
+ *
+ * The control still names the selection ("Status (2)") but renders dimmed rather than accented,
+ * so the header tells the whole truth: this filter exists, and it is not running right now.
+ * Dimming alone is not the message — callers must also put it in the accessible name.
+ */
+export function facetPaused(id: PinnableFacetId, ctx: FacetContext): boolean {
+  if (id !== 'status' || !ctx.inSession) return false
+  return isStatusPaused(ctx.sessionStatus)
+}
+
+/** The paused rule itself, over the two facts alone — so the chip (which holds a ChipContext, not
+ *  a FacetContext) decides it the same way the pinned control does instead of re-deriving it. */
+export function isStatusPaused(s: SessionStatusFacet): boolean {
+  return s.members > 0 && !s.applied
 }
 
 /** The patch that clears a facet (used by rich facets' popover "Clear"). Sort has no cleared

@@ -127,10 +127,26 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
     in it") when the live session is on the board being removed.
 - **`memberAscentsStore.ts`** — the projection: per-member `{ sentIds, loggedIds }` Set-pairs,
   seeded from the server-consistent snapshot (marker rows → empty Sets, so a zero-ascent
-  member is never dropped from the AND-across predicate). Refetched on active-session change,
-  on foreground (`visibilitychange`), and on manual refresh. A **max-age** (5 min) drops the
-  cached map — enforced by both a timer and an on-read age check — bounding a departed
-  member's residual exposure.
+  member is never dropped from the AND-across predicate). Refetched on active-session change, on
+  foreground (`visibilitychange`), on realtime reconnect (debounced with the other nudges), on
+  manual refresh, and — while the projection is **in use**, meaning the tab is visible AND at
+  least one component is subscribed — once the map passes `REFRESH_AFTER_MS`, so it is *replaced*
+  rather than dropped. That last trigger exists because a tab held continuously in the foreground
+  (the normal way this is used at a gym) never fires `visibilitychange`, so nothing refetched and
+  the map died under the user mid-scroll — and an unready projection makes `applyFilters` skip the
+  whole per-member clause, widening the list from a filtered handful to every problem. The
+  subscriber half of "in use" is load-bearing: the store stays activated for the session's
+  lifetime (the hook has no teardown), so a visibility check alone would keep pulling the crew's
+  data while the user sits on Settings. Once dropped, it retries at `RETRY_AFTER_MS` so a brief
+  outage is not permanent — the pre-expiry branch cannot re-arm itself, since the drop nulls
+  `fetchedAt`. Every response is gated on a monotonic `fetchToken`, bumped on each fetch and on
+  every invalidation, because a session-id check alone cannot tell a current response from one
+  superseded by a newer fetch or by the drop itself — landing a stale response would resurrect a
+  purged map *and* stamp it with a fresh deadline.
+  A **max-age** (5 min) drops the cached map — enforced by both a timer and an on-read age check,
+  the latter scheduling a `notify()` so the drop reaches subscribers that did not trigger it —
+  bounding a departed member's residual exposure. The drop is evaluated **before** the refresh on
+  every tick, so the bound can never be starved by a refresh that keeps failing.
 - **`filters.ts`** (`matchesSessionStatus`) — the predicate: **OR within a member's row, AND
   across member rows, empty row = ignore**. When a session is active it replaces the
   single-user status clause (self is member row #1), gated on the projection's single atomic
@@ -156,15 +172,26 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   `clearAllMemberStatus()` (one store write + persist), because per-member status is **not** in
   `FilterState` — no `resetFilters`/`facetClearPatch` result can express it, which is why
   `FilterChip` is a union of `patch` and `onRemove`.
-- **Two questions, two selectors** (`useSessionFilterRows.ts`) — every header affordance derived
-  from per-member status goes through one of them, so none can drift from the predicate:
-  `activeStatusMemberCount()` answers *is it filtering?* and is gated on `state === 'ready'`,
-  mirroring `applyFilters`' own `ctx.session.ready` gate — with an unready projection the
-  per-member clause is skipped and the list is widened, so the pinned control, its chip and the
-  FAB badge must all read inactive or they would claim a filter the list is not applying (and
-  `paused` is routine — the projection has a 5-minute max-age). `hasStatusSelections()` answers
-  *is there anything to clear?*, deliberately **not** readiness-gated: paused selections survive
-  and reapply, so Clear stays reachable while the header correctly reports nothing is filtering.
+- **Two facts, one selector** — `sessionStatusFacet()` (`useSessionFilterRows.ts`) is the single
+  source every header affordance reads, so none can drift from the predicate. It returns
+  `members` (how many climbers you picked statuses for) and `applied` (whether the list is
+  actually using them, mirroring `applyFilters`' own `ctx.session.ready` gate). They are separate
+  because a selection can exist without being applied: with an unready projection the per-member
+  clause is skipped and the list is widened — routinely, since the projection has a **5-minute
+  max-age**. Collapsing the two produced both of this facet's bugs: count without `applied` and
+  the header claims a filter the list isn't running; drop the count when unapplied and a filter
+  you set vanishes with no trace.
+- **Three states, not two.** Selected **and** applied → the accent-filled control (or chip).
+  Selected but **not** applied → `facetPaused()`: same `Status (n)` label, rendered dashed and
+  dimmed, with "filtering paused, showing all problems" in the **accessible name** (dimming
+  reaches neither a screen reader nor a colour-blind user). Nothing selected → plainly off. The
+  FAB badge is the one exception — a bare number cannot express "paused", so it counts only
+  applied filters. Clear affordances key off `members > 0` alone, never `applied`: paused
+  selections still exist and reapply, so gating Clear on readiness would strand them.
+- **The context types are unions, not optional fields** (`FacetContext`, `ChipContext`) — in a
+  session, `sessionStatus` is required. As an optional field a new caller could pass
+  `inSession: true`, silently get "no status filter", and reintroduce the original bug with no
+  compiler complaint.
   `catalog/useMemberSenders.ts` (the **sends pill**: in a session, a row with ≥1 sender
   gains a third row — a neutral pill with a green "sent" check + an `AvatarGroup` of the crew
   who sent it, **self included** and first, capped at 3 + `+K`. The name-line self-check is
@@ -417,11 +444,21 @@ Backend: [`supabase/migrations/0017_session_lit_problem.sql`](../supabase/migrat
 - **Expiry only bumps on explicit intent**, so an active crew must Leave/end to stop sharing;
   the 24h backstop fires only once everyone stops acting.
 - **A departed member's residual exposure on peers is bounded** by the projection max-age
-  (peers hold a last-good map until their next pull or the max-age drop).
+  (peers hold a last-good map until their next pull or the max-age drop). Worst case is 5 min
+  either way: a pull re-derives from live `session_members`, so a departed member drops out of a
+  *successful* refresh exactly as they would from the max-age drop. The drop is the sole
+  protection in one case — an **ended or expired** session, where the RPC refuses to serve, so no
+  refresh can ever purge the map. Never advance `fetchedAt` on a failed fetch, or that bound
+  becomes unbounded under repeated errors.
 
 ## v1 / v2 boundary
 
-**v1 (this):** on-demand pull (open / foreground / manual refresh) for the status projection;
+**v1 (this):** event-driven pull for the status projection (open / foreground / realtime reconnect
+/ manual refresh) plus a low-frequency timer refresh — call it what it is: while the tab is
+visible AND something is subscribed, the existing 30s staleness tick re-pulls a map that has
+passed `REFRESH_AFTER_MS`, so an in-use projection is replaced rather than dropped, recurring for
+as long as it stays in use (~one pull per 4 min). It idles to nothing the moment the tab is
+hidden or the last consumer unmounts;
 realtime `queue-changed` / sent-status nudges; a shared session queue (playlist); static roster;
 board-scoped; status-only projection.
 

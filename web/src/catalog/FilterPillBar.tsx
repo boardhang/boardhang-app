@@ -20,9 +20,10 @@ import { ListFilterSheet } from './ListFilterSheet'
 import { BENCHMARK_LABEL, FAVORITES_LABEL, type FilterState } from './filters'
 import { CANONICAL_ORDER, chipFacetId, type FacetContext } from './pinnableFacets'
 import { usePinnedFacets } from './pinnedFiltersStore'
-import { activeStatusMemberCount, useSessionFilterRows } from './useSessionFilterRows'
+import { sessionStatusFacet, useSessionFilterRows } from './useSessionFilterRows'
 import type { SavedList } from '../lists/listsTypes'
 import { Toggle } from '@/components/ui/toggle'
+import { cn } from '@/lib/utils'
 
 interface FilterPillBarProps {
   filters: FilterState
@@ -60,20 +61,28 @@ export function FilterPillBar({
   // member rows rather than FilterState (see pinnableFacets). Read directly from the store hook,
   // mirroring FilterSheet's badge arithmetic — no prop drilling.
   const session = useSessionFilterRows(board)
-  // One shared selector (readiness-gated — see activeStatusMemberCount) so the pinned control,
-  // its chip and the sheet's FAB badge can never disagree with each other or with applyFilters.
-  const sessionStatusMembers = activeStatusMemberCount(session)
-  const ctx: FacetContext = { inSession, statusReady, sessionStatusMembers }
+  // One selector feeds both the control and the chip (and the sheet reads the same one), so no
+  // two header surfaces can disagree with each other or with applyFilters.
+  const statusFacet = sessionStatusFacet(session)
+  // The union forces the session arm to carry `sessionStatus` — a plain object literal with an
+  // optional field is what let an earlier version silently report "no status filter" in a session.
+  const ctx: FacetContext = inSession
+    ? { inSession: true, statusReady, sessionStatus: statusFacet }
+    : { inSession: false, statusReady }
   const [listSheetOpen, setListSheetOpen] = useState(false)
 
   // Chips only for active facets that are NOT pinned (a pinned facet shows as its control).
-  const chips = describeActiveFilters(filters, {
-    inSession,
-    statusReady,
-    // Unpinned status in a session still needs a trace in the collapsed header; its removal is
-    // a store write, so the chip carries onRemove instead of a FilterState patch.
-    sessionStatus: session && { members: sessionStatusMembers, onClearAll: session.onClearAll },
-  }).filter((chip) => !pinned.includes(chipFacetId(chip.id)))
+  const chips = describeActiveFilters(
+    filters,
+    inSession
+      ? {
+          inSession: true,
+          statusReady,
+          // Removal is a store write, so the chip carries onRemove instead of a FilterState patch.
+          sessionStatus: { ...statusFacet, onClearAll: () => session?.onClearAll() },
+        }
+      : { inSession: false, statusReady },
+  ).filter((chip) => !pinned.includes(chipFacetId(chip.id)))
 
   // Does any pinned control actually render? (Lists is hidden with no lists; Status is hidden
   // when signed out.) The divider only shows when there's a left group AND chips to divide.
@@ -184,11 +193,23 @@ export function FilterPillBar({
           key={chip.id}
           type="button"
           onClick={() => (chip.onRemove ? chip.onRemove() : onChange({ ...filters, ...chip.patch }))}
-          aria-label={`Remove ${chip.label} filter`}
+          // A paused chip is dimmed, but dimming is not a message a screen reader (or a
+          // colour-blind user) receives — so the state goes in the accessible name too.
+          aria-label={
+            chip.paused
+              ? `Remove ${chip.label} filter — filtering paused, showing all problems`
+              : `Remove ${chip.label} filter`
+          }
+          title={chip.paused ? 'Filtering paused — showing all problems' : undefined}
           // Outlined gray tag: the border defines the shape (a muted FILL would vanish into the
           // near-white frosted header in light mode). Reads as secondary to the accent-filled
           // pinned controls, and the trailing ✕ carries the "removable" signal. Both themes.
-          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[min(var(--radius-md),12px)] border border-border bg-transparent px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className={cn(
+            'inline-flex h-6 shrink-0 items-center gap-1 rounded-[min(var(--radius-md),12px)] border border-border bg-transparent px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+            // Paused: dashed border + reduced opacity. The dash is the load-bearing signal —
+            // opacity alone reads as "disabled", and this chip is still fully interactive.
+            chip.paused && 'border-dashed opacity-60',
+          )}
         >
           <span>{chip.label}</span>
           <X aria-hidden className="size-3 text-muted-foreground" />
