@@ -12,6 +12,9 @@ const h = vi.hoisted(() => ({
   rows: [] as { user_id: string; source_catalog_id: string | null; status: string | null }[],
   error: null as string | null,
   calls: 0,
+  /** Hold responses open so a fetch can be left in flight across other events. */
+  defer: false,
+  pending: [] as (() => void)[],
 }))
 
 vi.mock('../supabase/client', () => ({
@@ -20,7 +23,11 @@ vi.mock('../supabase/client', () => ({
       rpc: () => ({
         then: (res: (v: unknown) => void) => {
           h.calls += 1
-          res(h.error ? { data: null, error: { message: h.error } } : { data: h.rows, error: null })
+          const rows = [...h.rows]
+          const deliver = () =>
+            res(h.error ? { data: null, error: { message: h.error } } : { data: rows, error: null })
+          if (h.defer) h.pending.push(deliver)
+          else deliver()
         },
       }),
     }
@@ -32,6 +39,7 @@ import {
   MAX_AGE_MS,
   activateMemberAscents,
   getMemberAscentsSnapshot,
+  refreshMemberAscents,
   useMemberAscents,
 } from './memberAscentsStore'
 
@@ -41,6 +49,8 @@ beforeEach(() => {
   h.rows = [{ user_id: 'a', source_catalog_id: 'P1', status: 'sent' }]
   h.error = null
   h.calls = 0
+  h.defer = false
+  h.pending = []
   Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
   activateMemberAscents(null)
 })
@@ -160,5 +170,56 @@ describe('memberAscents — pre-expiry refresh', () => {
     const afterUnmount = h.calls
     await vi.advanceTimersByTimeAsync(30_000 * 6)
     expect(h.calls).toBe(afterUnmount)
+  })
+})
+
+// The max-age drop must be authoritative over any response that was already in flight when it
+// fired. Without a generation guard, that late response commits — restoring a departed member's
+// rows AND stamping a fresh fetchedAt, so their data lives another full max-age past the bound
+// (R16). The pre-expiry refresh runs a minute before the deadline, so this straddle is routine.
+describe('memberAscents — a superseded response must not commit', () => {
+  it('discards a fetch that was in flight when the max-age drop purged the map', async () => {
+    renderHook(() => useMemberAscents('S1'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getMemberAscentsSnapshot().ready).toBe(true)
+
+    // A refresh goes out and is still in flight...
+    // Not awaited: a deferred response never settles, and holding it open is the point.
+    h.defer = true
+    void refreshMemberAscents()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.pending).toHaveLength(1)
+
+    // ...the map ages out and is purged while it is outstanding...
+    vi.setSystemTime(new Date(Date.now() + MAX_AGE_MS + 1_000))
+    expect(getMemberAscentsSnapshot().stale).toBe(true)
+
+    // ...and only then does the response land. It must not undo the purge.
+    h.pending.forEach((deliver) => deliver())
+    await vi.advanceTimersByTimeAsync(0)
+    const s = getMemberAscentsSnapshot()
+    expect(s.ready).toBe(false)
+    expect(s.members).toEqual([])
+    expect(s.fetchedAt).toBeNull() // and no fresh deadline was stamped
+  })
+
+  it('discards an older response that resolves after a newer one', async () => {
+    renderHook(() => useMemberAscents('S1'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    h.defer = true
+    h.rows = [{ user_id: 'stale', source_catalog_id: 'OLD', status: 'sent' }]
+    void refreshMemberAscents() // request A
+    await vi.advanceTimersByTimeAsync(0)
+    h.rows = [{ user_id: 'fresh', source_catalog_id: 'NEW', status: 'sent' }]
+    void refreshMemberAscents() // request B, started later
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.pending).toHaveLength(2)
+
+    // B lands first, then A arrives out of order. The newest request must win.
+    h.pending[1]()
+    h.pending[0]()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getMemberAscentsSnapshot().members).toEqual(['fresh'])
   })
 })
