@@ -11,6 +11,7 @@ import { useBoardStore } from '../board/boardStore'
 import { getCatalogProblemsByIds, type CatalogProblem } from '../catalog/catalogSync'
 import { useFavorites } from '../catalog/favoritesStore'
 import { ProblemDetail } from '../catalog/ProblemDetail'
+import { boardByLayoutId, catalogNavTarget } from '../catalog/catalogNav'
 import { useProblemDrawer } from '../catalog/useProblemDrawer'
 import { useShowPreviews } from '../catalog/previewsStore'
 import { Button } from '@/components/ui/button'
@@ -103,6 +104,16 @@ export function LogbookScreen() {
     ? (pagerStack?.find((p) => p.source_catalog_id === openId) ?? catalogById.get(openId))
     : undefined
   const displayed = pagerStack ?? (current ? [current] : [])
+
+  // Owner "Edit" from the detail: the problem editor lives on the catalog route (it owns
+  // `?edit`), so this leaves the logbook for the shown problem's own board — the logbook
+  // spans boards, so it can't be the active one.
+  function editProblem(sourceCatalogId: string) {
+    const problemBoard = current ? boardByLayoutId(current.layout_id) : undefined
+    if (!problemBoard) return
+    const target = catalogNavTarget(problemBoard)
+    void navigate({ ...target, search: { ...target.search, edit: sourceCatalogId } })
+  }
 
   const { favoriteIds } = useFavorites()
   const showThumbnails = useShowPreviews('logbook')
@@ -281,6 +292,8 @@ export function LogbookScreen() {
                 favoriteIds={favoriteIds}
                 sentIds={sentIds}
                 onNavigate={showProblem}
+                onEditProblem={editProblem}
+                onClose={closeDrawer}
               />
             )}
           </div>

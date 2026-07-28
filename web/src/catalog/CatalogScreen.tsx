@@ -287,6 +287,18 @@ export function CatalogScreen() {
     [navigate, closeEditor],
   )
 
+  // The detail drawer's owner menu → edit that problem. Swaps the drawer for the editor in
+  // one replace, so Back leaves both behind rather than stepping into the detail of a
+  // problem the author is still editing.
+  const openEditor = useCallback(
+    (sourceCatalogId: string) =>
+      void navigate({
+        search: (prev) => ({ ...prev, new: 0, edit: sourceCatalogId, problem: '' }),
+        replace: true,
+      }),
+    [navigate],
+  )
+
   // `?edit=<id>` opens the editor on an already-saved problem, resolved from the
   // user-problems cache (the only place an authored row lives client-side).
   const editId = search.edit
@@ -497,6 +509,8 @@ export function CatalogScreen() {
               highlightHolds={highlightHolds}
               onNavigate={showProblem}
               onPageOverQueue={pageOver}
+              onEditProblem={openEditor}
+              onClose={closeDrawer}
             />
           ) : problemPending ? (
             <div

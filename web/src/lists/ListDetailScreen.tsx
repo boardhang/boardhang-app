@@ -13,6 +13,7 @@ import { boardByLayoutId } from '../board/boards'
 import { addBoard, useBoardStore } from '../board/boardStore'
 import { CatalogRow } from '../catalog/CatalogRow'
 import { ProblemDetail } from '../catalog/ProblemDetail'
+import { catalogNavTarget } from '../catalog/catalogNav'
 import { getCatalogProblemsByIds, type CatalogProblem } from '../catalog/catalogSync'
 import { useFavorites } from '../catalog/favoritesStore'
 import { useShowPreviews } from '../catalog/previewsStore'
@@ -30,6 +31,7 @@ const routeApi = getRouteApi('/lists/$listId')
 
 export function ListDetailScreen() {
   const { listId } = routeApi.useParams()
+  const navigate = routeApi.useNavigate()
   const { status, isRestoring } = useAuth()
   const { status: dataStatus, lists } = useSavedLists()
   const signedIn = status !== 'signedOut'
@@ -274,6 +276,13 @@ export function ListDetailScreen() {
                 favoriteIds={favoriteIds}
                 sentIds={sentIds}
                 onNavigate={(id) => setOpenId(id)}
+                onEditProblem={(id) => {
+                  // The problem editor lives on the catalog route (it owns `?edit`), so
+                  // the owner menu leaves the list for this list's board.
+                  const target = catalogNavTarget(board)
+                  void navigate({ ...target, search: { ...target.search, edit: id } })
+                }}
+                onClose={() => setOpenId(null)}
               />
             )}
           </div>
