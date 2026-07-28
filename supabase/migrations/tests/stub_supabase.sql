@@ -61,14 +61,25 @@ alter table storage.objects enable row level security;
 
 -- Minimal public.profiles so 0009's `alter table ... add constraint avatar_url_...` and
 -- its owner-scoped insert/update RLS can be exercised WITHOUT pulling in 0001 (which needs
--- the citext extension). Real 0001 has more columns; only `id` + `avatar_url` + the owner
--- RLS matter for the avatar_url CHECK test. `display_name` is included so a realistic
--- insert works. Owner policies mirror 0001 (self insert/update; world-readable select).
+-- the citext extension, and whose own `create table if not exists` would no-op against this
+-- one anyway — so THIS file, not 0001, is the profiles definition every case chains against).
+-- Real 0001 has more columns; `id` + `avatar_url` + the owner RLS matter for the avatar_url
+-- CHECK test (0009), and `handle` for the setter-attribution triggers (0019). `display_name`
+-- is included so a realistic insert works. Owner policies mirror 0001 (self insert/update;
+-- world-readable select).
+--
+-- `handle` deviates from 0001 in two harmless ways: it is `text` rather than `citext` (the
+-- extension isn't installed here, and no assertion turns on case-insensitive matching), and it
+-- is NULLABLE rather than NOT NULL so the pre-existing 0009 inserts — which predate the column
+-- — keep working. The 0019 attribution trigger treats a null handle exactly like a missing
+-- profile row, so the nullability changes no outcome there either.
 create table if not exists public.profiles (
     id           uuid primary key references auth.users (id) on delete cascade,
+    handle       text unique,
     display_name text not null default '',
     avatar_url   text,
-    created_at   timestamptz not null default now()
+    created_at   timestamptz not null default now(),
+    constraint handle_format check (handle is null or handle ~ '^[a-z0-9_]{3,20}$')
 );
 alter table public.profiles enable row level security;
 

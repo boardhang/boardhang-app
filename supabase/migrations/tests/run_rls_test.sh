@@ -181,4 +181,16 @@ run_case "$HERE/0018_user_problems_authoring_rls.sql" \
   "$HERE/seed_legacy_user_problems.sql" \
   "$HERE/../0018_user_problems_authoring.sql"
 
+# 0019: the PUBLIC path for user problems — the anon-readable live-public SELECT policy, the
+# public-completeness CHECK (incl. the holds-shape validator), the server-owned setter attribution
+# (stamp trigger + the profiles handle re-stamp), and the per-user cap on live public problems.
+# Same 0002 → legacy-seed → 0018 chain as the case above, plus 0019 on top, so the public surface
+# is proven to land on a table that already holds iOS-era rows (R14). profiles comes from
+# stub_supabase.sql, not 0001 — see the note there.
+run_case "$HERE/0019_user_problems_public_rls.sql" \
+  "$HERE/../0002_logbook_sync.sql" \
+  "$HERE/seed_legacy_user_problems.sql" \
+  "$HERE/../0018_user_problems_authoring.sql" \
+  "$HERE/../0019_user_problems_public.sql"
+
 echo "✅ ALL RLS CASES PASSED"
