@@ -133,6 +133,12 @@ export function fromUserProblemRow(r: UserProblemRow): UserProblem {
  * arrives here through a by-id resolve — the slab index excludes it from any listing — so
  * the 0 is never used to pick a board, only rendered as an unknown angle.
  */
+/** The catalog's shared list order. Structurally typed so both `CatalogProblem` and
+ *  `UserProblem` rows sort by the one rule and cannot drift. */
+export function byGradeThenName(a: { grade: string; name: string }, b: { grade: string; name: string }): number {
+  return a.grade === b.grade ? a.name.localeCompare(b.name) : a.grade.localeCompare(b.grade)
+}
+
 export function toCatalogProblem(p: UserProblem): CatalogProblem {
   return {
     source_catalog_id: p.sourceCatalogId,

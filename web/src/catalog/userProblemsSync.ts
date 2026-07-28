@@ -20,6 +20,7 @@
 import { supabase } from '../supabase/client'
 import {
   USER_PROBLEM_COLUMNS,
+  byGradeThenName,
   fromUserProblemRow,
   type UserProblem,
   type UserProblemRow,
@@ -68,7 +69,8 @@ function delay(ms: number): Promise<void> {
 }
 
 /** Human-readable text for a thrown / PostgREST error. */
-function errorMessage(err: unknown): string {
+/** Unwrap an unknown thrown value to text. Shared by the catalog sync modules. */
+export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message
   if (typeof err === 'object' && err !== null && 'message' in err) {
     return String((err as { message: unknown }).message)
@@ -399,9 +401,7 @@ export async function readUserProblemsForSlab(
     const tx = db.transaction(STORE, 'readonly')
     const index = tx.objectStore(STORE).index('slab')
     const rows = await requestResult<UserProblemRow[]>(index.getAll(IDBKeyRange.only([layoutId, angle])))
-    return rows.map(fromUserProblemRow).sort((a, b) =>
-      a.grade === b.grade ? a.name.localeCompare(b.name) : a.grade.localeCompare(b.grade),
-    )
+    return rows.map(fromUserProblemRow).sort(byGradeThenName)
   } finally {
     db.close()
   }

@@ -30,6 +30,14 @@ const EMPTY: UserProblemFacets = {
   ready: false,
 }
 
+function facetsEqual(prev: UserProblemFacets, own: Set<string>, recency: Map<string, string>): boolean {
+  if (!prev.ready) return false
+  if (prev.ownProblemIds.size !== own.size || prev.recencyById.size !== recency.size) return false
+  for (const id of own) if (!prev.ownProblemIds.has(id)) return false
+  for (const [id, at] of recency) if (prev.recencyById.get(id) !== at) return false
+  return true
+}
+
 export function useUserProblemFacets(layoutId: number, angle: number): UserProblemFacets {
   const [state, setState] = useState<UserProblemFacets>(EMPTY)
 
@@ -42,11 +50,12 @@ export function useUserProblemFacets(layoutId: number, angle: number): UserProbl
         readUserProblemsForSlab(layoutId, angle),
       ])
       if (cancelled) return
-      setState({
-        ownProblemIds: own,
-        recencyById: new Map(slab.map((p) => [p.sourceCatalogId, p.updatedAt])),
-        ready: true,
-      })
+      const recency = new Map(slab.map((p) => [p.sourceCatalogId, p.updatedAt]))
+      // The change notification carries no payload, so unrelated mutations (another slab's
+      // snapshot page, a different board's save) reach here too. Skip the state update when
+      // nothing this hook derives actually changed — a fresh Set/Map identity would ripple
+      // a new FilterContext through applyFilters over the whole list for nothing.
+      setState((prev) => (facetsEqual(prev, own, recency) ? prev : { ownProblemIds: own, recencyById: recency, ready: true }))
     }
     // A failed read leaves `ready` where it was, so the facet keeps failing open rather than
     // filtering against a half-read cache.

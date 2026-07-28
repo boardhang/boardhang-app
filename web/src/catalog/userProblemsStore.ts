@@ -20,6 +20,7 @@ import {
   cacheUserProblems,
   clearOwnUserProblems,
   currentCacheGeneration,
+  errorMessage,
   evictCachedUserProblems,
   getUserProblemsByIds,
   hasUserProblemsCursor,
@@ -65,14 +66,6 @@ async function currentUserId(): Promise<string | null> {
   if (!supabase) return null
   const { data } = await supabase.auth.getSession()
   return data.session?.user.id ?? null
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message
-  if (typeof err === 'object' && err !== null && 'message' in err) {
-    return String((err as { message: unknown }).message)
-  }
-  return String(err)
 }
 
 /**

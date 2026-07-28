@@ -7,8 +7,8 @@
 
 import { supabase } from '../supabase/client'
 import type { HoldType } from '../types'
-import { getUserProblemsByIds, readUserProblemsForSlab } from './userProblemsSync'
-import { isUserProblemId, toCatalogProblem } from './userProblemsTypes'
+import { errorMessage, getUserProblemsByIds, readUserProblemsForSlab } from './userProblemsSync'
+import { byGradeThenName, isUserProblemId, toCatalogProblem, type UserProblem } from './userProblemsTypes'
 
 export interface CatalogHold {
   c: number
@@ -64,14 +64,6 @@ function delay(ms: number): Promise<void> {
 }
 
 /** Human-readable text for a thrown/PostgREST error, for the Settings rebuild UI. */
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message
-  if (typeof err === 'object' && err !== null && 'message' in err) {
-    return String((err as { message: unknown }).message)
-  }
-  return String(err)
-}
-
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
@@ -315,26 +307,30 @@ export async function getCatalogProblemsByIds(
   const userIds = unique.filter(isUserProblemId)
   const catalogIds = unique.filter((id) => !isUserProblemId(id))
 
-  if (catalogIds.length > 0) {
-    const db = await openDB()
-    const tx = db.transaction(STORE, 'readonly')
-    const store = tx.objectStore(STORE)
-    const found = await Promise.all(
-      catalogIds.map((id) => requestResult<CatalogProblem | undefined>(store.get(id))),
-    )
-    db.close()
-    for (const problem of found) {
-      if (problem) result.set(problem.source_catalog_id, problem)
-    }
+  // Each database is only opened when an id actually needs it, so the common all-imported
+  // lookup still costs one connection — and a mixed lookup runs both reads concurrently.
+  const [found, authored] = await Promise.all([
+    catalogIds.length === 0
+      ? Promise.resolve<(CatalogProblem | undefined)[]>([])
+      : (async () => {
+          const db = await openDB()
+          const tx = db.transaction(STORE, 'readonly')
+          const store = tx.objectStore(STORE)
+          const rows = await Promise.all(
+            catalogIds.map((id) => requestResult<CatalogProblem | undefined>(store.get(id))),
+          )
+          db.close()
+          return rows
+        })(),
+    userIds.length === 0
+      ? Promise.resolve(new Map<string, UserProblem>())
+      : orWithoutUserProblems(getUserProblemsByIds(userIds), new Map<string, UserProblem>()),
+  ])
+  for (const problem of found) {
+    if (problem) result.set(problem.source_catalog_id, problem)
   }
-
-  // Only opened when an id actually needs it, so the common all-imported lookup still costs
-  // one database connection.
-  if (userIds.length > 0) {
-    const authored = await orWithoutUserProblems(getUserProblemsByIds(userIds), new Map())
-    for (const [id, problem] of authored) {
-      result.set(id, toCatalogProblem(problem))
-    }
+  for (const [id, problem] of authored) {
+    result.set(id, toCatalogProblem(problem))
   }
   return result
 }
@@ -350,17 +346,20 @@ export async function getCatalogProblemsByIds(
  * never appear here.
  */
 export async function readSlab(layoutId: number, angle: number): Promise<CatalogProblem[]> {
-  const db = await openDB()
-  const tx = db.transaction(STORE, 'readonly')
-  const index = tx.objectStore(STORE).index('slab')
-  const imported = await requestResult<CatalogProblem[]>(index.getAll(IDBKeyRange.only([layoutId, angle])))
-  db.close()
-  const authored = await orWithoutUserProblems(readUserProblemsForSlab(layoutId, angle), [])
+  // The two databases are independent, so both reads run concurrently — this is the
+  // hot path behind every board open and every user-problems change notification.
+  const [imported, authored] = await Promise.all([
+    (async () => {
+      const db = await openDB()
+      const tx = db.transaction(STORE, 'readonly')
+      const index = tx.objectStore(STORE).index('slab')
+      const rows = await requestResult<CatalogProblem[]>(index.getAll(IDBKeyRange.only([layoutId, angle])))
+      db.close()
+      return rows
+    })(),
+    orWithoutUserProblems(readUserProblemsForSlab(layoutId, angle), []),
+  ])
   return [...imported, ...authored.map(toCatalogProblem)].sort(byGradeThenName)
-}
-
-function byGradeThenName(a: CatalogProblem, b: CatalogProblem): number {
-  return a.grade === b.grade ? a.name.localeCompare(b.name) : a.grade.localeCompare(b.grade)
 }
 
 /**
