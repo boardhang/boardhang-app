@@ -74,6 +74,10 @@ export interface MemberAscentsState {
  *  (KTD-5) — bounds a departed member's residual exposure (R16). */
 export const MAX_AGE_MS = 5 * 60_000
 const STALE_CHECK_MS = 30_000
+/** Refresh a still-good map once it passes this age, so it is REPLACED rather than dropped. One
+ *  check-interval of headroom before MAX_AGE_MS, so a slow round-trip still lands in time; the
+ *  bound itself is unchanged, since a failed refresh leaves the original deadline in place. */
+const REFRESH_AFTER_MS = MAX_AGE_MS - 60_000
 
 const EMPTY: MemberAscentsState = { ready: false, bySets: {}, members: [], error: null, stale: false, fetchedAt: null }
 
@@ -99,6 +103,22 @@ function applyStaleness(): boolean {
     return true
   }
   return false
+}
+
+/**
+ * Age-check for the READ path (getSnapshot), which can drop the map during a subscriber's render.
+ * The drop must reach the OTHER subscribers, and it is the read path — not the timer — that
+ * usually gets there first: whichever component renders first performs the drop, after which the
+ * timer's own `applyStaleness()` returns false and its `notify()` never runs. Without this, a
+ * subscriber that happens not to re-render keeps a `ready: true` snapshot of a map that no longer
+ * exists — a departed member's sends still on the pills, which is the exposure MAX_AGE_MS exists
+ * to bound (R16).
+ *
+ * Scheduled, never synchronous: getSnapshot runs during React's render, and notifying there would
+ * set state mid-render.
+ */
+function applyStalenessOnRead(): void {
+  if (applyStaleness()) queueMicrotask(notify)
 }
 
 /**
@@ -155,7 +175,30 @@ function startListeners(): void {
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
   if (!staleTimer) {
     staleTimer = setInterval(() => {
-      if (applyStaleness()) notify()
+      // Drop first, unconditionally: the max-age bound must never be starved by the refresh below.
+      if (applyStaleness()) {
+        notify()
+        return
+      }
+      // Then, if someone is actually looking, replace the map BEFORE it ages out — otherwise a
+      // continuously-foregrounded tab (the normal way this app is used at a gym: scrolling the
+      // catalog between climbs) never sees a visibilitychange, so nothing refetches and the map
+      // dies under them. That drop is not cosmetic: applyFilters skips the whole per-member clause
+      // when unready, so the list widens from a filtered handful to every problem mid-scroll.
+      //
+      // No "already attempted" bookkeeping is needed, because a failed fetch leaves `fetchedAt`
+      // untouched (see the error path in fetchMemberAscents): the attempt repeats at most until
+      // MAX_AGE_MS, at which point the branch above drops the map, `fetchedAt` becomes null, and
+      // this branch stops firing. Bounded by arithmetic rather than by a flag.
+      if (
+        state.fetchedAt !== null &&
+        Date.now() - state.fetchedAt > REFRESH_AFTER_MS &&
+        currentSessionId &&
+        typeof document !== 'undefined' &&
+        document.visibilityState === 'visible'
+      ) {
+        void fetchMemberAscents(currentSessionId)
+      }
     }, STALE_CHECK_MS)
   }
 }
@@ -210,13 +253,13 @@ function subscribe(listener: () => void): () => void {
 }
 
 function getSnapshot(): MemberAscentsState {
-  applyStaleness() // age check on every read — drops a stale map even if the timer never fired
+  applyStalenessOnRead() // age check on every read — drops a stale map even if the timer never fired
   return state
 }
 
 /** Non-reactive snapshot (tests; imperative callers). */
 export function getMemberAscentsSnapshot(): MemberAscentsState {
-  applyStaleness()
+  applyStalenessOnRead()
   return state
 }
 

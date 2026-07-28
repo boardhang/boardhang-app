@@ -127,10 +127,19 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
     in it") when the live session is on the board being removed.
 - **`memberAscentsStore.ts`** — the projection: per-member `{ sentIds, loggedIds }` Set-pairs,
   seeded from the server-consistent snapshot (marker rows → empty Sets, so a zero-ascent
-  member is never dropped from the AND-across predicate). Refetched on active-session change,
-  on foreground (`visibilitychange`), and on manual refresh. A **max-age** (5 min) drops the
-  cached map — enforced by both a timer and an on-read age check — bounding a departed
-  member's residual exposure.
+  member is never dropped from the AND-across predicate). Refetched on active-session change, on
+  foreground (`visibilitychange`), on realtime reconnect, on manual refresh, and — while the tab
+  is **visible** — once the map passes `REFRESH_AFTER_MS` (4 min), so it is *replaced* rather than
+  dropped. That last trigger exists because a tab held continuously in the foreground (the normal
+  way this is used at a gym) never fires `visibilitychange`, so nothing refetched and the map died
+  under the user mid-scroll — and an unready projection makes `applyFilters` skip the whole
+  per-member clause, widening the list from a filtered handful to every problem. It needs no
+  retry bookkeeping: a failed fetch leaves `fetchedAt` untouched, so the drop still lands on the
+  original deadline and then stops the retries by construction (`fetchedAt === null`).
+  A **max-age** (5 min) drops the cached map — enforced by both a timer and an on-read age check,
+  the latter scheduling a `notify()` so the drop reaches subscribers that did not trigger it —
+  bounding a departed member's residual exposure. The drop is evaluated **before** the refresh on
+  every tick, so the bound can never be starved by a refresh that keeps failing.
 - **`filters.ts`** (`matchesSessionStatus`) — the predicate: **OR within a member's row, AND
   across member rows, empty row = ignore**. When a session is active it replaces the
   single-user status clause (self is member row #1), gated on the projection's single atomic
@@ -428,11 +437,18 @@ Backend: [`supabase/migrations/0017_session_lit_problem.sql`](../supabase/migrat
 - **Expiry only bumps on explicit intent**, so an active crew must Leave/end to stop sharing;
   the 24h backstop fires only once everyone stops acting.
 - **A departed member's residual exposure on peers is bounded** by the projection max-age
-  (peers hold a last-good map until their next pull or the max-age drop).
+  (peers hold a last-good map until their next pull or the max-age drop). Worst case is 5 min
+  either way: a pull re-derives from live `session_members`, so a departed member drops out of a
+  *successful* refresh exactly as they would from the max-age drop. The drop is the sole
+  protection in one case — an **ended or expired** session, where the RPC refuses to serve, so no
+  refresh can ever purge the map. Never advance `fetchedAt` on a failed fetch, or that bound
+  becomes unbounded under repeated errors.
 
 ## v1 / v2 boundary
 
-**v1 (this):** on-demand pull (open / foreground / manual refresh) for the status projection;
+**v1 (this):** event-driven pull for the status projection (open / foreground / realtime reconnect
+/ manual refresh, plus one pre-expiry refresh while visible — not a poll: it fires only against a
+map already near its max-age, and stops entirely once dropped);
 realtime `queue-changed` / sent-status nudges; a shared session queue (playlist); static roster;
 board-scoped; status-only projection.
 

@@ -204,6 +204,67 @@ describe('memberAscentsStore', () => {
   })
 })
 
+// A tab held continuously in the foreground never fires visibilitychange, so nothing refetches and
+// the map dies under the user mid-scroll — applyFilters skips the whole per-member clause when
+// unready, widening the list from a filtered handful to every problem. The timer refreshes a
+// still-good map before it ages out, so it is REPLACED rather than dropped.
+describe('memberAscentsStore — pre-expiry refresh', () => {
+  function setVisibility(value: 'visible' | 'hidden'): void {
+    Object.defineProperty(document, 'visibilityState', { value, configurable: true })
+  }
+
+  beforeEach(() => setVisibility('visible'))
+
+  it('refreshes a still-good map before max-age, so it never has to be dropped', async () => {
+    h.rows = [{ user_id: 'a', source_catalog_id: 'P1', status: 'sent' }]
+    activateMemberAscents('S1')
+    await vi.advanceTimersByTimeAsync(0)
+    const afterInitial = h.calls
+
+    // Past the refresh threshold but short of max-age (the tick at exactly the threshold does not
+    // fire it — the comparison is strictly greater).
+    await vi.advanceTimersByTimeAsync(MAX_AGE_MS - 30_000)
+    expect(h.calls).toBeGreaterThan(afterInitial)
+
+    // Well past the ORIGINAL deadline: the refreshed fetchedAt means nothing was dropped.
+    await vi.advanceTimersByTimeAsync(90_000)
+    const s = getMemberAscentsSnapshot()
+    expect(s.ready).toBe(true)
+    expect(s.stale).toBe(false)
+  })
+
+  it('does not refresh while the tab is hidden — it still just drops', async () => {
+    h.rows = [{ user_id: 'a', source_catalog_id: 'P1', status: 'sent' }]
+    activateMemberAscents('S1')
+    await vi.advanceTimersByTimeAsync(0)
+    const afterInitial = h.calls
+    setVisibility('hidden')
+
+    await vi.advanceTimersByTimeAsync(MAX_AGE_MS + STALE_CHECK())
+    expect(h.calls).toBe(afterInitial) // no background network
+    expect(getMemberAscentsSnapshot().stale).toBe(true)
+  })
+
+  it('still drops at max-age when the refresh keeps failing, and then stops trying', async () => {
+    // The bound must never be starved by the refresh: a failed fetch leaves fetchedAt untouched,
+    // so the drop lands on the original deadline and then ends the retries by construction.
+    h.rows = [{ user_id: 'a', source_catalog_id: 'P1', status: 'sent' }]
+    activateMemberAscents('S1')
+    await vi.advanceTimersByTimeAsync(0)
+    h.error = 'network down'
+
+    await vi.advanceTimersByTimeAsync(MAX_AGE_MS + STALE_CHECK())
+    expect(getMemberAscentsSnapshot().stale).toBe(true)
+    expect(getMemberAscentsSnapshot().ready).toBe(false)
+
+    // fetchedAt is null now, so the refresh branch can no longer fire: no endless retry loop.
+    const afterDrop = h.calls
+    await vi.advanceTimersByTimeAsync(STALE_CHECK() * 6)
+    expect(h.calls).toBe(afterDrop)
+  })
+})
+
+
 // STALE_CHECK interval is internal; advancing by a spare 30s guarantees a tick fires.
 function STALE_CHECK(): number {
   return 30_000
