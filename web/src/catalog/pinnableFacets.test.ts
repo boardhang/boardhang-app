@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { FONT_GRADES } from '../board/grades'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
 import { facetActiveLabel, isFacetActive, type FacetContext } from './pinnableFacets'
 
@@ -54,5 +55,17 @@ describe('pinnableFacets — status facet, in a session', () => {
       false,
     )
     expect(facetActiveLabel('status', state(), ctx({ inSession: true }))).toBe('Ascent status')
+  })
+})
+
+describe('pinnableFacets — grade facet label', () => {
+  it('renders a range when lo !== hi', () => {
+    expect(facetActiveLabel('grade', state({ gradeRange: [3, 5] }))).toBe(
+      `${FONT_GRADES[3]}–${FONT_GRADES[5]}`,
+    )
+  })
+
+  it('collapses to a single grade when lo === hi', () => {
+    expect(facetActiveLabel('grade', state({ gradeRange: [4, 4] }))).toBe(FONT_GRADES[4])
   })
 })

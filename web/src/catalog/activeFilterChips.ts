@@ -10,7 +10,8 @@
 //     loaded). In a session applyFilters takes the per-member path instead, so the status slot
 //     emits ONE collapsed "Status (n)" chip counting the MEMBERS filtered — supplied by the
 //     caller via ctx.sessionStatus, since that state lives in the sessions store, not here.
-//   - grade only for a real sub-range (`gradeRange` non-null; null = full span).
+//   - grade only for a real sub-range (`gradeRange` non-null; null = full span). When lo === hi
+//     the chip collapses to a single grade label (e.g. "6B+", not "6B+–6B+").
 
 import { FONT_GRADES } from '../board/grades'
 import {
@@ -64,7 +65,7 @@ export function describeActiveFilters(state: FilterState, ctx: ChipContext): Fil
     const [lo, hi] = state.gradeRange
     chips.push({
       id: 'grade',
-      label: `${FONT_GRADES[lo]}–${FONT_GRADES[hi]}`,
+      label: lo === hi ? FONT_GRADES[lo] : `${FONT_GRADES[lo]}–${FONT_GRADES[hi]}`,
       patch: { gradeRange: null },
     })
   }

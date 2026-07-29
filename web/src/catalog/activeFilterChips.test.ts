@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { FONT_GRADES } from '../board/grades'
 import { describeActiveFilters, type ChipContext } from './activeFilterChips'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
 
@@ -54,6 +55,13 @@ describe('describeActiveFilters', () => {
 
   it('omits the grade chip for a full-span (null) range', () => {
     expect(describeActiveFilters(state({ gradeRange: null }), READY)).toEqual([])
+  })
+
+  it('collapses the grade chip to a single grade when lo === hi', () => {
+    const chips = describeActiveFilters(state({ gradeRange: [4, 4] }), READY)
+    const grade = chips.find((c) => c.id === 'grade')!
+    expect(grade.label).toBe(FONT_GRADES[4])
+    expect(grade.label).not.toMatch(/–/)
   })
 
   it('drops the single-user status chips in a session (statusFilters is inert there)', () => {
