@@ -39,7 +39,7 @@ export function NewBenchmarksBanner({ count, onView, onDismiss }: NewBenchmarksB
       >
         <span
           aria-hidden
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-benchmark/15 text-benchmark"
         >
           <Sparkles className="h-4 w-4" />
         </span>
@@ -47,7 +47,7 @@ export function NewBenchmarksBanner({ count, onView, onDismiss }: NewBenchmarksB
           <span className="truncate text-sm font-medium text-foreground">{label} to try</span>
           <Badge
             variant="secondary"
-            className="shrink-0 bg-amber-500/15 text-amber-700 dark:text-amber-300 border-transparent hover:bg-amber-500/20"
+            className="shrink-0 border-transparent bg-benchmark/15 text-benchmark hover:bg-benchmark/20"
           >
             New
           </Badge>

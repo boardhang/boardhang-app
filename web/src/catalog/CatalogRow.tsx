@@ -137,13 +137,15 @@ export function CatalogRow({
                   line so "just added" is the first thing the eye lands on for a row that has
                   multiple states (benchmark + sent + favorite). Only shown when the problem is
                   in the events-store unseen set (or the ?newSince deep-link set) — see
-                  CatalogScreen's `newBenchmarkIds` memo. */}
+                  CatalogScreen's `newBenchmarkIds` memo. Reuses `text-benchmark` (same amber
+                  token as the BadgeCheck seal that follows) so the sparkle + seal read as one
+                  visual family; the size + order carry the "new" distinction. */}
               {isNewBenchmark && (
                 <Sparkles
                   role="img"
                   aria-label="Newly added benchmark"
                   strokeWidth={2.5}
-                  className="size-3.5 shrink-0 text-amber-500 drop-shadow-[0_0_3px_rgba(251,191,36,0.55)] dark:text-amber-300"
+                  className="size-3.5 shrink-0 text-benchmark"
                 />
               )}
               {problem.is_benchmark && (
