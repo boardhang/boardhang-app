@@ -39,6 +39,17 @@
 -- notified_at + discarded_at are drain state on the event row (KTD3). Null-both = pending. The
 -- drain claims by setting notified_at where it is still null; the operator retracts by setting
 -- discarded_at. Both are OWNED by service-role writers; there is no client write policy.
+--
+-- PK note: `source_catalog_id` is the PK — one row per problem for its lifetime (KTD2). This is
+-- correct because `catalog_problems.source_catalog_id` is *globally* unique across every board
+-- and angle: it's a UUIDv5 generated the same way for every catalog import (see 0006's header,
+-- which verified zero collisions across 11,915 seeded rows). We deliberately DO NOT add a FK to
+-- `catalog_problems(source_catalog_id)` — the invariant is protected by convention (all writers
+-- use the same UUIDv5 generator, which the 0006 PK enforces globally) and adding a FK would
+-- add a per-row lookup to the catalog hot-path trigger on every rising edge. If a future board
+-- type is ever added with a different id scheme (slab-scoped ids, non-UUIDv5), reconsider the
+-- FK then — this table's PK would need to become composite `(layout_id, angle, source_catalog_id)`
+-- and the ON CONFLICT clause + client query would follow.
 create table if not exists public.benchmark_events (
     source_catalog_id text        primary key,
     layout_id         int         not null,
