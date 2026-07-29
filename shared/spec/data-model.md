@@ -16,12 +16,10 @@ color the firmware lights on the strip.
 | right  | `R`             | blue                     |
 | match  | `M`             | pink                     |
 | end    | `E`             | red                      |
-| foot   | `P` (see note)  | turquoise (screen only)  |
+| foot   | `F`             | cyan / turquoise         |
 
-`foot` is a web-added beta role (a foothold). The firmware's letter set predates it and
-has no foothold color, so on the wall a foot hold lights as the plain move LED (`P`,
-blue); the turquoise is display-only. A future firmware revision could add a dedicated
-letter.
+`foot` is a beta role (a foothold) added on web. The firmware already parses `F` and
+lights it cyan — the letter simply predated the apps using it (see ble-protocol.md).
 
 ### Beta-collapse rule
 
