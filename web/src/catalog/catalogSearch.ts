@@ -14,14 +14,20 @@
 // board's default". The secondary sort rides `sortThenBy` (a SortKey or `none` for
 // no tiebreak), stripped at its default; a secondary that shares the primary's
 // dimension is dropped on read so URL state matches the "Then by" control.
+//
+// Two params open the problem editor rather than describing the list: `new=1` (a fresh
+// draft) and `edit=<id>` (an existing own problem). They live here so the editor is
+// deep-linkable and survives the reloads its persisted draft is built for (plan KTD10).
 
 import { FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
 import {
   DEFAULT_FILTERS,
+  SOURCE_KEYS,
   STATUS_KEYS,
   sortDimension,
   type FilterState,
   type SortKey,
+  type SourceFacet,
   type StatusKey,
 } from './filters'
 
@@ -53,8 +59,14 @@ export interface CatalogSearch {
   status: string
   /** Comma-joined saved-list ids to filter by (OR'd); `''` = no list filter. */
   list: string
+  /** Authored-problem source facet (`mine`/`community`); `''` = no source filter. */
+  source: string
   /** Open problem's `source_catalog_id`; `''` = drawer closed. */
   problem: string
+  /** `1` opens the problem editor on a new draft; omitted = closed. */
+  new: 0 | 1
+  /** Id of the problem the editor is editing; `''` = not editing. */
+  edit: string
 }
 
 /** The default (stripped) value of every param. */
@@ -71,7 +83,10 @@ export const CATALOG_SEARCH_DEFAULTS: CatalogSearch = {
   holds: '',
   status: '',
   list: '',
+  source: '',
   problem: '',
+  new: 0,
+  edit: '',
 }
 
 const GRADE_MAX = FONT_GRADES.length - 1
@@ -103,7 +118,11 @@ export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSear
     holds: str(raw.holds),
     status: str(raw.status),
     list: str(raw.list),
+    // Unknown values decode to no filter rather than to a facet nothing can satisfy.
+    source: SOURCE_KEYS.includes(str(raw.source) as SourceFacet) ? str(raw.source) : '',
     problem: str(raw.problem),
+    new: num(raw.new) === 1 ? 1 : 0,
+    edit: str(raw.edit),
   }
 }
 
@@ -151,11 +170,14 @@ export function decodeGrade(s: string): [number, number] | null {
 
 // ─── FilterState <-> search ─────────────────────────────────────────────────
 
-/** Build the filter/sort/search portion of the URL from a FilterState. Omits
- *  `angle` and `problem`, which the route and drawer own respectively. Defaults
- *  are still emitted (e.g. `bench: 0`) — the route's strip middleware removes
+/** Build the filter/sort/search portion of the URL from a FilterState. Omits `angle`,
+ *  `problem` and the editor params (`new`/`edit`), which the route, the detail drawer and
+ *  the editor own respectively — writing filters must never open or close either drawer.
+ *  Defaults are still emitted (e.g. `bench: 0`) — the route's strip middleware removes
  *  them, so every write site can pass natural values without remembering to omit. */
-export function filtersToSearch(f: FilterState): Omit<CatalogSearch, 'angle' | 'problem'> {
+export function filtersToSearch(
+  f: FilterState,
+): Omit<CatalogSearch, 'angle' | 'problem' | 'new' | 'edit'> {
   return {
     q: f.search,
     grade: encodeGrade(f.gradeRange),
@@ -168,6 +190,7 @@ export function filtersToSearch(f: FilterState): Omit<CatalogSearch, 'angle' | '
     holds: f.holdsFilter.join(','),
     status: encodeStatus(f.statusFilters),
     list: f.listFilter.join(','),
+    source: f.source ?? '',
   }
 }
 
@@ -192,5 +215,7 @@ export function searchToFilters(s: CatalogSearch): FilterState {
     holdsFilter: s.holds ? s.holds.split(',').filter(Boolean) : [],
     statusFilters: decodeStatus(s.status),
     listFilter: s.list ? s.list.split(',').filter(Boolean) : [],
+    // Already validated to a known key (or '') on read, so the cast is safe here.
+    source: s.source ? (s.source as SourceFacet) : null,
   }
 }

@@ -1,4 +1,5 @@
-// The nav control for a PINNED rich facet (Grade, Holds, Sort, min-stars, Status, Methods).
+// The nav control for a PINNED rich facet (Grade, Holds, Sort, min-stars, Status, Methods,
+// Custom problems).
 // Renders a compact header button that reflects the facet's active value; tapping opens the
 // facet's control. Grade/Sort/min-stars/Status/Methods open a shadcn Popover with the control
 // plus an inline Clear (no ✕ micro-target in the nav row); Holds routes to the full-board
@@ -18,9 +19,11 @@ import { FONT_GRADES } from '../board/grades'
 import { HoldFilterPicker } from './HoldFilterPicker'
 import { SessionStatusRows } from './SessionStatusRows'
 import { useSessionFilterRows } from './useSessionFilterRows'
+import { SourceToggles } from './SourceToggles'
 import {
   METHOD_LABELS,
   SORT_LABELS,
+  SOURCE_LABEL,
   STATUS_KEYS,
   STATUS_LABELS,
   STATUS_SHORT_LABELS,
@@ -165,7 +168,13 @@ export function FacetControlPopover({
             <SessionStatusRows session={sessionStatus} scrollClassName="max-h-56" />
           </div>
         ) : (
-          <FacetBody facetId={facetId} filters={filters} set={set} gradeSpan={gradeSpan} />
+          <FacetBody
+            facetId={facetId}
+            filters={filters}
+            set={set}
+            gradeSpan={gradeSpan}
+            signedOut={ctx.signedOut ?? false}
+          />
         )}
         {/* Clear keys off "is there something to clear", which for session status is NOT the same
             as `active`: a paused projection makes the facet correctly read inactive (nothing is
@@ -194,11 +203,14 @@ function FacetBody({
   filters,
   set,
   gradeSpan,
+  signedOut,
 }: {
   facetId: PinnableFacetId
   filters: FilterState
   set: (patch: Partial<FilterState>) => void
   gradeSpan: [number, number]
+  /** Definitively signed out — the source facet offers "Community" but not "Mine". */
+  signedOut: boolean
 }) {
   switch (facetId) {
     case 'grade':
@@ -253,6 +265,17 @@ function FacetBody({
               </Toggle>
             ))}
           </div>
+        </div>
+      )
+    case 'source':
+      return (
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium text-muted-foreground">{SOURCE_LABEL}</div>
+          <SourceToggles
+            value={filters.source}
+            onChange={(source) => set({ source })}
+            signedOut={signedOut}
+          />
         </div>
       )
     case 'methods':

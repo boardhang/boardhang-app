@@ -21,7 +21,7 @@ but still advertises the NUS service.
 message  = "l#" tokens "#"
 tokens   = token ( "," token )*        ; empty for a clear
 token    = letter ledIndex
-letter   = "S" | "L" | "R" | "M" | "E" | "P"
+letter   = "S" | "L" | "R" | "M" | "E" | "F" | "P"
 ledIndex = 0-based integer (serpentine LED index — see led-geometry.md)
 ```
 
@@ -36,11 +36,17 @@ Example: `l#S0,P14,P40,E131#` — start at LED 0, moves at 14 and 40, end at 131
 | `R`    | right | blue   |
 | `M`    | match | pink   |
 | `E`    | end   | red    |
+| `F`    | foot  | cyan   |
 | `P`    | move / plain (beta-off collapse, single-LED calibration) | blue |
 
+Verified against the firmware source (FabianRig/ArduinoMoonBoardLED `src/main.cpp`):
+it parses all six role letters — including `F` → cyan `(0, B, B)` — plus `P` as the
+plain move. Its optional "additional LED" mode lights a neighbouring LED yellow for
+every type except `E`; the app never sends that, it is a firmware-side mapping.
+
 `P` is what the firmware documents as a plain "move" LED. When beta is off the app
-collapses left/right/match to a single move color (see data-model.md); the Swift
-`message(for:)` emits the *displayed* role's protocol letter, so with beta off those
+collapses left/right/match/foot to a single move color (see data-model.md); the
+message is built from the *displayed* role's protocol letter, so with beta off those
 tokens go out as the blue "right"/move letter.
 
 ### Special messages

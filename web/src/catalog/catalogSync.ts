@@ -7,6 +7,8 @@
 
 import { supabase } from '../supabase/client'
 import type { HoldType } from '../types'
+import { errorMessage, getUserProblemsByIds, readUserProblemsForSlab } from './userProblemsSync'
+import { byGradeThenName, isUserProblemId, toCatalogProblem, type UserProblem } from './userProblemsTypes'
 
 export interface CatalogHold {
   c: number
@@ -62,14 +64,6 @@ function delay(ms: number): Promise<void> {
 }
 
 /** Human-readable text for a thrown/PostgREST error, for the Settings rebuild UI. */
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message
-  if (typeof err === 'object' && err !== null && 'message' in err) {
-    return String((err as { message: unknown }).message)
-  }
-  return String(err)
-}
-
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
@@ -292,10 +286,16 @@ export async function countSlab(layoutId: number, angle: number): Promise<number
 }
 
 /**
- * Look up cached catalog problems by their stable ids (primary key), returning a map
- * keyed by `source_catalog_id`. Used to enrich logbook rows with setter/benchmark/holds
- * — an offline, board-agnostic lookup. Missing ids (user problems, uncached entries)
- * are simply absent from the map, so callers fall back gracefully.
+ * Look up cached problems by their stable ids (primary key), returning a map keyed by
+ * `source_catalog_id`. Used to enrich logbook rows, list entries and session queues with
+ * setter/benchmark/holds — an offline, board-agnostic lookup. Missing ids (uncached
+ * entries, a public problem its author has withdrawn) are simply absent from the map, so
+ * callers fall back gracefully.
+ *
+ * `user:`-prefixed ids come from the user-problems database instead (KTD3), which is why
+ * every caller of this function got custom problems for free. That lookup is board-agnostic
+ * too, so a legacy iOS row with no layout/angle — invisible to `readSlab` — still resolves
+ * here and keeps an old logbook ascent renderable (R14).
  */
 export async function getCatalogProblemsByIds(
   ids: string[],
@@ -303,27 +303,76 @@ export async function getCatalogProblemsByIds(
   const result = new Map<string, CatalogProblem>()
   const unique = [...new Set(ids)]
   if (unique.length === 0) return result
-  const db = await openDB()
-  const tx = db.transaction(STORE, 'readonly')
-  const store = tx.objectStore(STORE)
-  const found = await Promise.all(unique.map((id) => requestResult<CatalogProblem | undefined>(store.get(id))))
-  db.close()
+
+  const userIds = unique.filter(isUserProblemId)
+  const catalogIds = unique.filter((id) => !isUserProblemId(id))
+
+  // Each database is only opened when an id actually needs it, so the common all-imported
+  // lookup still costs one connection — and a mixed lookup runs both reads concurrently.
+  const [found, authored] = await Promise.all([
+    catalogIds.length === 0
+      ? Promise.resolve<(CatalogProblem | undefined)[]>([])
+      : (async () => {
+          const db = await openDB()
+          const tx = db.transaction(STORE, 'readonly')
+          const store = tx.objectStore(STORE)
+          const rows = await Promise.all(
+            catalogIds.map((id) => requestResult<CatalogProblem | undefined>(store.get(id))),
+          )
+          db.close()
+          return rows
+        })(),
+    userIds.length === 0
+      ? Promise.resolve(new Map<string, UserProblem>())
+      : orWithoutUserProblems(getUserProblemsByIds(userIds), new Map<string, UserProblem>()),
+  ])
   for (const problem of found) {
     if (problem) result.set(problem.source_catalog_id, problem)
+  }
+  for (const [id, problem] of authored) {
+    result.set(id, toCatalogProblem(problem))
   }
   return result
 }
 
-/** Read a slab's cached problems from IndexedDB (used offline and after a sync). */
+/**
+ * Read a slab's problems: everything imported for that board+angle, merged with the
+ * problems the user authored on it (KTD3), as one list sorted by (grade, name). Serves
+ * offline reads and every post-sync repaint.
+ *
+ * Custom rows live in their own database, which is exactly what makes Settings → "Rebuild
+ * catalog" safe: `clearSlab` wipes the imported store only and cannot destroy something the
+ * user authored (R9/AE4). Legacy rows with no board are absent from the slab index and so
+ * never appear here.
+ */
 export async function readSlab(layoutId: number, angle: number): Promise<CatalogProblem[]> {
-  const db = await openDB()
-  const tx = db.transaction(STORE, 'readonly')
-  const index = tx.objectStore(STORE).index('slab')
-  const problems = await requestResult<CatalogProblem[]>(index.getAll(IDBKeyRange.only([layoutId, angle])))
-  db.close()
-  return problems.sort((a, b) =>
-    a.grade === b.grade ? a.name.localeCompare(b.name) : a.grade.localeCompare(b.grade),
-  )
+  // The two databases are independent, so both reads run concurrently — this is the
+  // hot path behind every board open and every user-problems change notification.
+  const [imported, authored] = await Promise.all([
+    (async () => {
+      const db = await openDB()
+      const tx = db.transaction(STORE, 'readonly')
+      const index = tx.objectStore(STORE).index('slab')
+      const rows = await requestResult<CatalogProblem[]>(index.getAll(IDBKeyRange.only([layoutId, angle])))
+      db.close()
+      return rows
+    })(),
+    orWithoutUserProblems(readUserProblemsForSlab(layoutId, angle), []),
+  ])
+  return [...imported, ...authored.map(toCatalogProblem)].sort(byGradeThenName)
+}
+
+/**
+ * Degrade a failed user-problems read to `empty` rather than letting it take the imported
+ * catalog down with it. The two databases are independent connections that can fail
+ * independently (a storage eviction, a quota, a private-mode block); if that happens the
+ * right outcome is a catalog missing a handful of custom rows, not a blank catalog screen.
+ */
+function orWithoutUserProblems<T>(read: Promise<T>, empty: T): Promise<T> {
+  return read.catch((err) => {
+    console.warn('catalog: user problems unavailable, showing imported rows only', err)
+    return empty
+  })
 }
 
 function txDone(tx: IDBTransaction): Promise<void> {

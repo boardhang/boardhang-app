@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
 import {
+  CANONICAL_ORDER,
+  chipFacetId,
   facetActiveLabel,
+  facetClearPatch,
   facetPaused,
   isFacetActive,
   type FacetContext,
@@ -86,5 +89,28 @@ describe('pinnableFacets — status facet, paused projection', () => {
     for (const id of ['grade', 'holds', 'sort', 'stars', 'methods', 'lists'] as const) {
       expect(facetPaused(id, inSession({ members: 2, applied: false }))).toBe(false)
     }
+  })
+})
+
+describe('pinnableFacets — source facet', () => {
+  it('is active for either value and inactive when unset', () => {
+    expect(isFacetActive('source', state({ source: 'mine' }), solo())).toBe(true)
+    expect(isFacetActive('source', state({ source: 'community' }), solo())).toBe(true)
+    expect(isFacetActive('source', state(), solo())).toBe(false)
+  })
+
+  it('collapses to the selected value, falling back to the facet name', () => {
+    expect(facetActiveLabel('source', state({ source: 'mine' }), solo())).toBe('Mine')
+    expect(facetActiveLabel('source', state({ source: 'community' }), solo())).toBe('Community')
+    expect(facetActiveLabel('source', state(), solo())).toBe('Custom problems')
+  })
+
+  it('clears to no source filter', () => {
+    expect(facetClearPatch('source')).toEqual({ source: null })
+  })
+
+  it('is pinnable in the canonical order', () => {
+    expect(CANONICAL_ORDER.map((f) => f.id)).toContain('source')
+    expect(chipFacetId('source')).toBe('source')
   })
 })

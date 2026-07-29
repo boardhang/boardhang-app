@@ -1,6 +1,9 @@
-// The read-only detail pager: a full board render + metadata for one problem,
-// prev/next across the current filtered list, favorite toggle, and Light up over
-// Web Bluetooth. Records the view into recents. Mirrors iOS CatalogProblemPager.
+// The detail pager: a full board render + metadata for one problem, prev/next across
+// the current filtered list, favorite toggle, logging, and Light up over Web
+// Bluetooth. Records the view into recents. Mirrors iOS CatalogProblemPager.
+//
+// On a problem the signed-in user authored it also carries the owner controls (R6): an
+// overflow cell APPENDED to the toolbar with Edit, the private/public toggle, and Delete.
 //
 // The shown problem is owned by the URL (?problem) and passed in as `problem`;
 // paging calls `onNavigate(id)` (a replace-navigation) rather than mutating local
@@ -13,8 +16,10 @@
 // and desktop arrow keys.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, ListPlus, Loader2, Repeat, Star } from 'lucide-react'
+import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, ListPlus, Loader2, MoreHorizontal, Repeat, Star } from 'lucide-react'
+import { toast } from 'sonner'
 import { useAuth } from '../auth/AuthProvider'
+import { ProfileSetup } from '../auth/ProfileSetup'
 import { SignInDialog } from '../auth/SignInDialog'
 import { addAttemptTries, getAscentsSnapshot, settleAscents } from '../logbook/ascents'
 import { problemLogContext, type ProblemLogContext } from '../logbook/problemHistory'
@@ -38,6 +43,9 @@ import { ProblemDetailAddToQueue } from './ProblemDetailAddToQueue'
 import { ProblemDetailQueueStrip } from './ProblemDetailQueueStrip'
 import { useActiveQueueProblems } from '../sessions/useActiveQueueProblems'
 import { useShowPreviews } from './previewsStore'
+import { deleteUserProblem, setUserProblemVisibility, subscribeUserProblemsChanged } from './userProblemsStore'
+import { getUserProblemsByIds, ownUserProblemIds } from './userProblemsSync'
+import { isUserProblemId, type UserProblem } from './userProblemsTypes'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -47,6 +55,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface ProblemDetailProps {
   /** The problem to show (resolved from ?problem, with full-slab fallback, upstream). */
@@ -67,6 +81,12 @@ interface ProblemDetailProps {
    *  gate for the queue strip: the strip renders only where this is provided, so the logbook and
    *  list-detail hosts (which don't wire it) show no queue strip. */
   onPageOverQueue?: (id: string, stack: CatalogProblem[]) => void
+  /** Owner-only: open the problem editor on `id`. The editor's `?edit` param belongs to the
+   *  catalog route, so each host routes there its own way; without this the overflow menu
+   *  simply drops its Edit item. */
+  onEditProblem?: (id: string) => void
+  /** Close the containing drawer — the shown problem is gone after the owner deletes it. */
+  onClose?: () => void
 }
 
 export function ProblemDetail({
@@ -79,6 +99,8 @@ export function ProblemDetail({
   highlightHolds,
   onNavigate,
   onPageOverQueue,
+  onEditProblem,
+  onClose,
 }: ProblemDetailProps) {
   const swipeStart = useRef<{ x: number; y: number } | null>(null)
   const showThumbnails = useShowPreviews('catalog')
@@ -91,8 +113,11 @@ export function ProblemDetail({
     [queueEntries],
   )
   const { toggleFavorite } = useFavorites()
-  const { status } = useAuth()
+  const { status, profile } = useAuth()
   const signedIn = status !== 'signedOut'
+  // AE3, client side: a public problem is credited to a handle, so publishing needs one.
+  // The server backstop lands with the public-read migration; this is the affordance.
+  const canPublish = Boolean(profile?.handle)
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null)
   const [logOpen, setLogOpen] = useState(false)
   const [signInOpen, setSignInOpen] = useState(false)
@@ -111,6 +136,41 @@ export function ProblemDetail({
   const [pendingTries, setPendingTries] = useState(0)
 
   const currentId = current.source_catalog_id
+
+  // ── Owner-only management (R6) ───────────────────────────────────────────────
+  // The `user:` prefix says a problem was authored, not by WHOM — another climber's public
+  // problem carries it too, and CatalogProblem has no user_id — so ownership is the cached
+  // own-ids set. The row itself comes along because the menu needs its visibility, which
+  // isn't part of the CatalogProblem view. Null means "not mine (yet known)": the menu
+  // fails closed while the read is in flight rather than flashing owner controls.
+  const [ownRow, setOwnRow] = useState<UserProblem | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [handlePrompt, setHandlePrompt] = useState(false)
+  useEffect(() => {
+    setOwnRow(null)
+    if (!isUserProblemId(currentId)) return
+    let alive = true
+    async function read() {
+      const own = await ownUserProblemIds()
+      if (!alive) return
+      if (!own.has(currentId)) {
+        setOwnRow(null)
+        return
+      }
+      const found = await getUserProblemsByIds([currentId])
+      if (alive) setOwnRow(found.get(currentId) ?? null)
+    }
+    // Re-read on every cached-problems change so an edit, a publish, or a sync landing
+    // under the open drawer keeps the menu honest.
+    const reload = () => void read().catch(() => {})
+    reload()
+    const unsubscribe = subscribeUserProblemsChanged(reload)
+    return () => {
+      alive = false
+      unsubscribe()
+    }
+  }, [currentId])
 
   // "Sheet hugs the problem": the drawer sizes to the details block so the Beta strip below
   // starts off-screen (scroll/drag up to reveal). We measure the details' natural height and
@@ -221,6 +281,13 @@ export function ProblemDetail({
 
   const atFirst = pos <= 0
   const atLast = pos < 0 || pos >= displayed.length - 1
+
+  // Beta videos are keyed to imported catalog problems; a custom problem has no beta
+  // pipeline behind it, so the section is gated off rather than rendered empty. With
+  // nothing below the fold there is nothing to peek at either, so the sheet drops the peek
+  // and hugs the details exactly.
+  const showBeta = !isUserProblemId(currentId)
+  const hasBelowFold = showBeta || Boolean(onPageOverQueue && queueEntries.length > 0)
 
   // Desktop arrow-key paging. Ignored while the user is typing in a field.
   useEffect(() => {
@@ -340,6 +407,44 @@ export function ProblemDetail({
     }
   }
 
+  // ── Owner actions ────────────────────────────────────────────────────────────
+  // Publishing with no handle prompts for a profile instead — the author picks a handle,
+  // then flips the toggle again (the menu label reflects the row, so nothing is published
+  // behind their back if they dismiss the prompt).
+  async function toggleVisibility() {
+    if (!ownRow) return
+    const next = ownRow.visibility === 'public' ? 'private' : 'public'
+    if (next === 'public' && !canPublish) {
+      setHandlePrompt(true)
+      return
+    }
+    try {
+      await setUserProblemVisibility(currentId, next)
+    } catch (e) {
+      toast.error(next === 'public' ? "Couldn't publish the problem." : "Couldn't make it private.", {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    }
+  }
+
+  // Soft-deletes the problem and closes the drawer — the shown problem no longer exists,
+  // so there is nothing left to page from. Logged ascents are untouched (R15).
+  async function confirmDelete() {
+    if (deleting) return
+    setDeleting(true)
+    try {
+      await deleteUserProblem(currentId)
+      setConfirmingDelete(false)
+      onClose?.()
+    } catch (e) {
+      toast.error("Couldn't delete the problem.", {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   // Side-swipe the board to page prev/next (vertical drags fall through to the
   // drawer's swipe-to-dismiss).
   function onSwipeStart(e: React.PointerEvent) {
@@ -361,7 +466,10 @@ export function ProblemDetail({
     // problem and Beta is below the fold; snap-proximity settles a scroll onto either page.
     <div
       className="snap-y snap-proximity overflow-y-auto overscroll-contain px-4"
-      style={{ maxHeight: '85dvh', height: detailsHeight ? detailsHeight + BETA_PEEK : undefined }}
+      style={{
+        maxHeight: '85dvh',
+        height: detailsHeight ? detailsHeight + (hasBelowFold ? BETA_PEEK : 0) : undefined,
+      }}
     >
       <div ref={detailsRef} className="flex snap-start flex-col gap-4 py-4">
       <div className="flex items-start justify-between gap-3">
@@ -465,6 +573,40 @@ export function ProblemDetail({
         >
           <ChevronRight className="size-5" />
         </Button>
+        {/* Owner-only seventh cell, APPENDED so the six-cell geometry — and the measured
+            sheet height that follows from it — is byte-identical for everyone else. */}
+        {ownRow && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Problem options"
+                  className="flex h-full w-11 shrink-0 items-center justify-center rounded-none border-l border-l-border bg-transparent outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              }
+            >
+              <MoreHorizontal className="size-5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {/* Edit only for a row that names a board. A legacy iOS row recorded no
+                  layout/angle (0018/KTD1), so there is no slab for the editor to bind to and
+                  every caller's edit callback would no-op — a dead menu item. Delete and the
+                  visibility toggle are board-agnostic, so they stay offered. */}
+              {onEditProblem && ownRow.layoutId != null && (
+                <DropdownMenuItem onClick={() => onEditProblem(currentId)}>
+                  Edit problem
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => void toggleVisibility()}>
+                {ownRow.visibility === 'public' ? 'Make private' : 'Make public'}
+              </DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onClick={() => setConfirmingDelete(true)}>
+                Delete problem
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <div className="flex items-center gap-3">
@@ -506,7 +648,7 @@ export function ProblemDetail({
             onSelect={(id) => onPageOverQueue(id, queueStack)}
           />
         )}
-        <BetaVideos sourceCatalogId={currentId} />
+        {showBeta && <BetaVideos sourceCatalogId={currentId} />}
       </div>
 
       <LogAscentSheet
@@ -553,6 +695,43 @@ export function ProblemDetail({
               {sentTodayConfirm === 'tries' ? 'Log try anyway' : 'Log again'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={confirmingDelete}
+        onOpenChange={(open) => !open && !deleting && setConfirmingDelete(false)}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete problem</DialogTitle>
+            <DialogDescription>
+              Delete {current.name}? It goes for good — but ascents you logged on it stay in
+              your logbook.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" disabled={deleting} onClick={() => setConfirmingDelete(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* AE3: publishing is credited to a handle, so an author without one sets up a
+          profile here first. Saving doesn't publish on its own — they flip the toggle
+          again — so dismissing this never leaves a problem public by accident. */}
+      <Dialog open={handlePrompt} onOpenChange={setHandlePrompt}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pick a handle first</DialogTitle>
+            <DialogDescription>
+              Shared problems are credited to your handle. Pick one to share this problem
+              with other climbers.
+            </DialogDescription>
+          </DialogHeader>
+          <ProfileSetup onDone={() => setHandlePrompt(false)} />
         </DialogContent>
       </Dialog>
       <SignInDialog

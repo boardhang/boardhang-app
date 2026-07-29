@@ -16,6 +16,10 @@ color the firmware lights on the strip.
 | right  | `R`             | blue                     |
 | match  | `M`             | pink                     |
 | end    | `E`             | red                      |
+| foot   | `F`             | cyan / turquoise         |
+
+`foot` is a beta role (a foothold) added on web. The firmware already parses `F` and
+lights it cyan — the letter simply predated the apps using it (see ble-protocol.md).
 
 ### Beta-collapse rule
 
@@ -23,7 +27,7 @@ The "Show beta" setting controls whether the individual hand roles are shown:
 
 - **Beta on:** every role displays/lights as itself (green / violet / blue / pink /
   red).
-- **Beta off:** the move roles **left, right, match all collapse to `right`** (blue).
+- **Beta off:** the move roles **left, right, match, foot all collapse to `right`** (blue).
   Only start (green), the collapsed move (blue), and end (red) remain. The BLE message
   is built from the *displayed* role, so with beta off those holds go out as the blue
   move letter.
@@ -46,6 +50,29 @@ HoldAssignment {
 ```
 
 Identity is the `col-row` pair (one hold per cell).
+
+## User problem
+
+A problem a person authored, as stored in `public.user_problems` (Supabase) and
+cached by each client. The holds are a `HoldAssignment` array serialized as
+`{ c, r, t }` — `c`/`r` are the grid coordinates above, `t` the role's raw value.
+
+| Field            | Meaning                                                                 |
+| ---------------- | ----------------------------------------------------------------------- |
+| `id`             | uuid, client-generated (the primary key)                                |
+| `name`, `grade`  | display name and Font grade                                             |
+| `holds`          | `[{ c, r, t }]` — 1–60 entries when public                              |
+| `layout_id`      | the board it was drawn on; null on legacy rows that recorded no board   |
+| `angle`          | wall angle in degrees; null on the same legacy rows                     |
+| `visibility`     | `private` (default) or `public`                                          |
+| `source_catalog_id` | `"user:" + id` — the text id shared with official catalog problems   |
+| `setter_user_id` | authoritative author of a **public** problem                            |
+| `setter_handle`  | the setter's profile handle, denormalized so anon readers can attribute  |
+
+Identity and attribution are **server-owned**: `source_catalog_id` is a generated
+column and the two `setter_*` fields are trigger-stamped when a problem becomes
+public and cleared when it goes private or is deleted. A client reads all three
+and writes none of them.
 
 ## Board config shape
 

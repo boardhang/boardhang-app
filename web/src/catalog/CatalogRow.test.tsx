@@ -174,3 +174,28 @@ describe('CatalogRow', () => {
     expect(onSelect).toHaveBeenCalledWith(p)
   })
 })
+
+describe('CatalogRow — custom marker (U6)', () => {
+  it('marks a user-authored row and leaves an imported one unmarked', () => {
+    const { rerender } = render(
+      <CatalogRow problem={problem({ source_catalog_id: 'user:abc' })} board={board} />,
+    )
+    expect(screen.getByRole('img', { name: 'Custom problem' })).toBeInTheDocument()
+    rerender(<CatalogRow problem={problem({ source_catalog_id: 'p1' })} board={board} />)
+    expect(screen.queryByRole('img', { name: 'Custom problem' })).toBeNull()
+  })
+
+  it('keeps the other name-line adornments alongside it', () => {
+    render(
+      <CatalogRow
+        problem={problem({ source_catalog_id: 'user:abc', is_benchmark: true })}
+        board={board}
+        isFavorite
+        isSent
+      />,
+    )
+    for (const name of ['Custom problem', 'Benchmark', 'Sent', 'Favorite']) {
+      expect(screen.getByRole('img', { name })).toBeInTheDocument()
+    }
+  })
+})

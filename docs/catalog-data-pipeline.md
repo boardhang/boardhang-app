@@ -2,7 +2,9 @@
 
 How official MoonBoard problems get from the boardsesh API into **Supabase**, and from there
 synced down and cached by each client (iOS, PWA, future Android) — and how to regenerate or add
-a board. Pairs with [`../CONTEXT.md`](../CONTEXT.md) §"Importing official problems".
+a board. Pairs with [`../CONTEXT.md`](../CONTEXT.md) §"Importing official problems". Official
+problems are only one of two sources — see §"The second source: user-authored problems" for the
+client-written lane and its takedown runbook.
 
 The catalog is **server-distributed**, not bundled: clients no longer ship the problem JSON.
 They download it lazily per board into a local cache and query it locally, so every client stays
@@ -14,7 +16,9 @@ in sync instead of drifting on divergent bundles. See migration `supabase/migrat
 (dump / roll back the table) + `scripts/prune_catalog_orphans.py` (soft-delete removed rows),
 `MoonBoardLED/Catalog/Catalog.swift` (synced disk cache + loading),
 `MoonBoardLED/Services/Supabase/CatalogSyncManager.swift` (iOS pull),
-`web/src/catalog/catalogSync.ts` (PWA pull), `MoonBoardLED/Board/HoldSetMembership.swift`.
+`web/src/catalog/catalogSync.ts` (PWA pull + the read-time merge),
+`web/src/catalog/userProblemsSync.ts` (the user-authored lane),
+`MoonBoardLED/Board/HoldSetMembership.swift`.
 
 ## Data flow
 
@@ -181,6 +185,82 @@ one board+angle at a time, so repairing the 2019 40° board doesn't re-download 
 concurrent slab downloads can't re-create the exhaustion being undone). It is
 destructive-then-refetch: an interrupted rebuild leaves that board emptier than it started, hence
 the confirm dialog.
+
+## The second source: user-authored problems
+
+Official problems are one of **two** lanes into a client's catalog. The other is
+`public.user_problems` — written by the web editor straight through PostgREST, with no fetch
+script, no staging directory and no service-role step. A user-authored problem is identified by
+the generated text id **`user:<uuid>`** (migration `0018`), which is the same id lane
+`catalog_problems.source_catalog_id` uses, so ascents, session queues and lit-problem pointers
+store one kind of problem id regardless of origin. Migration `0019` adds the public read policy
+(`to anon, authenticated`, live-public rows only) plus the guards that make it safe: trigger-stamped
+`setter_user_id`/`setter_handle`, a public-completeness `CHECK`, and a per-user cap of 50 live
+public rows. Schema detail lives in [data-model-and-logging.md](data-model-and-logging.md);
+the authoring UI is in [navigation-and-ui-flows.md](navigation-and-ui-flows.md).
+
+```
+Supabase  public.user_problems   (client-written; owner-only writes, live-public reads)
+    │
+    ├─ OWN rows ──────────► updated_at cursor delta, tombstones included ──┐
+    └─ OTHERS' PUBLIC rows ► full per-slab snapshot, absence = retraction ─┤
+                                                                          ▼
+                          PWA: userProblemsSync.ts → IndexedDB  moonboard-user-problems
+                                                                          │
+                          merged at READ time by catalogSync.ts ──────────┘
+                          (readSlab, getCatalogProblemsByIds)
+```
+
+The two lanes never write the same rows: the snapshot skips rows the caller owns, because a
+private row is absent from a public snapshot *by definition* and eviction-by-absence would delete
+the author's own work. The custom rows live in a **separate IndexedDB database** from the imported
+catalog, which is what makes Settings → Catalog cache → Rebuild safe: `clearSlab`/`rebuildSlab`
+wipe imported rows only and can never destroy something a user authored. Conversely a failed
+public pull evicts nothing — an offline device keeps browsing what it has instead of reading the
+failure as "everything was retracted". The eviction rule is written up in
+[`docs/solutions/architecture-patterns/snapshot-eviction-over-tombstone-streams.md`](solutions/architecture-patterns/snapshot-eviction-over-tombstone-streams.md).
+
+### Takedown runbook (service role)
+
+There is no moderation table and no admin flag by design — a takedown is a service-role SQL
+statement against the hosted project (SQL Editor, or `psql` with the service-role connection).
+Address the row by its `source_catalog_id`, the id that appears in a client URL and a report.
+
+```sql
+-- 1. Unpublish (reversible): the row stays the author's, they can re-publish it.
+--    Frees one of their 50 public slots immediately.
+update public.user_problems
+   set visibility = 'private'
+ where source_catalog_id = 'user:<uuid>';
+
+-- 2. Tombstone (removes it from the author too; their client deletes its cached copy).
+update public.user_problems
+   set deleted = true
+ where source_catalog_id = 'user:<uuid>';
+
+-- Look one up before acting on it.
+select source_catalog_id, name, grade, layout_id, angle, visibility, deleted,
+       setter_handle, setter_user_id, updated_at
+  from public.user_problems
+ where source_catalog_id = 'user:<uuid>';
+```
+
+Both statements bump `updated_at` through the `0002` trigger, so the author's own client notices
+on its next delta pull, and every other client drops the row on its next per-slab snapshot (it is
+no longer listed, so it evicts by absence). No client cache needs manual clearing.
+
+**A service-role write does not clear the attribution columns.** The `0019` stamp trigger keys off
+`auth.uid()`, which is null for a service-role connection, so it passes the write through
+untouched: `setter_user_id` and `setter_handle` keep the values they had when the row was public.
+That is harmless — nothing can read a private or tombstoned row but its owner — but do not treat a
+runbook retraction as having erased the author's identity from the row. To actually clear them, set
+the columns explicitly in the same statement.
+
+**Moderation posture (v1).** The takedown path above is reactive and manual; there is no queue, no
+report flow and no pre-publication review. What bounds the blast radius is that the PWA origin is
+**entirely `noindex`** (`X-Robots-Tag` on every `www.boardhang.app` response — see
+[content-site.md](content-site.md)), so a public user problem is reachable by another app user
+browsing the board, never by a search engine.
 
 ## Gotchas
 

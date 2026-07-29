@@ -17,10 +17,10 @@ Bluetooth (Nordic UART) to live-preview, light, clear, and calibrate the LEDs.
 
 The reference/physical hardware is a **Mini MoonBoard 2025** (11 cols A–K × 12 rows = 132
 holds). LED geometry is row-parameterized (12-row Mini / 18-row full boards) and the lighting
-path can drive a full wall too — the Mini is a hardware limit, not a code one; only the
-custom-problem editor is Mini-specific.
+path can drive a full wall too — the Mini is a hardware limit, not a code one; only the **iOS**
+custom-problem editor is Mini-specific (the web editor works on any registered board).
 
-Beyond authoring it browses read-only **official-problem catalogs** for five layouts (Mini
+Beyond authoring it browses **official-problem catalogs** for five layouts (Mini
 2025, 2016, 2024, Masters 2017/2019 — ~12k problems across 40°/25°) with search/sort/filter/
 favorites, a **multi-board** model (per-board angle + installed hold-set filtering), a local
 **logbook** of ascents/attempts with a grade-pyramid view, and **optional accounts** (email
@@ -29,13 +29,18 @@ local per-board cache — see [docs/catalog-data-pipeline.md](docs/catalog-data-
 board's first open needs network, then works offline. BLE authoring + the local logbook work
 fully offline; sign-in and the first catalog sync need network.
 
+On the web, a signed-in user can also **author problems into that catalog** — a tap-grid editor
+over the board art, saved private by default and optionally published for other users on the same
+board. Flow and entry points: [docs/navigation-and-ui-flows.md](docs/navigation-and-ui-flows.md#problem-authoring-web);
+the sync lanes and the takedown runbook: [docs/catalog-data-pipeline.md](docs/catalog-data-pipeline.md).
+
 ## Repo map (a monorepo)
 
 | Dir | What |
 | --- | --- |
 | `ios/` | **Primary app** — native SwiftUI + CoreBluetooth + SwiftData. Multi-board catalog, logbook, accounts. The live Xcode project is **`ios/MoonBoardLED.xcodeproj`**. |
 | `site/` | **Content site** (Next.js App Router, static) on the apex `boardhang.app` — the only *indexable* web surface (landing page + `/guides`); the PWA on www is deliberately noindexed. See [docs/content-site.md](docs/content-site.md); deploys as its own Vercel project (`boardhang-site`, runbook in `site/CLAUDE.md`). |
-| `web/` | Companion **Web Bluetooth PWA** (Vite + React 19 + TS + shadcn/ui). Authoring (connect → build → light/clear) plus a multi-board **catalog browser** (`src/catalog/`, `src/shell/`): My Boards, filter/sort, board render, detail pager + light-up, over the server-distributed catalog (`src/catalog/catalogSync.ts`), a logbook (`src/logbook/`), and Supabase accounts (`src/auth/`). **URL routing** via TanStack Router (`src/router.tsx`): the URL is the source of truth for the catalog — filters, search, angle, and the open problem are all deep-linkable (see [navigation-and-ui-flows.md](docs/navigation-and-ui-flows.md#web-pwa-routing)). |
+| `web/` | Companion **Web Bluetooth PWA** (Vite + React 19 + TS + shadcn/ui). A multi-board **catalog browser** (`src/catalog/`, `src/shell/`): My Boards, filter/sort, board render, detail pager + light-up, over the server-distributed catalog (`src/catalog/catalogSync.ts`), plus **problem authoring** in the same surface (`ProblemEditorDrawer` + `src/catalog/userProblems*.ts`; the standalone connect/build screen is retired), a logbook (`src/logbook/`), and Supabase accounts (`src/auth/`). **URL routing** via TanStack Router (`src/router.tsx`): the URL is the source of truth for the catalog — filters, search, angle, and the open problem are all deep-linkable (see [navigation-and-ui-flows.md](docs/navigation-and-ui-flows.md#web-pwa-routing)). |
 | `shared/spec/` | **Markdown specs only** (BLE, geometry, data model). Not shared code — `web/` reimplements them in TS. |
 | `supabase/` | Postgres migrations backing accounts/profiles, the logbook, and the **catalog** (`0006_catalog_problems.sql`). |
 | `docs/` | Subsystem deep dives + index ([docs/README.md](docs/README.md)). |
@@ -102,6 +107,7 @@ needs a secure context — desktop Chrome/Edge, Android Chrome, or iPhone via Bl
 | Catalog data, JSON schemas, the Python fetch scripts | [docs/catalog-data-pipeline.md](docs/catalog-data-pipeline.md) |
 | SwiftData models, logging ascents, logbook & pyramid | [docs/data-model-and-logging.md](docs/data-model-and-logging.md) |
 | Tabs, navigation, Home board management, Settings | [docs/navigation-and-ui-flows.md](docs/navigation-and-ui-flows.md) |
+| Web problem authoring — editor, publishing, takedown | [navigation](docs/navigation-and-ui-flows.md#problem-authoring-web) + [pipeline](docs/catalog-data-pipeline.md) + [data model](docs/data-model-and-logging.md) |
 | Accounts, Supabase setup, Google/email auth, profiles | [docs/social-accounts-login-SETUP.md](docs/social-accounts-login-SETUP.md) |
 | The web PWA + monorepo plan | [docs/pwa-monorepo-plan.md](docs/pwa-monorepo-plan.md) |
 | The content site, SEO/noindex posture, apex→www redirects | [docs/content-site.md](docs/content-site.md) |

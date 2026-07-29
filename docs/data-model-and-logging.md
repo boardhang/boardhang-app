@@ -136,6 +136,61 @@ derived in `problemHistory.ts`). A lone unsent attempt still reads "1 try", neve
 grade pyramid is unchanged: it buckets by the row's tries count, so a session flash still lands
 in the flash bucket.
 
+## User-authored problems (`public.user_problems`)
+
+The cloud table behind web problem authoring. It predates authoring — `0002` created it for the
+iOS logbook sync — and migrations `0018`/`0019` extended it rather than forking a second table, so
+it keeps the same sync spine (client-generated uuid PK, `holds` jsonb, `updated_at` + `deleted`,
+the owner-only RLS quartet, cascade from `auth.users`).
+
+**One text id lane.** `source_catalog_id` is `GENERATED ALWAYS AS ('user:' || id) STORED`. Every
+downstream surface — `ascents.source_catalog_id`, session queues, `sessions.lit_problem_id`, the
+client's `getCatalogProblemsByIds` — already stores a bare text problem id, so a user problem joins
+that lane instead of forcing dual-lane handling everywhere. The `user:` prefix cannot collide with
+the UUIDv5 catalog ids, and the whole value is 41 characters (inside the 64-char `lit_problem_id`
+cap from `0017`). Being generated, it can never drift from the PK, and PostgREST treats it as
+read-only — a write payload that includes it fails outright.
+
+**Visibility lifecycle.** `visibility` is `'private'` (default) or `'public'`, and everything
+hangs off the predicate **live public** = `visibility = 'public' and not deleted`:
+
+- Publishing (an INSERT or, normally, a private→public UPDATE) runs the `0019` stamp trigger,
+  which sets `setter_user_id = auth.uid()` and `setter_handle` from the caller's own profile, and
+  **refuses the write** when that profile or its handle is missing. The client's "pick a handle
+  first" prompt is a convenience; this is the enforcement.
+- A public-completeness `CHECK` demands `layout_id`, `angle`, a non-empty `name` of ≤60 chars, both
+  attribution columns, and a `holds` array of 1–60 `{c,r,t}` objects (in-range coordinates, a known
+  role, no extra keys). Private rows and tombstones are exempt, which is what keeps the iOS-era rows
+  (empty name, null layout/angle, `'[]'` holds) legal.
+- Going private again or tombstoning **clears** both attribution columns — they are server-owned,
+  so the server stops standing behind them. Renaming a profile handle re-stamps every live public
+  row that setter owns, so credit can never point at a handle somebody else has since claimed.
+- A per-user cap of **50 live public rows** fires on INSERT *or* UPDATE under a per-user advisory
+  lock. It is a ceiling on live rows, not a lifetime quota: retracting or deleting frees a slot.
+
+**Two sync lanes, and what "absent" means.** The PWA caches these rows in their own IndexedDB
+database (`moonboard-user-problems`), fed by two lanes that never touch the same rows: own rows
+arrive as an `updated_at` cursor delta *with* tombstones; other setters' public rows arrive as a
+full per-slab snapshot in which **absence is retraction**. One rule therefore covers retraction,
+deletion, account deletion and re-publishing. Own rows are fenced out of the snapshot entirely — a
+private row is absent from a public snapshot by definition, so evicting on absence would delete the
+author's own work — and a *failed* pull evicts nothing at all. Sign-out clears own rows and the
+cursor; cached rows belonging to other setters are public by definition and stay, so a shared board
+keeps browsing. See [catalog-data-pipeline.md](catalog-data-pipeline.md) for the merge into the
+catalog read path.
+
+**Ascent history is independent of the problem.** An `Ascent` snapshots `problemName` /
+`problemGrade` and stores only the text id, so editing a user problem's name, grade or holds — or
+deleting it outright — leaves the logbook rows intact and still readable. Detail views that can no
+longer resolve the id simply render from the snapshot.
+
+**Known quirk — the iOS ascent lane.** `ascents` can reference a user problem two ways: the text
+`source_catalog_id` (what the web writes: `user:<uuid>`) or the uuid FK `user_problem_id` (what the
+dormant iOS app writes). They are not reconciled. In practice nothing is broken, because the
+problems iOS authored have a null `layout_id` and so never surface on the web at all; but if iOS
+development resumes, or those legacy problems are ever backfilled with a board, their web logbook
+would read as empty until the two lanes are joined. Recorded, accepted, not fixed.
+
 ## Logbook & grade pyramid
 
 - **Logbook** (`LogbookView`) filters ascents by `effectiveBoardLayoutId` (not the raw
@@ -162,4 +217,9 @@ in [navigation-and-ui-flows.md](navigation-and-ui-flows.md); board-scoped keys a
 - Same-day merge only applies to un-sent attempts; explicit sends always create a new row —
   but on **web** a send also absorbs (soft-deletes) today's attempt row after folding its
   tries in (see "Web: a send absorbs the day's attempt row").
-- Ascents are denormalized on purpose — don't "normalize" by joining to `Problem`.
+- Ascents are denormalized on purpose — don't "normalize" by joining to `Problem`. That's also
+  what lets an ascent outlive an edit or a delete of the user problem it points at.
+- `user_problems.source_catalog_id` and `setter_user_id`/`setter_handle` are server-owned
+  (generated column / trigger-stamped). Read them; never put them in a write payload.
+- In the public snapshot lane, **absence means retracted** — so never evict on a pull that failed,
+  and never let the snapshot touch the caller's own rows.

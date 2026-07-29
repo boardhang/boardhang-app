@@ -67,8 +67,8 @@ export function FilterPillBar({
   // The union forces the session arm to carry `sessionStatus` — a plain object literal with an
   // optional field is what let an earlier version silently report "no status filter" in a session.
   const ctx: FacetContext = inSession
-    ? { inSession: true, statusReady, sessionStatus: statusFacet }
-    : { inSession: false, statusReady }
+    ? { inSession: true, statusReady, sessionStatus: statusFacet, signedOut }
+    : { inSession: false, statusReady, signedOut }
   const [listSheetOpen, setListSheetOpen] = useState(false)
 
   // Chips only for active facets that are NOT pinned (a pinned facet shows as its control).

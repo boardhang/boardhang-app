@@ -222,6 +222,36 @@ describe('FilterPillBar — UNpinned Status inside a session', () => {
   })
 })
 
+describe('FilterPillBar — source facet (U6)', () => {
+  it('shows an unpinned active source as a removable chip labelled with its value', () => {
+    localStorage.setItem('catalogPinnedFilters_140', JSON.stringify([]))
+    renderBar({ layoutId: 140, filters: state({ source: 'mine' }) })
+    expect(screen.getByRole('button', { name: 'Remove Mine filter' })).toBeInTheDocument()
+  })
+
+  it('clears the facet when the chip is removed', () => {
+    localStorage.setItem('catalogPinnedFilters_141', JSON.stringify([]))
+    const onChange = vi.fn()
+    renderBar({ layoutId: 141, filters: state({ source: 'community' }), onChange })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Community filter' }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ source: null }))
+  })
+
+  it('shows a pinned source facet as a control (labelled by value when active)', () => {
+    localStorage.setItem('catalogPinnedFilters_142', JSON.stringify(['source']))
+    renderBar({ layoutId: 142, filters: state({ source: 'community' }) })
+    expect(screen.getByRole('button', { name: 'Community' })).toBeInTheDocument()
+    // Never both a control and a chip.
+    expect(screen.queryByRole('button', { name: /^Remove .* filter$/ })).toBeNull()
+  })
+
+  it('keeps a pinned source control usable when signed out (Community browses public problems)', () => {
+    localStorage.setItem('catalogPinnedFilters_143', JSON.stringify(['source']))
+    renderBar({ layoutId: 143, signedOut: true })
+    expect(screen.getByRole('button', { name: 'Custom problems' })).toBeInTheDocument()
+  })
+})
+
 // The third state. applyFilters skips the per-member clause unless the projection is ready
 // (`ctx.session.ready && !matchesSessionStatus(...)`), so while it is paused or loading the list
 // shows EVERYTHING. The header must say BOTH things at once: the filter exists, and it is not

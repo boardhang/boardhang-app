@@ -1,6 +1,12 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { getFavoriteIds, isFavorite, toggleFavorite, useFavorites } from './favoritesStore'
+import {
+  getFavoriteIds,
+  isFavorite,
+  pruneFavorites,
+  toggleFavorite,
+  useFavorites,
+} from './favoritesStore'
 
 beforeEach(() => {
   localStorage.clear()
@@ -22,6 +28,17 @@ describe('favoritesStore', () => {
     expect(result.current.favoriteIds.size).toBe(0)
     act(() => result.current.toggleFavorite('x'))
     expect(result.current.favoriteIds.has('x')).toBe(true)
+  })
+
+  it('prunes dangling ids and re-renders subscribers', () => {
+    const { result } = renderHook(() => useFavorites())
+    act(() => {
+      result.current.toggleFavorite('user:gone')
+      result.current.toggleFavorite('keep')
+    })
+    act(() => pruneFavorites(['user:gone', 'never-was-a-favorite']))
+    expect(result.current.favoriteIds.has('user:gone')).toBe(false)
+    expect(result.current.favoriteIds.has('keep')).toBe(true)
   })
 
   it('picks up a favorite written by another tab via the storage event', () => {

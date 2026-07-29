@@ -6,6 +6,7 @@
 
 import { FONT_GRADES, GRADE_FILTER_FLOOR, gradeIndex } from '../board/grades'
 import type { CatalogProblem } from './catalogSync'
+import { isUserProblemId } from './userProblemsTypes'
 
 export type SortKey = 'easiest' | 'hardest' | 'rated' | 'repeats'
 
@@ -57,6 +58,30 @@ export const BENCHMARK_LABEL = 'Benchmarks'
 export const FAVORITES_LABEL = 'Favorites'
 
 /**
+ * The source facet (R8/R16): which *authored* problems the list is narrowed to. `mine` is the
+ * signed-in user's own problems, `community` everybody else's public ones. It is one facet
+ * with two mutually exclusive values rather than two booleans, because "mine AND theirs" is
+ * just the unfiltered custom set — a state the facet-off list already shows.
+ *
+ * Both run off id sets supplied through {@link FilterContext}: a CatalogProblem carries no
+ * owner field, and the `user:` prefix alone can't separate them (another user's public
+ * problem carries it too).
+ */
+export type SourceFacet = 'mine' | 'community'
+
+export const SOURCE_KEYS: readonly SourceFacet[] = ['mine', 'community']
+
+/** The two values' wording — shared by the sheet's toggles, the pinned control's collapsed
+ *  label and the removable chip, so the three surfaces can't drift. */
+export const SOURCE_LABELS: Record<SourceFacet, string> = {
+  mine: 'Mine',
+  community: 'Community',
+}
+
+/** The facet's own name — the sheet's section label and the inactive pinned control. */
+export const SOURCE_LABEL = 'Custom problems'
+
+/**
  * The MoonBoard foot-rule "method" labels, as a FIXED list — the foot-rule subset of
  * iOS's CatalogListView.methodChoices (which additionally carries an "Any marked holds"
  * sentinel that is NOT a `method` value and so has no place here). A problem's `method`
@@ -89,6 +114,9 @@ export interface FilterState {
   statusFilters: StatusKey[]
   /** Selected saved-list ids (OR'd — a problem passes if it's in ANY); empty = no list filter. */
   listFilter: string[]
+  /** Narrow to authored problems — own (`mine`) or other users' public ones (`community`);
+   *  null = no source filter (imported and custom problems interleave). */
+  source: SourceFacet | null
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -105,6 +133,7 @@ export const DEFAULT_FILTERS: FilterState = {
   holdsFilter: [],
   statusFilters: [],
   listFilter: [],
+  source: null,
 }
 
 /** Whether any filter (not sort/search) is narrowing the list — drives "Reset". */
@@ -126,7 +155,8 @@ export function activeFilterCount(s: FilterState, statusReady = true): number {
     (s.favoritesOnly ? 1 : 0) +
     (s.holdsFilter.length > 0 ? 1 : 0) +
     (statusReady && s.statusFilters.length > 0 ? 1 : 0) +
-    (s.listFilter.length > 0 ? 1 : 0)
+    (s.listFilter.length > 0 ? 1 : 0) +
+    (s.source ? 1 : 0)
   )
 }
 
@@ -187,6 +217,16 @@ export interface FilterContext {
   /** Active collaboration session (U4). When set, per-member status filtering replaces the
    *  single-user `statusFilters` path; when absent, the single-user path runs unchanged. */
   session?: SessionStatusContext
+  /** The `user:`-prefixed ids authored by the signed-in user — what `source: 'mine'` keeps and
+   *  what `source: 'community'` excludes from the custom rows. Empty when signed out. */
+  ownProblemIds: Set<string>
+  /** The own-id set has resolved from the user-problems cache. False during the IndexedDB read
+   *  window, which SKIPS the source predicate so an active facet fails OPEN (shows everything)
+   *  rather than blanking the list to zero while the store loads — the `listMembersReady` rule. */
+  sourceReady: boolean
+  /** `updated_at` by `source_catalog_id` for the slab's authored rows — the Community facet's
+   *  recency order (R16). Missing ids simply sort last; the imported catalog has no entry. */
+  recencyById: Map<string, string>
 }
 
 const EMPTY_PAIR: MemberSetPair = { sentIds: new Set(), loggedIds: new Set() }
@@ -269,6 +309,13 @@ export function applyFilters(
     } else if (ctx.statusReady && s.statusFilters.length > 0) {
       if (!matchesStatus(p.source_catalog_id, s.statusFilters, ctx.sentIds, ctx.loggedIds)) return false
     }
+    // Source (R8/R16). Gated on `sourceReady` for the same reason the list facet is gated on
+    // `listMembersReady`: mid-load the own-id set is empty, and applying the clause then would
+    // blank the list for "Mine" and mislabel own rows as Community.
+    if (s.source && ctx.sourceReady) {
+      const isOwn = ctx.ownProblemIds.has(p.source_catalog_id)
+      if (s.source === 'mine' ? !isOwn : !isUserProblemId(p.source_catalog_id) || isOwn) return false
+    }
     if (holdsNeeded.length > 0) {
       const own = new Set(p.holds.map((h) => `${h.c}-${h.r}`))
       if (!holdsNeeded.every((pos) => own.has(pos))) return false
@@ -276,7 +323,21 @@ export function applyFilters(
     return ctx.isClimbable(p.holds)
   })
 
+  // Community is recency-ordered WITHIN the facet (R16). Every authored problem carries
+  // `repeats: 0` / `stars: 0`, so the catalog's popularity-first default would bury a freshly
+  // published problem behind every other one at the same grade — "newest first" is the only
+  // ordering that makes the facet do its discovery job. It overrides the sort keys rather than
+  // becoming a SortKey of its own: recency exists for exactly one facet's rows, and a
+  // list-wide "Newest" option would have nothing to say about the imported catalog.
+  const byRecency = s.source === 'community'
+
   return filtered.sort((a, b) => {
+    if (byRecency) {
+      const ra = ctx.recencyById.get(a.source_catalog_id) ?? ''
+      const rb = ctx.recencyById.get(b.source_catalog_id) ?? ''
+      // ISO-8601 timestamps compare lexicographically; an unknown one ('') sorts last.
+      if (ra !== rb) return ra < rb ? 1 : -1
+    }
     const primary = compare(s.sortPrimary, a, b)
     if (primary !== 0) return primary
     if (s.sortSecondary && sortDimension(s.sortSecondary) !== sortDimension(s.sortPrimary)) {

@@ -1,14 +1,14 @@
 // Wires the routed board's slab into the browsing UI: the filter bar, the list,
-// the recents sheet, and the detail pager. The URL is the source of truth —
-// filters, sort, search, the resolved angle, and the open problem all come from
+// the recents sheet, the detail pager, and the problem editor. The URL is the source
+// of truth — filters, sort, search, the resolved angle, and the open problem all come from
 // `?…` search params and are written back with `navigate` (replace for
 // filters/search, push-on-open / replace-on-swipe for the problem drawer). Owns
 // the single useSlab and derives the filter context (favorites + installed-hold-set
 // climbable check).
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { getRouteApi } from '@tanstack/react-router'
 import { FONT_GRADES, GRADE_FILTER_FLOOR, gradeIndex } from '../board/grades'
@@ -26,6 +26,8 @@ import { useBottomSlot } from '../shell/bottomSlot'
 import { useHeaderFilterSlot } from '../shell/headerFilterSlot'
 import { useHeaderSessionSlot } from '../shell/headerSessionSlot'
 import { ProblemDetail } from './ProblemDetail'
+import { ProblemEditorDrawer } from './ProblemEditorDrawer'
+import { FAB_CLASS } from './FabTrigger'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -36,6 +38,7 @@ import { useFavorites } from './favoritesStore'
 import { loadLists, useSavedLists } from '../lists/listsStore'
 import { useListMemberIds } from '../lists/useListMemberIds'
 import { useSlab } from './useSlab'
+import { useUserProblemFacets } from './useUserProblemFacets'
 import { usePullToRefresh } from './usePullToRefresh'
 import { useProblemDrawer } from './useProblemDrawer'
 import { useEnsureAscentsLoaded } from '../logbook/ascents'
@@ -45,6 +48,8 @@ import { useSessionQueue } from '../sessions/queueStore'
 import { useMemberAscents, withSelfSends } from '../sessions/memberAscentsStore'
 import { useBoardSelfSends } from './useBoardSelfSends'
 import { useMemberSenders } from './useMemberSenders'
+import { getUserProblemsByIds, ownUserProblemIds } from './userProblemsSync'
+import type { UserProblem } from './userProblemsTypes'
 import type { CatalogProblem } from './catalogSync'
 
 const routeApi = getRouteApi('/board/$layoutId/catalog')
@@ -167,10 +172,29 @@ export function CatalogScreen() {
   // or before the cold pull) — which would blank the grid for a selected-but-unresolved list.
   // Until both hold, the facet fails OPEN (shows everything) rather than to zero.
   const listMembersReady = listsLoaded && memberIdsReady
+
+  // ── Source facet (own / community authored problems) ─────────────────────────
+  // The own-id set and the slab's recency map both come from the user-problems cache; `ready`
+  // gates the predicate so an active facet fails OPEN while that read is in flight.
+  const { ownProblemIds, recencyById, ready: sourceReady } = useUserProblemFacets(
+    board.layoutId,
+    angle,
+  )
+  // "Mine" can't match anything signed out, so a stale `?source=mine` (a shared link, or a
+  // pinned control used before signing out) is pruned rather than left blanking the list —
+  // the listFilter prune's rule, applied to the one source value that needs an identity.
+  const source = signedOut && filters.source === 'mine' ? null : filters.source
+  useEffect(() => {
+    if (source !== filters.source) setFilters({ ...filters, source })
+  }, [source, filters, setFilters])
+
   // Filter on the PRUNED ids, not the raw URL value: a fully-pruned set (every id stale/foreign)
   // is a no-op immediately, so an unresolvable ?list= deep-link never flashes an empty grid in
-  // the render before the self-heal effect rewrites the URL.
-  const effectiveFilters = useMemo<FilterState>(() => ({ ...filters, listFilter }), [filters, listFilter])
+  // the render before the self-heal effect rewrites the URL. Same for a signed-out ?source=mine.
+  const effectiveFilters = useMemo<FilterState>(
+    () => ({ ...filters, listFilter, source }),
+    [filters, listFilter, source],
+  )
 
   // The slab's actual grade span (ordinal) for the slider, floored at 6A+ (issue #96) —
   // stray sub-6A+ catalog grades must not become the slider's lowest stop. (The Method
@@ -198,6 +222,9 @@ export function CatalogScreen() {
       sentIds,
       loggedIds,
       statusReady,
+      ownProblemIds,
+      sourceReady,
+      recencyById,
       // In a session the per-member clause replaces the single-user one (self = row #1);
       // gated on the projection's atomic readiness so the list is never blanked mid-load.
       session: sessionForBoard
@@ -221,6 +248,9 @@ export function CatalogScreen() {
     sentIds,
     loggedIds,
     statusReady,
+    ownProblemIds,
+    sourceReady,
+    recencyById,
     sessionForBoard,
     memberStatus,
     selfId,
@@ -264,6 +294,89 @@ export function CatalogScreen() {
   const problemPending = Boolean(openId) && !current && loading
   const drawerOpen = current !== undefined || problemPending
 
+  // ── Problem editor, driven by ?new / ?edit (plan KTD10) ─────────────────────
+  // The editor's open state lives in the URL like everything else on this route, so it
+  // survives the reload its localStorage draft is built for. Push on open (Back closes
+  // it), replace on close — the same protocol the problem drawer uses.
+  const closeEditor = useCallback(
+    () => void navigate({ search: (prev) => ({ ...prev, new: 0, edit: '' }), replace: true }),
+    [navigate],
+  )
+  const setEditorOpen = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        closeEditor()
+        return
+      }
+      void navigate({ search: (prev) => ({ ...prev, new: 1 }) })
+    },
+    [navigate, closeEditor],
+  )
+
+  // The detail drawer's owner menu → edit that problem. Swaps the drawer for the editor in
+  // one replace, so Back leaves both behind rather than stepping into the detail of a
+  // problem the author is still editing.
+  const openEditor = useCallback(
+    (sourceCatalogId: string) =>
+      void navigate({
+        search: (prev) => ({ ...prev, new: 0, edit: sourceCatalogId, problem: '' }),
+        replace: true,
+      }),
+    [navigate],
+  )
+
+  // `?edit=<id>` opens the editor on an already-saved problem, resolved from the
+  // user-problems cache (the only place an authored row lives client-side).
+  const editId = search.edit
+  const [editTarget, setEditTarget] = useState<UserProblem | null>(null)
+  useEffect(() => {
+    if (!editId) {
+      setEditTarget(null)
+      return
+    }
+    let cancelled = false
+    const giveUp = () => {
+      setEditTarget(null)
+      closeEditor()
+    }
+    // Ownership is the own-ids set, exactly as ProblemDetail's owner menu resolves it: the
+    // cache also holds OTHER setters' public rows, carrying a real layout_id, so the board
+    // check alone would open a working editor over someone else's problem — whose Save would
+    // clobber the local copy, then fail RLS server-side. Signed out the set is empty, so
+    // nothing is editable.
+    void Promise.all([getUserProblemsByIds([editId]), ownUserProblemIds()])
+      .then(([found, own]) => {
+        if (cancelled) return
+        const problem = found.get(editId)
+        // An unknown id, an imported catalog problem, someone else's row, or one drawn on
+        // a different board: nothing this slab's editor can open, so drop back to the list
+        // rather than showing an editor bound to the wrong geometry.
+        if (problem && problem.layoutId === board.layoutId && own.has(editId)) setEditTarget(problem)
+        else giveUp()
+      })
+      .catch(() => {
+        if (!cancelled) giveUp()
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [editId, board.layoutId, closeEditor])
+
+  const editorOpen = search.new === 1 || editTarget !== null
+
+  // R5: the author lands on the saved problem's detail, so the thing they just made is
+  // immediately in front of them. Replace, so Back doesn't step into an emptied editor.
+  const openSavedProblem = useCallback(
+    (sourceCatalogId: string) => {
+      setEditTarget(null)
+      void navigate({
+        search: (prev) => ({ ...prev, new: 0, edit: '', problem: sourceCatalogId }),
+        replace: true,
+      })
+    },
+    [navigate],
+  )
+
   // Pull-to-refresh: a downward drag at the top of the list forces a full slab re-pull
   // (resets the sync cursor), repairing a stale/incomplete cache — e.g. a slab cached
   // before a catalog re-import. Disabled while the problem drawer is open so it can't
@@ -279,7 +392,7 @@ export function CatalogScreen() {
         position: 'top-center',
       })
     },
-    !drawerOpen,
+    !drawerOpen && !editorOpen,
   )
 
   // List taps: page over the filtered list (no snapshot). Recent taps: page over the
@@ -366,19 +479,33 @@ export function CatalogScreen() {
           (it's a zero-height sticky rail), so without this the last rows would sit under
           the FABs at full scroll and their far-right corner wouldn't be tappable. A modest
           buffer — not the full FAB-stack height, which would re-introduce a large trailing
-          gap — so the last row's content clears the lower FAB. */}
+          gap — so the last row's content clears the lower FAB. The New-problem FAB stacks
+          on TOP of the column, so the lowest FAB is still Filter and this buffer is
+          unchanged by the taller stack. */}
       <div aria-hidden className="h-24 shrink-0" />
-      {/* Shared FAB column: recents on top, filter below (mirrors iOS's VStack).
-          A zero-height sticky rail (mt-auto pins it to the bottom of the scroll region,
-          sticky keeps it there as a long list scrolls) with the FABs absolutely anchored
-          to it and stacking upward — so the FABs float over the list without reserving
-          any trailing scroll space. pointer-events fall through except on the FABs. */}
+      {/* Shared FAB column: new problem on top, then recents, filter below (mirrors iOS's
+          VStack). A zero-height sticky rail (mt-auto pins it to the bottom of the scroll
+          region, sticky keeps it there as a long list scrolls) with the FABs absolutely
+          anchored to it and stacking upward — so the FABs float over the list without
+          reserving any trailing scroll space. pointer-events fall through except on the FABs. */}
       <div className="pointer-events-none sticky bottom-4 z-30 mt-auto h-0">
         <div className="absolute bottom-0 right-0 flex flex-col items-end gap-3">
+          <button type="button" aria-label="New problem" className={FAB_CLASS} onClick={() => setEditorOpen(true)}>
+            <Plus className="size-6" strokeWidth={1.5} />
+          </button>
           <RecentsSheet board={board} angle={angle} problems={problems} favoriteIds={favoriteIds} sentIds={sentIds} onSelect={openRecent} />
           <FilterSheet state={filters} onChange={setFilters} board={board} gradeSpan={gradeSpan} statusReady={statusReady} signedOut={signedOut} boardLists={boardLists} />
         </div>
       </div>
+
+      <ProblemEditorDrawer
+        board={board}
+        angle={editTarget?.angle ?? angle}
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
+        editing={editTarget ?? undefined}
+        onSaved={openSavedProblem}
+      />
 
       {/* Last-opened bar: portaled into the shell's slot so it sits as a real row above
           the nav. Renders nothing until a problem has been opened this session. */}
@@ -413,6 +540,8 @@ export function CatalogScreen() {
               highlightHolds={highlightHolds}
               onNavigate={showProblem}
               onPageOverQueue={pageOver}
+              onEditProblem={openEditor}
+              onClose={closeDrawer}
             />
           ) : problemPending ? (
             <div

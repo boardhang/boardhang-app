@@ -160,7 +160,9 @@ a registry-valid but **un-added** board renders a read-only preview with an "Add
 `q` (search), `grade` (ordinal `min-max` into `FONT_GRADES`, both bounds floored at 6A+ —
 `GRADE_FILTER_FLOOR` — so stray sub-6A+ catalog grades never surface in the filter; the range
 predicate treats them as 6A+), `bench`/`fav` (`1`), `stars`,
-`method`/`holds`/`status`/`list` (comma-joined), `sort`, `angle`, `problem` (open problem id).
+`method`/`holds`/`status`/`list` (comma-joined), `sort`, `angle`, `problem` (open problem id),
+plus the two that open the editor rather than describe the list — `new=1` (a fresh draft) and
+`edit=<id>` (one of your own saved problems).
 `list` is a CSV of saved-list ids the catalog is filtered by (OR'd — a problem passes if it's in
 any); its membership is resolved from the offline lists store and the ids are pruned against the
 board's live lists once loaded (a stale/foreign id self-heals out of the URL, but only after the
@@ -209,8 +211,9 @@ via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fil
   into another day. Like CatalogScreen's recents `pagerStack`, the session is a state snapshot
   captured at tap time (the id in `?problem` can't name the session, since a problem logged on two
   days shares one id); a cold deep-link/refresh has no snapshot and falls back to the single open
-  problem (prev/next off). Rows whose ascent has no resolvable catalog entry (user-created or
-  uncached) aren't tappable.
+  problem (prev/next off). Rows whose ascent has no resolvable catalog entry aren't tappable —
+  an uncached problem, or a legacy iOS-authored one. Web-authored problems *do* resolve (the
+  by-id lookup spans both caches), so they open like any other row.
 - **PWA**: `vite.config.ts` sets `navigateFallback: '/index.html'` (+ `/assets/` denylist) so deep
   links and the OAuth return survive a hard load. `AppLayout` also mounts two iOS-only, environment-
   gated shell banners (`web/src/shell/{BleBrowserBanner,InstallBanner}.tsx`), driven by the detection
@@ -228,6 +231,55 @@ via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fil
   `isStandalone()`.
 - **Deferred**: scroll restoration (accepts jump-to-top on Back for now); the `holds` param is
   reserved but its picker UI is not built yet.
+
+### Problem authoring (web)
+
+Authoring a problem is a **catalog flow**, not a separate screen: the editor is a full-height
+drawer over the catalog, its open state lives in the URL (`?new=1` / `?edit=<id>`) like everything
+else on the route, and it is scoped to the routed board+angle.
+
+- **Entry points.** A "New problem" button in the catalog's FAB cluster sets `?new=1` (push, so
+  Back closes the editor); the problem detail's owner menu sets `?edit=<id>` and clears `?problem`
+  in one `replace`, so Back leaves both behind rather than stepping into the detail of a problem
+  you're still editing. `?edit` resolves against the user-problems cache and bails back to the list
+  for an unknown id, an imported catalog problem, someone else's row, or one drawn on another board.
+- **The grid.** Tap targets are children of `CatalogBoard`, so they sit exactly on the drawn holds
+  at any aspect ratio (the `HoldFilterPicker` pattern, not the retired `BoardGrid`). A tap on an
+  empty position takes the role it most likely means: the board's top row defaults to the end hold,
+  the first two placements elsewhere default to start, and everything after is a move — capped at
+  two starts and two ends (one per hand), with a full role falling through to the next default.
+  Repeat taps cycle the hold onward (start → move → end → empty, skipping an over-cap end). A
+  Beta toggle (off by default) reveals the brush palette for the beta annotations — left / match /
+  foot (cyan, lit by the firmware's `F` letter) — and drives the board's and light-up's show-beta
+  rendering; toggling it off drops the active brush. It auto-enables when a restored draft or edit
+  target already carries beta holds.
+  Tapping a hold that already carries the active brush removes it. Only positions owned by an
+  installed hold set are tappable — see [multi-board-model.md](multi-board-model.md).
+- **Light-up** sends BLE directly and deliberately does **not** report a lit problem to an active
+  session: an unsaved draft must never become the crew's shared "on the wall" problem.
+- **Drafts survive the tab going away.** The create editor persists its whole draft (holds, name,
+  grade, visibility) to `localStorage` keyed `problemDraft_<layoutId>_<angle>`, so a reload at the
+  wall or a PWA eviction loses nothing. An *edit* session is deliberately not persisted, so it can
+  never clobber a parked draft.
+- **Save + sign-in resume.** Save collects name, grade and visibility in a sheet over the board.
+  Signed out, the tap opens the sign-in dialog and records the intent under
+  `problemSaveIntent_<layoutId>_<angle>` — persisted rather than in-memory, so the save re-opens by
+  itself once the session lands instead of leaving the author hunting for the button. Publishing
+  needs a profile handle (a public problem is credited to one); without it the author gets a "pick a
+  handle first" prompt, and the server refuses the write regardless. On success the author lands on
+  the saved problem's detail.
+- **Owner menu.** On your own problem, the detail's overflow menu offers Edit, Make public /
+  Make private, and Delete. Delete closes the drawer — the problem it was showing is gone.
+- **Mine / Community facets.** A mutually-exclusive source facet ("Mine" | "Community") filters the
+  list by authorship; tapping the selected value clears it back to "both". Signed out, "Mine" is
+  shown but inert. Custom rows carry a pencil marker in the list so they read as authored rather
+  than imported. A **public** one is attributed by its server-stamped handle in the same slot an
+  imported problem shows its setter; a private one has no setter and falls back to the hold count,
+  like the imported rows that never had one.
+- **Known residual.** `signInWithGoogle` passes `redirectTo: window.location.origin`, which drops
+  the query string — so the OAuth leg of save-resume would come back to a bare catalog URL with the
+  editor closed. It is inert today (nothing in the UI surfaces the Google button), and the draft
+  and intent both survive in `localStorage`; fixing it means preserving the full URL in `redirectTo`.
 
 ## Gotchas summary
 

@@ -212,3 +212,30 @@ describe('FilterControls — per-member session status (U5)', () => {
     expect(rows[1].onToggle).toHaveBeenCalledWith('sent', false)
   })
 })
+
+describe('FilterControls — source facet (U6)', () => {
+  it('selects a source', () => {
+    const { onChange } = setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Community' }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ source: 'community' }))
+  })
+
+  it('clears the facet by tapping the value that is already pressed', () => {
+    const { onChange } = setup({ source: 'community' })
+    fireEvent.click(screen.getByRole('button', { name: 'Community' }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ source: null }))
+  })
+
+  it('replaces the other value rather than combining them (mutually exclusive)', () => {
+    const { onChange } = setup({ source: 'mine' })
+    fireEvent.click(screen.getByRole('button', { name: 'Community' }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ source: 'community' }))
+  })
+
+  it('disables "Mine" when signed out but keeps "Community" browsable', () => {
+    setup({}, { signedOut: true })
+    expect(screen.getByRole('button', { name: 'Mine' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Community' })).not.toBeDisabled()
+    expect(screen.getByText('Sign in to filter by your own problems')).toBeInTheDocument()
+  })
+})

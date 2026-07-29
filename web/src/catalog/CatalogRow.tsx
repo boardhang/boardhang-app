@@ -5,10 +5,11 @@
 // pill" — who in the crew has sent this problem (see useMemberSenders).
 
 import { useRef } from 'react'
-import { BadgeCheck, CheckCircle2, Heart, Plus } from 'lucide-react'
+import { BadgeCheck, CheckCircle2, Heart, PencilLine, Plus } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import { CatalogBoard } from '../board/CatalogBoard'
 import type { CatalogProblem } from './catalogSync'
+import { isUserProblemId } from './userProblemsTypes'
 import type { SenderChip } from './useMemberSenders'
 import { ProblemMeta } from './ProblemMeta'
 import { MemberAvatar } from '../sessions/MemberAvatar'
@@ -66,6 +67,7 @@ export function CatalogRow({
   // (empty map, no pill), the local self-check stays as the fallback so a known send is never
   // hidden with nowhere to show.
   const selfInPill = senders?.some((s) => s.isSelf) ?? false
+  const isCustom = isUserProblemId(problem.source_catalog_id)
 
   // Swipe-left-to-queue (U7): active only while an active session targets THIS board. Reads the
   // sessions store directly (the useMemberSenders no-prop-drill idiom), so the gesture stays inert
@@ -130,6 +132,11 @@ export function CatalogRow({
               </span>
               {problem.is_benchmark && (
                 <BadgeCheck role="img" aria-label="Benchmark" className="size-4 shrink-0 text-benchmark" />
+              )}
+              {/* User-authored rather than imported (own or somebody else's public one) — the
+                  `user:` id prefix is the only marker a CatalogProblem carries. */}
+              {isCustom && (
+                <PencilLine role="img" aria-label="Custom problem" className="size-3.5 shrink-0 text-muted-foreground" />
               )}
               {/* Shown unless self's send is already carried by the pill below (P1/P3). */}
               {isSent && !selfInPill && (

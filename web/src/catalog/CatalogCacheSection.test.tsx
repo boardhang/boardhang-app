@@ -81,6 +81,15 @@ describe('CatalogCacheSection', () => {
     ).toBeInTheDocument()
   })
 
+  it('promises in the confirmation that problems the user authored survive', async () => {
+    ownBoards('7')
+    render(<CatalogCacheSection />)
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild Mini MoonBoard 2025 40°' }))
+    // The rebuild wipes the imported cache only; a custom problem exists nowhere else on
+    // the device, so the dialog has to say so before the user presses the destructive button.
+    expect(await screen.findByRole('dialog')).toHaveTextContent(/problems you've created/i)
+  })
+
   it('does not touch the cache when the confirmation is cancelled', async () => {
     ownBoards('7')
     render(<CatalogCacheSection />)

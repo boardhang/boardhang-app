@@ -1,0 +1,724 @@
+// The problem authoring surface: a full-height drawer with a tap grid over the real
+// board art. Built on the HoldFilterPicker pattern (plan KTD8) rather than the retired
+// BoardGrid — tap targets are children of CatalogBoard, so they share its exact rendered
+// box and register with the drawn holds at any aspect ratio, and only positions owned by
+// an installed hold set are tappable.
+//
+// Interaction (KTD8): tapping an empty position cycles the common roles
+// start → move (`right`) → end → empty. The brush palette sets an explicit role for the
+// beta moves (left / right / match); with a brush active a tap assigns that role, and
+// tapping a hold that already carries it removes it. Every target's aria-label names its
+// position and current role — a five-state control can't be conveyed by aria-pressed.
+//
+// Light-up sends BLE directly and deliberately does NOT call `reportProblemLit`
+// (KTD9/R3/AE5): an unsaved draft must never become a session's shared "on the wall"
+// problem. The draft persists to localStorage on every change (KTD10) so it survives a
+// reload at the wall.
+//
+// Save (R4/R5/AE1) collects name, grade and visibility in a sheet over the board. Signed
+// out, the tap opens the SignInDialog and remembers the intent — the useAddToList resume
+// pattern, but persisted rather than in-memory, because Google OAuth takes the whole page
+// away and an in-memory flag doesn't survive that.
+//
+// Two modes, one component: a new draft (persisted, keyed by board+angle) and an edit of an
+// already-saved problem (`editing`). An edit session is deliberately NOT persisted — see
+// `persistDraft` below.
+
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Loader2 } from 'lucide-react'
+import { bleClient, connectBoard, isConnected, setBleError, useBle } from '../ble/useBle'
+import { describeBleError } from '../ble/moonboard'
+import { useAuth } from '../auth/AuthProvider'
+import { SignInDialog } from '../auth/SignInDialog'
+import { getActiveHoldSetsRaw, getFlipped } from '../board/boardStore'
+import type { CatalogBoardDef } from '../board/boards'
+import { CatalogBoard } from '../board/CatalogBoard'
+import { columnLabel } from '../board/geometry'
+import { DEFAULT_GRADE, FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
+import { holdSetContext, setIdAt } from '../board/holdSetMembership'
+import { center } from '../board/renderGeometry'
+import { holdColor, holdLabel, type HoldType } from '../types'
+import type { CatalogHold } from './catalogSync'
+import {
+  clearDraft,
+  readDraft,
+  readSaveIntent,
+  writeDraft,
+  writeSaveIntent,
+  type ProblemDraft,
+  type Visibility,
+} from './problemDraftStore'
+import { createUserProblem, updateUserProblem } from './userProblemsStore'
+import { errorMessage } from './userProblemsSync'
+import type { UserProblem } from './userProblemsTypes'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+/** Tap-target diameter as a fraction of a column's span — matches CatalogBoard's
+ *  marker size so the target sits right on the drawn hold. */
+const TARGET_COLUMN_RATIO = 0.9
+
+/** The common-role ring an assigned hold advances through on repeat taps:
+ *  start → move → end → empty. An EMPTY position doesn't enter at a fixed point —
+ *  see defaultRole: it starts at what the tap most likely means. */
+const CYCLE: (HoldType | null)[] = [null, 'start', 'right', 'end']
+
+/** Roles the palette paints — the beta annotations (hand-specific holds, matches, and
+ *  footholds), which have no place in the tap cycle (KTD8). The palette only renders
+ *  while the Beta toggle is on; without it a problem is plain start/hold/end. */
+const BRUSH_ROLES: HoldType[] = ['left', 'match', 'foot']
+
+/** Whether a draft carries beta annotations — flips the Beta toggle on when a draft or
+ *  edit target restores with them, so its holds don't render collapsed and mysterious. */
+function hasBetaHolds(holds: CatalogHold[]): boolean {
+  return holds.some((h) => h.t === 'left' || h.t === 'match' || h.t === 'foot')
+}
+
+/** Grades an author can pick, floored at 6A+ like every other grade surface (issue #96). */
+const AUTHORABLE_GRADES = FONT_GRADES.slice(GRADE_FILTER_FLOOR)
+
+/** The Select's value→label map. base-ui renders the closed trigger from this, not from the
+ *  open list's items — without it the trigger shows the raw value. */
+const GRADE_LABELS: Record<string, string> = Object.fromEntries(
+  AUTHORABLE_GRADES.map((g) => [g, g]),
+)
+
+/** Matches the `name` column's length in migration 0018. */
+const MAX_NAME = 60
+
+const VISIBILITIES: { value: Visibility; label: string }[] = [
+  { value: 'private', label: 'Private' },
+  { value: 'public', label: 'Public' },
+]
+
+function nextInCycle(current: HoldType | null): HoldType | null {
+  const i = CYCLE.findIndex((t) => t === current)
+  return CYCLE[(i + 1) % CYCLE.length]
+}
+
+/** A real problem has at most two start holds and at most two end holds (one per hand);
+ *  the picker enforces that instead of letting an invalid problem reach Save. */
+const MAX_ROLE = 2
+
+/** What a bare tap on an EMPTY position means, mirroring how problems are actually set:
+ *  the finish lives on the board's top row (row 12 on the Mini, 18 on the full-size
+ *  boards), and a problem opens with one or two start holds. So the top row defaults to
+ *  end, the first two placements elsewhere default to start, and everything after is a
+ *  move. A full role (two ends, two starts) falls through to the next default rather
+ *  than over-assigning. Repeat taps still walk the CYCLE ring, so any default can be
+ *  re-roled or removed; the palette covers the beta roles. */
+function defaultRole(row: number, topRow: number, startCount: number, endCount: number): HoldType {
+  if (row === topRow && endCount < MAX_ROLE) return 'end'
+  return startCount < MAX_ROLE ? 'start' : 'right'
+}
+
+/** The draft an edit session starts from — the saved row as the editor's working shape. */
+function draftFrom(problem: UserProblem): ProblemDraft {
+  return {
+    holds: problem.holds,
+    name: problem.name,
+    grade: problem.grade,
+    visibility: problem.visibility,
+  }
+}
+
+interface Pos {
+  col: number
+  row: number
+  x: number
+  y: number
+}
+
+interface ProblemEditorDrawerProps {
+  board: CatalogBoardDef
+  /** The slab's resolved angle — inherited from the URL, shown in the header, and part
+   *  of the draft's storage key. */
+  angle: number
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** The already-saved problem being edited (`?edit=<id>`); omitted for a new draft. */
+  editing?: UserProblem
+  /** A save landed — the caller navigates to the problem's detail (R5). */
+  onSaved: (sourceCatalogId: string) => void
+}
+
+type Busy = 'connecting' | 'sending' | null
+
+export function ProblemEditorDrawer({
+  board,
+  angle,
+  open,
+  onOpenChange,
+  editing,
+  onSaved,
+}: ProblemEditorDrawerProps) {
+  const g = board.geometry
+  const { state, error: connectionError } = useBle()
+  const { status: authStatus, profile } = useAuth()
+  const signedIn = authStatus !== 'signedOut'
+  // AE3, client side: publishing needs a handle to attribute the problem to. The server
+  // backstop is a later unit; this is the affordance, not the enforcement.
+  const canPublish = Boolean(profile?.handle)
+
+  // An edit session is in-memory only. The persisted draft is keyed by board+angle, so
+  // writing an edit through it would clobber whatever new problem the author had parked on
+  // that slab — and a stale persisted edit could later resurrect over a row that changed on
+  // another device. An edit's durable copy is the saved row itself; reopening `?edit=<id>`
+  // restores it.
+  const persistDraft = editing === undefined
+  const [draft, setDraft] = useState<ProblemDraft>(() =>
+    editing ? draftFrom(editing) : readDraft(board.layoutId, angle),
+  )
+  const [brush, setBrush] = useState<HoldType | null>(null)
+  // Beta annotations off by default: most problems are plain start/hold/end, and the
+  // palette only matters when the author wants hand/foot beta. Auto-enabled when a
+  // restored draft or edit target already carries beta holds (see the open effect).
+  const [beta, setBeta] = useState(false)
+  // Dirty *since open* (KTD10): a restored draft alone must not demand a discard
+  // confirmation — only edits made in this sitting do. In edit mode the state starts at the
+  // loaded snapshot, so the same flag means "differs from what was loaded".
+  const [dirty, setDirty] = useState(false)
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<Busy>(null)
+
+  // ── Save sheet + sign-in gate (R4/AE1) ──────────────────────────────────────
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [signInOpen, setSignInOpen] = useState(false)
+  // The pending save. Seeded from localStorage so it survives the OAuth full-page redirect;
+  // it stays *pending* rather than opening the sheet outright because a real remount starts
+  // signed out and restores the session a tick later.
+  const [resume, setResume] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  // The editing session this component instance is on. The drawer is mounted with an `open`
+  // prop rather than keyed, so the instance survives a close and reopen — and a connect/send
+  // still in flight from the previous sitting would otherwise paint its busy/error state onto
+  // the next one. Each open bumps this; lightUp captures it and drops any stale post-await
+  // write (useLightUp's targetRef idiom, keyed on the sitting instead of the problem).
+  const sessionRef = useRef(0)
+
+  // Restore on open (and on a board/angle/target switch), which is also the mount path when
+  // the editor opens straight from a `?new=1` / `?edit=<id>` deep link.
+  useEffect(() => {
+    if (!open) return
+    sessionRef.current++
+    const restored = editing ? draftFrom(editing) : readDraft(board.layoutId, angle)
+    setDraft(restored)
+    setBeta(hasBetaHolds(restored.holds))
+    setBrush(null)
+    setDirty(false)
+    setSendError(null)
+    setSaveError(null)
+    setSaveOpen(false)
+    setBusy(null)
+    setResume(editing === undefined && readSaveIntent(board.layoutId, angle))
+  }, [open, board.layoutId, angle, editing])
+
+  // The resume itself: once a session is present the sheet opens on the restored draft.
+  useEffect(() => {
+    if (signedIn && resume) {
+      setResume(false)
+      setSaveOpen(true)
+    }
+  }, [signedIn, resume])
+
+  const { membership, active, visible } = useMemo(
+    () => holdSetContext(board.membershipResource, getActiveHoldSetsRaw(board.layoutId)),
+    [board],
+  )
+
+  // Tappable positions: those owned by an installed hold set. A board with no bundled
+  // membership map allows every grid position — the same fail-open `isClimbable` takes,
+  // so an unmapped board stays fully authorable rather than becoming untappable.
+  const positions = useMemo<Pos[]>(() => {
+    const noMembership = Object.keys(membership.membership).length === 0
+    const out: Pos[] = []
+    for (let col = 0; col < g.numColumns; col++) {
+      for (let row = 1; row <= g.rowTop; row++) {
+        if (!noMembership) {
+          const id = setIdAt(membership, col, row)
+          if (id === undefined || !active.has(id)) continue
+        }
+        const { x, y } = center(g, col, row)
+        out.push({ col, row, x, y })
+      }
+    }
+    return out
+  }, [g, membership, active])
+
+  const roleAt = useMemo(() => {
+    const map = new Map<string, HoldType>()
+    for (const h of draft.holds) map.set(`${h.c}-${h.r}`, h.t)
+    return map
+  }, [draft.holds])
+
+  const targetPct = ((1 - g.leftMargin - g.rightMargin) / g.numColumns) * TARGET_COLUMN_RATIO * 100
+
+  /** The one write path for the draft: state, dirty flag, and (create mode) localStorage.
+   *  Every field rides it, so name/grade/visibility are as reload-proof as the holds. */
+  function update(patch: Partial<ProblemDraft>) {
+    const next = { ...draft, ...patch }
+    setDraft(next)
+    setDirty(true)
+    if (persistDraft) writeDraft(board.layoutId, angle, next)
+  }
+
+  function tap(col: number, row: number) {
+    const current = roleAt.get(`${col}-${row}`) ?? null
+    // With a brush down the tap is an assignment; tapping the brush's own role lifts it
+    // again, so the palette can both paint and erase without a separate eraser mode.
+    // Without one, an empty position takes the smart default (top row = end, first two =
+    // start, then moves) and an assigned hold advances the ring — skipping `end` when two
+    // ends already exist, so the cap holds on the cycle path too. `start` is only ever
+    // created by the default (the ring never re-enters it), so its cap lives there alone.
+    const startCount = draft.holds.filter((h) => h.t === 'start').length
+    const endCount = draft.holds.filter((h) => h.t === 'end').length
+    let next = brush
+      ? current === brush
+        ? null
+        : brush
+      : current === null
+        ? defaultRole(row, g.rowTop, startCount, endCount)
+        : nextInCycle(current)
+    if (next === 'end' && endCount >= MAX_ROLE) next = nextInCycle('end')
+    if (next === null) {
+      update({ holds: draft.holds.filter((h) => !(h.c === col && h.r === row)) })
+      return
+    }
+    // Replace in place when the position already had a role, so re-roling a hold doesn't
+    // reorder the draft under the author.
+    update({
+      holds:
+        current === null
+          ? [...draft.holds, { c: col, r: row, t: next }]
+          : draft.holds.map((h) => (h.c === col && h.r === row ? { ...h, t: next } : h)),
+    })
+  }
+
+  function requestClose() {
+    if (dirty) {
+      setConfirmingDiscard(true)
+      return
+    }
+    closeEditor()
+  }
+
+  /** Leave the editor, dropping any pending save so an unrelated later sign-in can't
+   *  resurrect the sheet. In create mode the draft itself stays parked. */
+  function closeEditor() {
+    if (persistDraft) writeSaveIntent(board.layoutId, angle, false)
+    setResume(false)
+    setSignInOpen(false)
+    setSaveOpen(false)
+    onOpenChange(false)
+  }
+
+  function discard() {
+    if (persistDraft) {
+      clearDraft(board.layoutId, angle)
+      setDraft(readDraft(board.layoutId, angle))
+    } else if (editing) {
+      // An edit discards back to the saved row, which is untouched — nothing to clear.
+      setDraft(draftFrom(editing))
+    }
+    setDirty(false)
+    setConfirmingDiscard(false)
+    closeEditor()
+  }
+
+  // ── Save ────────────────────────────────────────────────────────────────────
+
+  /** The Save button. Signed out on a new problem, this is a sign-in prompt that remembers
+   *  what it was for (AE1); an edit is only ever reached by its owner, so it goes straight
+   *  through. */
+  function requestSave() {
+    setSaveError(null)
+    if (persistDraft) writeSaveIntent(board.layoutId, angle, true)
+    if (persistDraft && !signedIn) {
+      setResume(true)
+      setSignInOpen(true)
+      return
+    }
+    setSaveOpen(true)
+  }
+
+  function closeSaveSheet() {
+    setSaveOpen(false)
+    setSaveError(null)
+    if (persistDraft) writeSaveIntent(board.layoutId, angle, false)
+  }
+
+  async function save() {
+    if (saving || !trimmedName) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = editing
+        ? await updateUserProblem(editing.sourceCatalogId, {
+            name: trimmedName,
+            grade,
+            holds: draft.holds,
+          })
+        : await createUserProblem({
+            layoutId: board.layoutId,
+            angle,
+            name: trimmedName,
+            grade,
+            holds: draft.holds,
+            visibility: draft.visibility,
+          })
+      // Only now is the draft expendable: a failed save leaves it parked for a retry.
+      if (persistDraft) clearDraft(board.layoutId, angle)
+      setDirty(false)
+      closeEditor()
+      onSaved(saved.sourceCatalogId)
+    } catch (err) {
+      // Inline, beside the button that failed — the author stays in the sheet and retries.
+      setSaveError(errorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Direct BLE send, connect-if-needed — modeled on useLightUp but WITHOUT its session
+  // pointer write (KTD9). Failures read inline here rather than as a toast: the editor is
+  // a working surface the author stays on, so the error belongs beside the button.
+  async function lightUp() {
+    if (busy) return
+    setSendError(null)
+    setBleError(null)
+    // Captured before the first await; every state write past one is gated on it still
+    // being the live sitting (the open-effect already reset busy/error for the new one).
+    const session = sessionRef.current
+    if (!isConnected()) {
+      setBusy('connecting')
+      await connectBoard()
+      if (sessionRef.current !== session) return
+      if (!isConnected()) {
+        setBusy(null)
+        return // cancelled, or the connection error is already in the shared BLE state
+      }
+    }
+    setBusy('sending')
+    try {
+      await bleClient.send(
+        draft.holds.map((h) => ({ col: h.c, row: h.r, type: h.t })),
+        { rows: g.numRows, flipped: getFlipped(board.layoutId), showBeta: beta },
+      )
+    } catch (err) {
+      if (sessionRef.current === session) setSendError(describeBleError(err))
+    } finally {
+      if (sessionRef.current === session) setBusy(null)
+    }
+  }
+
+  const shownError = sendError ?? connectionError
+  const holdCount = draft.holds.length
+  const holdSummary = `${holdCount} hold${holdCount === 1 ? '' : 's'}`
+  const trimmedName = draft.name.trim()
+  // A draft carries no grade until the author opens the sheet; 6A+ (the scale's filter
+  // floor) is the offered default rather than a blank the Select can't render.
+  const grade = draft.grade || DEFAULT_GRADE
+  const title = editing ? 'Edit problem' : 'New problem'
+
+  return (
+    <>
+      <Drawer open={open} onOpenChange={(next) => (next ? onOpenChange(true) : requestClose())} showSwipeHandle>
+        {/* Nearly full-height so the whole board is visible without scrolling — the
+            author needs every row reachable in one view. */}
+        <DrawerContent style={{ '--drawer-height': 'calc(100dvh - 4rem)' } as CSSProperties}>
+          <div className="flex h-full flex-col">
+            <div className="flex items-center justify-between gap-2 px-4 pt-2 pb-3">
+              <div className="min-w-0">
+                <DrawerTitle>{title}</DrawerTitle>
+                <div className="truncate text-xs text-muted-foreground">
+                  {board.name} · {angle}°
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={holdCount === 0}
+                  onClick={() => update({ holds: [] })}
+                >
+                  Clear
+                </Button>
+                <Button variant="ghost" size="sm" onClick={requestClose}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+
+            {/* Beta row. Off (the default): plain problems — taps place start/hold/end and
+                beta holds render collapsed blue. On: the brush palette paints the beta
+                annotations (left / match / foot). No brush = the tap cycle either way. */}
+            <div className="flex shrink-0 items-center gap-2 overflow-x-auto px-4 pb-3">
+              <span className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+                <Switch
+                  aria-label="Beta annotations"
+                  checked={beta}
+                  onCheckedChange={(on) => {
+                    setBeta(on)
+                    if (!on) setBrush(null)
+                  }}
+                />
+                Beta
+              </span>
+              {beta && (
+                <>
+                  <Button
+                    variant={brush === null ? 'secondary' : 'ghost'}
+                    size="sm"
+                    aria-pressed={brush === null}
+                    onClick={() => setBrush(null)}
+                  >
+                    Cycle
+                  </Button>
+                  {BRUSH_ROLES.map((role) => (
+                    <Button
+                      key={role}
+                      variant={brush === role ? 'secondary' : 'ghost'}
+                      size="sm"
+                      aria-label={`${holdLabel[role]} brush`}
+                      aria-pressed={brush === role}
+                      className="gap-2"
+                      onClick={() => setBrush(brush === role ? null : role)}
+                    >
+                      <span
+                        aria-hidden
+                        className="size-3 rounded-full border"
+                        style={{ backgroundColor: `${holdColor[role]}59`, borderColor: holdColor[role] }}
+                      />
+                      {holdLabel[role]}
+                    </Button>
+                  ))}
+                </>
+              )}
+            </div>
+
+            <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3">
+              {/* Height-driven so every row stays visible; width follows the aspect ratio.
+                  The tap targets are children of CatalogBoard, so they share its exact
+                  rendered box and stay aligned on any board aspect ratio. */}
+              <div
+                className="flex h-full max-w-full items-center justify-center"
+                style={{ aspectRatio: `${g.width} / ${g.height}` }}
+              >
+                <CatalogBoard board={board} holds={draft.holds} showBeta={beta} visibleHoldSetIds={visible}>
+                  {positions.map(({ col, row, x, y }) => {
+                    const role = roleAt.get(`${col}-${row}`) ?? null
+                    return (
+                      <button
+                        key={`${col}-${row}`}
+                        type="button"
+                        aria-label={`${columnLabel(col)}${row}, ${role ? `${holdLabel[role].toLowerCase()} hold` : 'empty'}`}
+                        onClick={() => tap(col, row)}
+                        className="absolute rounded-full"
+                        style={{
+                          left: `${x * 100}%`,
+                          top: `${y * 100}%`,
+                          width: `${targetPct}%`,
+                          aspectRatio: '1',
+                          transform: 'translate(-50%, -50%)',
+                          // Transparent but hit-testable: the role marker itself is drawn
+                          // by CatalogBoard underneath.
+                          backgroundColor: 'transparent',
+                        }}
+                      />
+                    )
+                  })}
+                </CatalogBoard>
+              </div>
+            </div>
+
+            {shownError && (
+              <p className="shrink-0 px-4 pt-2 text-center text-xs text-destructive" role="alert">
+                {shownError}
+              </p>
+            )}
+
+            <div className="shrink-0 px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+              <p className="pb-2 text-center text-xs text-muted-foreground">
+                {holdCount === 0 ? 'Tap holds to build your problem' : holdSummary}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  disabled={holdCount === 0 || busy !== null}
+                  onClick={() => void lightUp()}
+                >
+                  {busy && <Loader2 className="size-4 animate-spin" />}
+                  {busy === 'connecting' ? 'Connecting…' : busy === 'sending' ? 'Sending…' : 'Light up'}
+                </Button>
+                <Button className="flex-1" disabled={holdCount === 0} onClick={requestSave}>
+                  Save
+                </Button>
+              </div>
+              {state !== 'connected' && (
+                <p className="pt-2 text-center text-xs text-muted-foreground">
+                  Light up connects to your board first.
+                </p>
+              )}
+            </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      {/* The save sheet. A dialog over the board rather than a nested drawer: the board
+          stays put behind it, so the author can read what they drew while naming it. */}
+      <Dialog open={saveOpen} onOpenChange={(next) => !next && closeSaveSheet()}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{editing ? 'Save changes' : 'Save problem'}</DialogTitle>
+            <DialogDescription>
+              {board.name} · {angle}° · {holdSummary}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            <div className="grid gap-1.5">
+              <label htmlFor="problem-name" className="text-sm font-medium">
+                Name
+              </label>
+              <Input
+                id="problem-name"
+                value={draft.name}
+                maxLength={MAX_NAME}
+                autoComplete="off"
+                placeholder="Name your problem"
+                // text-base on mobile so iOS doesn't zoom the page on focus.
+                className="text-base md:text-sm"
+                // maxLength stops typing past the limit; the slice also covers a paste and
+                // a draft restored from an older/hand-edited entry.
+                onChange={(e) => update({ name: e.target.value.slice(0, MAX_NAME) })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium">Grade</span>
+              <Select
+                items={GRADE_LABELS}
+                value={grade}
+                onValueChange={(v) => update({ grade: v as string })}
+              >
+                <SelectTrigger aria-label="Grade" className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AUTHORABLE_GRADES.map((gr) => (
+                    <SelectItem key={gr} value={gr}>
+                      {gr}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Visibility is set once, at authoring time; changing it later belongs to the
+                problem's own screen, so an edit doesn't repeat the choice here. */}
+            {!editing && (
+              <div className="grid gap-1.5">
+                <span className="text-sm font-medium">Visibility</span>
+                <div className="flex gap-2">
+                  {VISIBILITIES.map(({ value, label }) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant={draft.visibility === value ? 'secondary' : 'outline'}
+                      className="flex-1"
+                      aria-pressed={draft.visibility === value}
+                      disabled={value === 'public' && !canPublish}
+                      onClick={() => update({ visibility: value })}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                {!canPublish && (
+                  <p className="text-xs text-muted-foreground">
+                    Pick a handle in your profile to share problems with other climbers.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {saveError && (
+              <p className="text-sm text-destructive" role="alert">
+                {saveError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-row gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={closeSaveSheet}>
+              Back
+            </Button>
+            <Button
+              className="flex-1"
+              disabled={saving || trimmedName.length === 0}
+              onClick={() => void save()}
+            >
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              {editing ? 'Save changes' : 'Save problem'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <SignInDialog
+        open={signInOpen}
+        onOpenChange={(o) => {
+          setSignInOpen(o)
+          // Dismissed WITHOUT a session: drop the pending save, here and on disk, so a
+          // later unrelated sign-in never reopens the sheet on its own.
+          if (!o && !signedIn) {
+            setResume(false)
+            writeSaveIntent(board.layoutId, angle, false)
+          }
+        }}
+        title="Sign in to save your problem"
+      />
+
+      <Dialog open={confirmingDiscard} onOpenChange={(next) => !next && setConfirmingDiscard(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{editing ? 'Discard your changes?' : 'Discard this problem?'}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {editing
+              ? 'Your edits will be lost and the saved problem stays as it was.'
+              : 'Your placed holds will be lost. This can’t be undone.'}
+          </p>
+          <div className="flex flex-row gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setConfirmingDiscard(false)}>
+              Keep editing
+            </Button>
+            <Button variant="destructive" className="flex-1" onClick={discard}>
+              Discard
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}

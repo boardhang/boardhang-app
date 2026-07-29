@@ -3,7 +3,8 @@
 //
 // A facet is either a `toggle` (a boolean flipped inline in the nav — Benchmarks, Favorites)
 // or `rich` (opens a popover / picker in the nav — Grade, Holds, Sort, min-stars, Status,
-// Methods). Lists is a rich opener but is only offered when the board actually has lists.
+// Methods, Custom problems). Lists is a rich opener but is only offered when the board
+// actually has lists.
 //
 // CANONICAL_ORDER is the fixed left-to-right order pinned controls render in, so a pinned
 // filter always sits in the same spot (muscle memory). It is intentionally NOT selection
@@ -14,6 +15,8 @@ import {
   BENCHMARK_LABEL,
   FAVORITES_LABEL,
   SORT_LABELS,
+  SOURCE_LABEL,
+  SOURCE_LABELS,
   STATUS_LABELS,
   type FilterState,
   type StatusKey,
@@ -29,6 +32,7 @@ export type PinnableFacetId =
   | 'status'
   | 'methods'
   | 'lists'
+  | 'source'
 
 export type FacetKind = 'toggle' | 'rich'
 
@@ -51,6 +55,7 @@ export const CANONICAL_ORDER: readonly PinnableFacet[] = [
   { id: 'status', label: 'Ascent status', kind: 'rich' },
   { id: 'methods', label: 'Method', kind: 'rich' },
   { id: 'lists', label: 'Lists', kind: 'rich' },
+  { id: 'source', label: SOURCE_LABEL, kind: 'rich' },
 ]
 
 export const FACET_BY_ID: Record<PinnableFacetId, PinnableFacet> = Object.fromEntries(
@@ -95,12 +100,17 @@ export type FacetContext =
       /** Signed in AND ascents loaded — gates the status dimension. */
       statusReady: boolean
       sessionStatus?: undefined
+      /** Definitively signed out. Read only by the source facet's control, which offers
+       *  "Community" (public problems browse signed-out) but not "Mine". */
+      signedOut?: boolean
     }
   | {
       /** A collab session targets this board — status is per-member; single-user status is off. */
       inSession: true
       statusReady: boolean
       sessionStatus: SessionStatusFacet
+      /** See the other arm — orthogonal to session-ness. */
+      signedOut?: boolean
     }
 
 /**
@@ -131,6 +141,8 @@ export function isFacetActive(id: PinnableFacetId, s: FilterState, ctx: FacetCon
       return s.methods.length > 0
     case 'lists':
       return s.listFilter.length > 0
+    case 'source':
+      return s.source !== null
   }
 }
 
@@ -168,6 +180,8 @@ export function facetActiveLabel(id: PinnableFacetId, s: FilterState, ctx?: Face
     }
     case 'sort':
       return SORT_LABELS[s.sortPrimary]
+    case 'source':
+      return s.source ? SOURCE_LABELS[s.source] : FACET_BY_ID.source.label
     default:
       return FACET_BY_ID[id].label
   }
@@ -216,6 +230,8 @@ export function facetClearPatch(id: PinnableFacetId): Partial<FilterState> {
       return { benchmarkOnly: false }
     case 'favorites':
       return { favoritesOnly: false }
+    case 'source':
+      return { source: null }
     case 'sort':
       return {}
   }

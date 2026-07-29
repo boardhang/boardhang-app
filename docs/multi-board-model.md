@@ -91,6 +91,19 @@ active**). `HoldSetMembership.isClimbable(holds:activeSetIDs:)` returns true onl
 a problem is owned by an active set — this is what filters the catalog when a hold set is
 uninstalled. For rendering, the visible set = active ids ∪ `alwaysOnHoldSetIDs`.
 
+### Membership also gates authoring (web)
+
+The web problem editor builds its tap targets from the same map: a grid position is tappable only
+if `setIdAt` resolves it to a set the user has installed. You can't draw a problem on holds that
+aren't on your wall, which is what keeps an authored problem from being immediately filtered out of
+the catalog it was drawn for. Uninstalling a set afterwards does filter it out — the same rule
+applies to authored and imported rows alike.
+
+The editor takes the **same fail-open** as `isClimbable`: a board whose bundled membership map is
+empty allows every grid position, so an unmapped board stays fully authorable rather than becoming
+untappable. Always-on sets (feet/art) own no grid holds and so are never tap targets, exactly as
+they're never filter targets.
+
 ## BoardFilter (logbook / pyramid)
 
 `BoardFilter` (in `BoardFilter.swift`) is the _logbook_ board filter, persisted at
