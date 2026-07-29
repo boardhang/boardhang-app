@@ -6,7 +6,7 @@
 // mirroring iOS, where board config lives behind a separate sheet. Also the
 // first-run surface (zero added boards).
 
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ScanQrCode, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BOARDS, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
@@ -19,6 +19,11 @@ import {
   exitSessionOnBoard,
   useSessions,
 } from '../sessions/sessionsStore'
+import {
+  refreshBenchmarkNews,
+  unseenCount,
+  useBenchmarkNewsVersion,
+} from '../catalog/benchmarkNewsStore'
 import { useResumableSessions } from '../sessions/useResumableSessions'
 import { ResumableSessionRow } from '../sessions/ResumableSessionRow'
 import { ScanToJoinButton } from '../sessions/ScanToJoin'
@@ -100,6 +105,36 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
   for (const b of addedBoards) if (byId.has(b.layoutId)) orderedBoards.push(b) // newly added this session
   orderRef.current = orderedBoards.map((b) => b.layoutId)
 
+  // Stable key over the visible slabs, so both the fetch effect and the dot-derivation memo
+  // depend on a value that only changes when the added-boards set (or one of their angles)
+  // actually changes — not on every render's fresh array identity.
+  const slabsKey = orderedBoards.map((b) => `${b.layoutId}:${getAngle(b)}`).join('|')
+
+  // Best-effort fetch of new-benchmark events for every added board on this page's mount +
+  // whenever the added-set changes. Boards page must degrade cleanly offline / unconfigured —
+  // the store handles that internally and returns zero-unseen without throwing.
+  useEffect(() => {
+    if (orderedBoards.length === 0) return
+    void refreshBenchmarkNews(
+      orderedBoards.map((b) => ({ layoutId: b.layoutId, angle: getAngle(b) })),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slabsKey])
+
+  // Reactive per-board dot map — a set of layoutIds with pending events, only computed when
+  // the store version bumps or the visible slabs change (guards against a fresh Set every
+  // render).
+  const newsVersion = useBenchmarkNewsVersion()
+  const boardsWithDot = useMemo(() => {
+    void newsVersion
+    const s = new Set<number>()
+    for (const b of orderedBoards) {
+      if (unseenCount(b.layoutId, getAngle(b)) > 0) s.add(b.layoutId)
+    }
+    return s
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newsVersion, slabsKey])
+
   return (
     <div className="space-y-4">
       {!activeSession && resumable.length > 0 && (
@@ -146,6 +181,11 @@ export function MyBoards({ onActivated }: MyBoardsProps) {
               key={board.layoutId}
               board={board}
               active={board.layoutId === activeBoard.layoutId}
+              // Dot on non-active added rows with pending events. Never shows on the active
+              // row (its own catalog banner is the surface); cleared by the same watermark.
+              hasNewBenchmarks={
+                board.layoutId !== activeBoard.layoutId && boardsWithDot.has(board.layoutId)
+              }
               // Active board → browse its catalog (already active, no switch).
               onBrowse={() => onActivated(board.layoutId)}
               // Inactive board → just switch the active board; stay on this list.
@@ -184,6 +224,8 @@ interface BoardCardProps {
   active: boolean
   /** The device's live session runs on this board — removing it will drop out of it. */
   hasActiveSession: boolean
+  /** Pending benchmark_events on this row's slab → show the "new" dot beside the name. */
+  hasNewBenchmarks: boolean
   onBrowse: () => void
   onSetActive: () => void
   onRemove: () => void
@@ -195,6 +237,7 @@ function BoardCard({
   board,
   active,
   hasActiveSession,
+  hasNewBenchmarks,
   onBrowse,
   onSetActive,
   onRemove,
@@ -218,6 +261,13 @@ function BoardCard({
             <span className="truncate font-medium">{board.name}</span>
             {active && (
               <Badge className="shrink-0 bg-accent text-accent-foreground">Active</Badge>
+            )}
+            {hasNewBenchmarks && (
+              <span
+                aria-label="New benchmarks available"
+                data-testid={`new-benchmarks-dot-${board.layoutId}`}
+                className="size-2 shrink-0 rounded-full bg-primary"
+              />
             )}
           </div>
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>

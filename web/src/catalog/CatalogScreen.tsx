@@ -6,7 +6,7 @@
 // the single useSlab and derives the filter context (favorites + installed-hold-set
 // climbable check).
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -29,10 +29,18 @@ import { ProblemDetail } from './ProblemDetail'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { applyFilters, type FilterContext, type FilterState } from './filters'
+import { applyFilters, DEFAULT_FILTERS, type FilterContext, type FilterState } from './filters'
 import { filtersToSearch, searchToFilters } from './catalogSearch'
 import { saveSeed } from './filterSeed'
 import { useFavorites } from './favoritesStore'
+import {
+  fetchEventIdsSince,
+  filterNewsIds,
+  getWatermark,
+  markSeen,
+  refreshBenchmarkNews,
+  useBenchmarkNewsVersion,
+} from './benchmarkNewsStore'
 import { loadLists, useSavedLists } from '../lists/listsStore'
 import { useListMemberIds } from '../lists/useListMemberIds'
 import { useSlab } from './useSlab'
@@ -229,11 +237,123 @@ export function CatalogScreen() {
     memberAsc.bySets,
   ])
 
+  // ── New benchmarks: events store + banner + ?newSince deep-link view ──────────
+  // Best-effort fetch when the slab mounts / changes; the store degrades to zero-unseen on
+  // failure (Boards page stays offline-usable). We do NOT block the render on this.
+  useEffect(() => {
+    void refreshBenchmarkNews([{ layoutId: board.layoutId, angle }])
+  }, [board.layoutId, angle])
+
+  const newsVersion = useBenchmarkNewsVersion()
+
+  // Which unseen events on this slab are climbable given the installed hold sets. The banner
+  // count comes from here (R1); a slab where all unseen events land on uninstalled hold sets
+  // shows no banner and silently advances the watermark below (R3 no-dead-end).
+  const climbableUnseenIds = useMemo(() => {
+    void newsVersion  // subscribe on cache mutations without pulling the map into deps
+    if (loading) return []  // don't decide climbability against a partial slab
+    const byId = new Map(problems.map((p) => [p.source_catalog_id, p]))
+    return filterNewsIds(board.layoutId, angle, (id) => {
+      const p = byId.get(id)
+      return p ? context.isClimbable(p.holds) : false
+    })
+  }, [newsVersion, problems, loading, board.layoutId, angle, context])
+
+  // R3 no-dead-end: when the slab has unseen events but ALL are hold-set-filtered, silently
+  // advance the watermark so the banner never dead-ends AND the Boards-page dot clears. Only
+  // runs when the slab is loaded (so a mid-load partial doesn't spuriously advance) and there
+  // was at least one raw unseen event to begin with.
+  const rawUnseenCount = useMemo(() => {
+    void newsVersion
+    return filterNewsIds(board.layoutId, angle, () => true).length
+  }, [newsVersion, board.layoutId, angle])
+  useEffect(() => {
+    if (!loading && rawUnseenCount > 0 && climbableUnseenIds.length === 0) {
+      markSeen(board.layoutId, angle)
+    }
+  }, [loading, rawUnseenCount, climbableUnseenIds.length, board.layoutId, angle])
+
+  // Deep link: `?newSince=<iso>` renders only the events promoted after that timestamp on this
+  // slab. Independent of the watermark — a shared URL resolves the same set for anyone.
+  const newSince = search.newSince
+  const [newSinceState, setNewSinceState] = useState<
+    { kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; ids: Set<string> } | { kind: 'error' }
+  >({ kind: 'idle' })
+  const newSinceResyncRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!newSince) {
+      setNewSinceState({ kind: 'idle' })
+      newSinceResyncRef.current = null
+      return
+    }
+    let cancelled = false
+    setNewSinceState({ kind: 'loading' })
+    void fetchEventIdsSince(board.layoutId, angle, newSince).then((res) => {
+      if (cancelled) return
+      if (res.error) setNewSinceState({ kind: 'error' })
+      else setNewSinceState({ kind: 'ready', ids: new Set(res.ids) })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [newSince, board.layoutId, angle])
+
+  // If the events resolved to ids we don't have in the slab yet, force one resync — the events
+  // row can precede the slab rows locally, and without this the deep link would show "nothing"
+  // when it means "syncing". Only fires once per `?newSince=` value.
+  useEffect(() => {
+    if (newSinceState.kind !== 'ready') return
+    if (loading) return
+    const ids = newSinceState.ids
+    if (ids.size === 0) return
+    const anyInSlab = problems.some((p) => ids.has(p.source_catalog_id))
+    if (anyInSlab) return
+    if (newSinceResyncRef.current === newSince) return
+    newSinceResyncRef.current = newSince
+    void resync()
+  }, [newSinceState, problems, loading, newSince, resync])
+
+  // The deep-link view narrows the displayed list to only the `?newSince` id set. Other
+  // filters are left ALONE for the transform (the "view" tap resets them to defaults via the
+  // URL, but a user tweak inside the view still works).
+  const newSinceFilterOn = newSince !== '' && newSinceState.kind === 'ready'
   const transform = useMemo(
-    () => (list: CatalogProblem[]) => applyFilters(list, effectiveFilters, context),
-    [effectiveFilters, context],
+    () => (list: CatalogProblem[]) => {
+      const filtered = applyFilters(list, effectiveFilters, context)
+      if (newSinceFilterOn) {
+        const ids = (newSinceState as { kind: 'ready'; ids: Set<string> }).ids
+        return filtered.filter((p) => ids.has(p.source_catalog_id))
+      }
+      return filtered
+    },
+    [effectiveFilters, context, newSinceFilterOn, newSinceState],
   )
   const displayed = useMemo(() => transform(problems), [transform, problems])
+
+  // Banner action: capture the current watermark (defines the URL's slab-scoped view), reset
+  // other filters, then advance the watermark so the banner + dot clear in the same frame.
+  const openNewBenchmarks = useCallback(() => {
+    const watermark = getWatermark(board.layoutId, angle) ?? new Date().toISOString()
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        ...filtersToSearch(DEFAULT_FILTERS),
+        angle: prev.angle,
+        problem: '',
+        newSince: watermark,
+      }),
+      replace: true,
+    })
+    markSeen(board.layoutId, angle)
+  }, [board.layoutId, angle, navigate])
+
+  const dismissNewBenchmarks = useCallback(() => {
+    markSeen(board.layoutId, angle)
+  }, [board.layoutId, angle])
+
+  const clearNewSince = useCallback(() => {
+    void navigate({ search: (prev) => ({ ...prev, newSince: '' }), replace: true })
+  }, [navigate])
 
   // Ring the actively-filtered holds on thumbnails + the detail board (iOS parity).
   const highlightHolds = useMemo(() => new Set(filters.holdsFilter), [filters.holdsFilter])
@@ -337,6 +457,16 @@ export function CatalogScreen() {
         </div>
       </div>
       {!added && <UnaddedBoardBanner name={board.name} onAdd={() => addBoard(board.layoutId)} />}
+      {added && !newSince && climbableUnseenIds.length > 0 && (
+        <NewBenchmarksBanner
+          count={climbableUnseenIds.length}
+          onView={openNewBenchmarks}
+          onDismiss={dismissNewBenchmarks}
+        />
+      )}
+      {newSince && (
+        <NewSinceStrip state={newSinceState} showAllCount={displayed.length} onShowAll={clearNewSince} />
+      )}
       {/* Opening from the queue pages over the queue's order (the stack SessionBar/QueueDrawer
           hands up becomes the pager domain). The always-on queue strip is independent of this.
           Active session for this board → portal the bar into the sticky header (issue #98);
@@ -437,6 +567,74 @@ function UnaddedBoardBanner({ name, onAdd }: { name: string; onAdd: () => void }
       </span>
       <Button size="sm" onClick={onAdd}>
         Add this board
+      </Button>
+    </div>
+  )
+}
+
+function NewBenchmarksBanner({
+  count,
+  onView,
+  onDismiss,
+}: {
+  count: number
+  onView: () => void
+  onDismiss: () => void
+}) {
+  return (
+    <div
+      role="status"
+      data-testid="new-benchmarks-banner"
+      className="flex items-center justify-between gap-3 border-b border-border bg-primary/5 px-3 py-2 text-sm"
+    >
+      <span className="min-w-0 truncate font-medium">
+        {count === 1 ? '1 new benchmark' : `${count} new benchmarks`}
+      </span>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button size="sm" onClick={onView}>
+          View
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onDismiss} aria-label="Dismiss new benchmarks">
+          Dismiss
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// The `?newSince=<iso>` strip. Renders four states:
+//   • loading       → "Loading new benchmarks…" (while the events query is in flight)
+//   • error         → "Couldn't load new benchmarks — show all" (network/config problem)
+//   • ready, id resolves to zero visible → "Nothing new here anymore — show all" OR
+//     "These new benchmarks use hold sets you don't have — show all" (KTD1 empty states)
+//   • ready, non-empty → "Showing new benchmarks — show all" (the standard active state)
+function NewSinceStrip({
+  state,
+  showAllCount,
+  onShowAll,
+}: {
+  state: { kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; ids: Set<string> } | { kind: 'error' }
+  /** How many problems the filter + newSince intersection resolves to right now. */
+  showAllCount: number
+  onShowAll: () => void
+}) {
+  let text: string
+  if (state.kind === 'loading') text = 'Loading new benchmarks…'
+  else if (state.kind === 'error') text = "Couldn't load new benchmarks"
+  else if (state.kind === 'ready' && state.ids.size === 0) text = 'Nothing new here anymore'
+  else if (state.kind === 'ready' && showAllCount === 0)
+    text = "These new benchmarks use hold sets you don't have"
+  else text = 'Showing new benchmarks'
+
+  return (
+    <div
+      role="status"
+      data-testid="new-since-strip"
+      className="flex items-center justify-between gap-3 border-b border-border bg-muted/60 px-3 py-2 text-sm"
+    >
+      <span className="min-w-0 truncate text-muted-foreground">{text}</span>
+      <Button size="sm" variant="outline" onClick={onShowAll}>
+        Show all
       </Button>
     </div>
   )
