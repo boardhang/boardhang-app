@@ -55,6 +55,10 @@ export interface CatalogSearch {
   list: string
   /** Open problem's `source_catalog_id`; `''` = drawer closed. */
   problem: string
+  /** New-benchmarks deep link: ISO timestamp; when non-empty, the catalog resolves the events
+   *  with `created_at > newSince` on this slab and renders only those problems. Lives OUTSIDE
+   *  FilterState (KTD6) — never written by setFilters, never persisted by filterSeed. */
+  newSince: string
 }
 
 /** The default (stripped) value of every param. */
@@ -72,6 +76,7 @@ export const CATALOG_SEARCH_DEFAULTS: CatalogSearch = {
   status: '',
   list: '',
   problem: '',
+  newSince: '',
 }
 
 const GRADE_MAX = FONT_GRADES.length - 1
@@ -104,6 +109,12 @@ export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSear
     status: str(raw.status),
     list: str(raw.list),
     problem: str(raw.problem),
+    // Silently drop a malformed timestamp — a hand-edited `?newSince=garbage` renders as the
+    // ordinary catalog (KTD6). Date.parse handles the ISO strings the app produces.
+    newSince: (() => {
+      const s = str(raw.newSince)
+      return s && !Number.isNaN(Date.parse(s)) ? s : ''
+    })(),
   }
 }
 
@@ -151,11 +162,12 @@ export function decodeGrade(s: string): [number, number] | null {
 
 // ─── FilterState <-> search ─────────────────────────────────────────────────
 
-/** Build the filter/sort/search portion of the URL from a FilterState. Omits
- *  `angle` and `problem`, which the route and drawer own respectively. Defaults
- *  are still emitted (e.g. `bench: 0`) — the route's strip middleware removes
- *  them, so every write site can pass natural values without remembering to omit. */
-export function filtersToSearch(f: FilterState): Omit<CatalogSearch, 'angle' | 'problem'> {
+/** Build the filter/sort/search portion of the URL from a FilterState. Omits `angle`,
+ *  `problem`, and `newSince` — the route/drawer own the first two, and `newSince` lives
+ *  outside FilterState (KTD6) so setFilters and filterSeed never touch it. Defaults are
+ *  still emitted (e.g. `bench: 0`) — the route's strip middleware removes them, so every
+ *  write site can pass natural values without remembering to omit. */
+export function filtersToSearch(f: FilterState): Omit<CatalogSearch, 'angle' | 'problem' | 'newSince'> {
   return {
     q: f.search,
     grade: encodeGrade(f.gradeRange),

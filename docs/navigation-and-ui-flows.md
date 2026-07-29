@@ -160,7 +160,8 @@ a registry-valid but **un-added** board renders a read-only preview with an "Add
 `q` (search), `grade` (ordinal `min-max` into `FONT_GRADES`, both bounds floored at 6A+ —
 `GRADE_FILTER_FLOOR` — so stray sub-6A+ catalog grades never surface in the filter; the range
 predicate treats them as 6A+), `bench`/`fav` (`1`), `stars`,
-`method`/`holds`/`status`/`list` (comma-joined), `sort`, `angle`, `problem` (open problem id).
+`method`/`holds`/`status`/`list` (comma-joined), `sort`, `angle`, `problem` (open problem id),
+`newSince` (ISO timestamp — see below).
 `list` is a CSV of saved-list ids the catalog is filtered by (OR'd — a problem passes if it's in
 any); its membership is resolved from the offline lists store and the ids are pruned against the
 board's live lists once loaded (a stale/foreign id self-heals out of the URL, but only after the
@@ -226,6 +227,19 @@ via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fil
   Exclusivity: `BleBrowserBanner` needs no BLE; the other two need BLE. `InstallBanner`
   (`beforeinstallprompt`) never fires on iOS, where `FullscreenTipBanner` lives. All suppress once
   `isStandalone()`.
+- **New-benchmark surfaces** (`web/src/catalog/benchmarkNewsStore.ts`) — a public-read events
+  table (`benchmark_events`, migration 0018) drives three UI surfaces off the same source:
+  the catalog banner ("N new benchmarks — view/dismiss") on the active slab, a small dot on
+  every other added board's `MyBoards` row, and the `?newSince=<iso>` deep-link view that
+  renders only problems promoted after that timestamp. The device-local watermark (one per
+  slab, `benchmarkSeen_${layoutId}_${angle}` localStorage) defaults to now-on-first-touch so
+  a fresh install / first-ever sync never presents pre-existing benchmarks as new. "View",
+  "Dismiss", and the R3 silent-advance (every unseen event on the slab is filtered out by
+  uninstalled hold sets) all advance the watermark, which drops the banner + dot in the same
+  frame. `newSince` lives OUTSIDE `FilterState` — `filtersToSearch` and `filterSeed` skip it
+  — so a filter tweak inside the deep-link view doesn't rewrite the URL and the seed never
+  re-opens a stale `?newSince` on cold launch. The catalog forces one `syncSlab` when the
+  events resolve to ids the slab doesn't yet have (events row can precede slab rows locally).
 - **Deferred**: scroll restoration (accepts jump-to-top on Back for now); the `holds` param is
   reserved but its picker UI is not built yet.
 
