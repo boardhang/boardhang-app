@@ -83,8 +83,14 @@ function ensureWatermark(layoutId: number, angle: number): string {
 }
 
 /** Advance the watermark to now(); clears the slab's cached snapshot so the banner + dot drop
- *  in the same frame. Called on view, dismiss, and the R3 "silent advance" path. */
+ *  in the same frame. Called on view, dismiss, and the R3 "silent advance" path.
+ *
+ *  Bumps the slab's generation counter FIRST so any in-flight `refreshBenchmarkNews` for this
+ *  slab (kicked off by the same effect that renders the banner) is treated as stale on arrival
+ *  and does not re-populate the cache with the pre-clear result set (finding #1 — dismiss race
+ *  where a slow fetch resurrects a just-cleared banner within 1-2s of the tap). */
 export function markSeen(layoutId: number, angle: number): void {
+  bumpSlabGeneration(layoutId, angle)
   writeLS(watermarkKey(layoutId, angle), new Date().toISOString())
   cache.delete(slabKey(layoutId, angle))
   emit()
@@ -98,6 +104,29 @@ const cache = new Map<string, BenchmarkNewsSnapshot>()
 // naive Map return causes an infinite render loop). Callers that need derived data (like the
 // per-slab count map on the Boards page) subscribe on this and useMemo their own derivation.
 let version = 0
+
+// Per-slab generation counter. `markSeen` (and any future mutation that should invalidate an
+// in-flight fetch on ONE slab) bumps the slab's entry; `refreshBenchmarkNews` snapshots the
+// value at fetch start and drops the result on resolution if the counter advanced. Semantically
+// this is the KTD7 `cacheGeneration` pattern from `web/src/lists/listsSync.ts`, sliced per slab
+// because per-slab mutations are per slab too.
+const slabGeneration = new Map<string, number>()
+
+// Global identity generation counter. `clearBenchmarkNewsCache` (called by
+// `syncBenchmarkNewsIdentity` on user change) bumps this — a fetch that captured the previous
+// value is dropped on resolution regardless of per-slab generation. Distinct axis from
+// slabGeneration because an identity switch invalidates every slab, including ones that were
+// never touched by markSeen (so slabGeneration has no entry for them).
+let identityGeneration = 0
+
+function bumpSlabGeneration(layoutId: number, angle: number): void {
+  const k = slabKey(layoutId, angle)
+  slabGeneration.set(k, (slabGeneration.get(k) ?? 0) + 1)
+}
+
+function currentSlabGeneration(layoutId: number, angle: number): number {
+  return slabGeneration.get(slabKey(layoutId, angle)) ?? 0
+}
 
 function emit(): void {
   version++
@@ -113,13 +142,21 @@ function snapshotFor(layoutId: number, angle: number): BenchmarkNewsSnapshot {
  *  for each slab rather than throwing (Boards page must stay usable offline). */
 export async function refreshBenchmarkNews(slabs: Array<{ layoutId: number; angle: number }>): Promise<void> {
   if (!supabase || slabs.length === 0) return
-  // Seed watermarks up-front so a first-time slab has a floor to query above (R4).
-  const bounds = slabs.map((s) => ({ ...s, watermark: ensureWatermark(s.layoutId, s.angle) }))
+  // Snapshot the per-slab generation counter alongside the watermark BEFORE issuing the fetch —
+  // if markSeen (or any future mutation that bumps the generation) fires while this fetch is in
+  // flight, we detect the drift on resolution and discard that slab's result rather than
+  // repopulating the cache with the pre-clear rows (finding #1).
+  const bounds = slabs.map((s) => ({
+    ...s,
+    watermark: ensureWatermark(s.layoutId, s.angle),
+    gen: currentSlabGeneration(s.layoutId, s.angle),
+    identityGen: identityGeneration,
+  }))
 
   // One request per slab keeps the OR filter simple and lets a single failure degrade only
   // that slab. The volumes are small (a handful of added boards × a handful of unseen events).
   const outcomes = await Promise.all(
-    bounds.map(async ({ layoutId, angle, watermark }) => {
+    bounds.map(async ({ layoutId, angle, watermark, gen, identityGen }) => {
       try {
         const { data, error } = await supabase!
           .from('benchmark_events')
@@ -130,7 +167,7 @@ export async function refreshBenchmarkNews(slabs: Array<{ layoutId: number; angl
           .gt('created_at', watermark)
           .order('created_at', { ascending: false })
           .limit(500)
-        if (error) return { layoutId, angle, snapshot: EMPTY_SNAPSHOT }
+        if (error) return { layoutId, angle, gen, identityGen, snapshot: EMPTY_SNAPSHOT }
         const ids: string[] = []
         const createdAt: string[] = []
         for (const row of data ?? []) {
@@ -140,16 +177,30 @@ export async function refreshBenchmarkNews(slabs: Array<{ layoutId: number; angl
             createdAt.push(rowRec.created_at)
           }
         }
-        return { layoutId, angle, snapshot: ids.length === 0 ? EMPTY_SNAPSHOT : { ids, createdAt } }
+        return {
+          layoutId, angle, gen, identityGen,
+          snapshot: ids.length === 0 ? EMPTY_SNAPSHOT : { ids, createdAt },
+        }
       } catch {
-        return { layoutId, angle, snapshot: EMPTY_SNAPSHOT }
+        return { layoutId, angle, gen, identityGen, snapshot: EMPTY_SNAPSHOT }
       }
     }),
   )
-  for (const { layoutId, angle, snapshot } of outcomes) {
+  let anyLanded = false
+  for (const { layoutId, angle, gen, identityGen, snapshot } of outcomes) {
+    // Discard the slab's result if either the per-slab generation advanced (markSeen while
+    // in flight — finding #1) OR the identity generation advanced (user switch / sign-out
+    // via syncBenchmarkNewsIdentity — finding #7). The identity guard is what saves fresh
+    // slabs that had no slabGeneration entry when the fetch started.
+    if (identityGen !== identityGeneration) continue
+    if (currentSlabGeneration(layoutId, angle) !== gen) continue
     cache.set(slabKey(layoutId, angle), snapshot)
+    anyLanded = true
   }
-  emit()
+  // Only bump the reactive version when at least one slab's result actually landed, so a
+  // fully-invalidated fetch (every result discarded) doesn't spuriously re-run derivations
+  // that would just re-read the cache values markSeen already set.
+  if (anyLanded) emit()
 }
 
 /** The events matching a caller-supplied filter (typically climbable + hold-set installed).
@@ -234,10 +285,80 @@ export async function fetchEventIdsSince(
   }
 }
 
+// ─── Identity lifecycle (mirrors syncSessionsIdentity, docs/solutions/offline-first-sync Trap 3) ──
+
+const LAST_USER_KEY = 'benchmarkNewsLastUser'
+
+/** Best-effort scrub of every `benchmarkSeen_*` watermark from localStorage. Called by
+ *  `syncBenchmarkNewsIdentity` on identity change so a shared device never lets user B
+ *  inherit user A's dismissal state (finding #7). */
+function clearWatermarksLocalStorage(): void {
+  try {
+    const doomed: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith('benchmarkSeen_')) doomed.push(k)
+    }
+    for (const k of doomed) {
+      try {
+        localStorage.removeItem(k)
+      } catch {
+        /* ignore per-key failure */
+      }
+    }
+  } catch {
+    /* localStorage completely unavailable — nothing to clear */
+  }
+}
+
+/** Clear the in-memory cache + persisted watermarks + bump every slab's generation. Called
+ *  from `syncBenchmarkNewsIdentity` when the signed-in identity changes. Same shape as
+ *  `clearSessionsCache` in sessionsStore.ts. */
+export function clearBenchmarkNewsCache(): void {
+  // Bump the global identity generation FIRST so any in-flight fetch from before the identity
+  // change is dropped on resolution rather than repopulating user A's snapshot into user B's
+  // session — this single bump invalidates every in-flight fetch across every slab, including
+  // ones that had no per-slab generation entry when the fetch started (a fresh Boards-page
+  // mount is the common case).
+  identityGeneration += 1
+  cache.clear()
+  clearWatermarksLocalStorage()
+  emit()
+}
+
+/**
+ * Reconcile with the signed-in identity, called from `AuthProvider.resolveSession` beside
+ * `syncSessionsIdentity` / `syncListsIdentity`. Clears the store + watermarks whenever the
+ * user id changes (sign-out or a different user) so on a shared device user B never inherits
+ * user A's dismissal state. A same-user restore is a no-op — token refresh must not churn the
+ * store (matches R9/AE4 semantics from the plan even though push isn't the concern here).
+ *
+ * Sync + localStorage-only, no Supabase calls — safe to await inside the auth callback
+ * (no re-entrant Supabase call, no deadlock risk).
+ */
+export function syncBenchmarkNewsIdentity(userId: string | null): void {
+  const next = userId ?? ''
+  let prev: string | null = null
+  try {
+    prev = localStorage.getItem(LAST_USER_KEY)
+  } catch {
+    /* ignore */
+  }
+  if (prev === next) return
+  clearBenchmarkNewsCache()
+  try {
+    localStorage.setItem(LAST_USER_KEY, next)
+  } catch {
+    /* ignore */
+  }
+}
+
 // Test hook: reset all in-memory state so unit tests can start clean. Not exported from index.
 export function __resetBenchmarkNewsForTests(): void {
   cache.clear()
   listeners.clear()
+  slabGeneration.clear()
+  identityGeneration = 0
   // Also reset the monotonic version counter so a test asserting on absolute version values
   // starts from zero — otherwise it accumulates across tests via the module singleton and a
   // future test subscribing on `useBenchmarkNewsVersion` sees non-zero initial state.
