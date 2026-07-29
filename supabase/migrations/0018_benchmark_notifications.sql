@@ -112,6 +112,7 @@ create trigger catalog_problems_capture_benchmark_upd
 --    migration is strict owner-scope.
 alter table public.benchmark_events enable row level security;
 
+drop policy if exists "Anyone reads benchmark events" on public.benchmark_events;
 create policy "Anyone reads benchmark events"
     on public.benchmark_events for select to anon, authenticated
     using (true);
@@ -138,9 +139,11 @@ comment on table public.notification_interests is
 
 alter table public.notification_interests enable row level security;
 
+drop policy if exists "Users read their own notification interests" on public.notification_interests;
 create policy "Users read their own notification interests"
     on public.notification_interests for select to authenticated
     using (user_id = auth.uid());
+drop policy if exists "Users insert their own notification interests" on public.notification_interests;
 create policy "Users insert their own notification interests"
     on public.notification_interests for insert to authenticated
     with check (user_id = auth.uid());
@@ -148,9 +151,11 @@ create policy "Users insert their own notification interests"
 -- ON CONFLICT DO UPDATE and the reconcile re-upserts existing rows on every app start; without
 -- WITH CHECK, interests sync would work once per device and then hard-error (see plan U1
 -- approach note + AE5 acceptance).
+drop policy if exists "Users update their own notification interests" on public.notification_interests;
 create policy "Users update their own notification interests"
     on public.notification_interests for update to authenticated
     using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists "Users delete their own notification interests" on public.notification_interests;
 create policy "Users delete their own notification interests"
     on public.notification_interests for delete to authenticated
     using (user_id = auth.uid());
@@ -182,21 +187,26 @@ create index if not exists push_subscriptions_user_idx
 
 -- Reuse the server-authoritative updated_at trigger from 0002. Clients bump last_seen_at on
 -- reconcile; updated_at auto-bumps so future observability can page on stale rows.
+drop trigger if exists push_subscriptions_set_updated_at on public.push_subscriptions;
 create trigger push_subscriptions_set_updated_at
     before insert or update on public.push_subscriptions
     for each row execute function public.set_updated_at();
 
 alter table public.push_subscriptions enable row level security;
 
+drop policy if exists "Users read their own push subscriptions" on public.push_subscriptions;
 create policy "Users read their own push subscriptions"
     on public.push_subscriptions for select to authenticated
     using (user_id = auth.uid());
+drop policy if exists "Users insert their own push subscriptions" on public.push_subscriptions;
 create policy "Users insert their own push subscriptions"
     on public.push_subscriptions for insert to authenticated
     with check (user_id = auth.uid());
+drop policy if exists "Users update their own push subscriptions" on public.push_subscriptions;
 create policy "Users update their own push subscriptions"
     on public.push_subscriptions for update to authenticated
     using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists "Users delete their own push subscriptions" on public.push_subscriptions;
 create policy "Users delete their own push subscriptions"
     on public.push_subscriptions for delete to authenticated
     using (user_id = auth.uid());

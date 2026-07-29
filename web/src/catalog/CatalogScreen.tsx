@@ -279,7 +279,12 @@ export function CatalogScreen() {
   const newSince = search.newSince
   const [newSinceState, setNewSinceState] = useState<
     { kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; ids: Set<string> } | { kind: 'error' }
-  >({ kind: 'idle' })
+    // Seed with 'loading' when the URL already carries ?newSince on mount — otherwise the
+    // first render hits the strip's else branch and briefly shows "Showing new benchmarks"
+    // before the fetch effect flips state to 'loading'.
+  >(newSince ? { kind: 'loading' } : { kind: 'idle' })
+  // Guard the resync single-shot on the (newSince, slab) triple — otherwise revisiting the
+  // same ?newSince value on another board/angle suppresses the resync on the second slab.
   const newSinceResyncRef = useRef<string | null>(null)
   useEffect(() => {
     if (!newSince) {
@@ -301,7 +306,9 @@ export function CatalogScreen() {
 
   // If the events resolved to ids we don't have in the slab yet, force one resync — the events
   // row can precede the slab rows locally, and without this the deep link would show "nothing"
-  // when it means "syncing". Only fires once per `?newSince=` value.
+  // when it means "syncing". Guard-key includes the slab so a repeated ?newSince value on a
+  // different board/angle still gets its own single-shot resync.
+  const resyncGuardKey = `${newSince}:${board.layoutId}:${angle}`
   useEffect(() => {
     if (newSinceState.kind !== 'ready') return
     if (loading) return
@@ -309,40 +316,38 @@ export function CatalogScreen() {
     if (ids.size === 0) return
     const anyInSlab = problems.some((p) => ids.has(p.source_catalog_id))
     if (anyInSlab) return
-    if (newSinceResyncRef.current === newSince) return
-    newSinceResyncRef.current = newSince
+    if (newSinceResyncRef.current === resyncGuardKey) return
+    newSinceResyncRef.current = resyncGuardKey
     void resync()
-  }, [newSinceState, problems, loading, newSince, resync])
+  }, [newSinceState, problems, loading, resyncGuardKey, resync])
 
   // The deep-link view narrows the displayed list to only the `?newSince` id set. Other
   // filters are left ALONE for the transform (the "view" tap resets them to defaults via the
   // URL, but a user tweak inside the view still works).
-  const newSinceFilterOn = newSince !== '' && newSinceState.kind === 'ready'
+  const newSinceReadyIds =
+    newSinceState.kind === 'ready' && newSince !== '' ? newSinceState.ids : null
 
   // Row-level "new benchmark" set. When `?newSince` is active it's the resolved id set from
   // that fetch (so the deep-link view highlights exactly the promoted problems). Otherwise
   // it's the current unseen ids from the events store — the dot on the row matches the
   // banner's climbable-count set. Falls back to an empty set on error / offline.
   const newBenchmarkIds = useMemo(() => {
-    if (newSinceFilterOn) {
-      return (newSinceState as { kind: 'ready'; ids: Set<string> }).ids
-    }
+    if (newSinceReadyIds) return newSinceReadyIds
     // Include ALL unseen ids, not only the climbable ones — a user browsing beyond the
     // installed-hold-set filter (e.g. with "show all" or after tweaking sets) still sees the
     // cue on any row that IS new. `void newsVersion` re-subscribes to store mutations.
     void newsVersion
     return new Set(filterNewsIds(board.layoutId, angle, () => true))
-  }, [newSinceFilterOn, newSinceState, newsVersion, board.layoutId, angle])
+  }, [newSinceReadyIds, newsVersion, board.layoutId, angle])
   const transform = useMemo(
     () => (list: CatalogProblem[]) => {
       const filtered = applyFilters(list, effectiveFilters, context)
-      if (newSinceFilterOn) {
-        const ids = (newSinceState as { kind: 'ready'; ids: Set<string> }).ids
-        return filtered.filter((p) => ids.has(p.source_catalog_id))
+      if (newSinceReadyIds) {
+        return filtered.filter((p) => newSinceReadyIds.has(p.source_catalog_id))
       }
       return filtered
     },
-    [effectiveFilters, context, newSinceFilterOn, newSinceState],
+    [effectiveFilters, context, newSinceReadyIds],
   )
   const displayed = useMemo(() => transform(problems), [transform, problems])
 
@@ -368,8 +373,13 @@ export function CatalogScreen() {
   }, [board.layoutId, angle])
 
   const clearNewSince = useCallback(() => {
+    // "Show all" from the ?newSince view means the user has seen everything the deep link
+    // resolved — advance the watermark alongside clearing the URL, so the banner and dot
+    // don't re-appear on the next catalog mount (matches the semantics of the View button
+    // that opened this deep-link view in the first place).
+    markSeen(board.layoutId, angle)
     void navigate({ search: (prev) => ({ ...prev, newSince: '' }), replace: true })
-  }, [navigate])
+  }, [board.layoutId, angle, navigate])
 
   // Ring the actively-filtered holds on thumbnails + the detail board (iOS parity).
   const highlightHolds = useMemo(() => new Set(filters.holdsFilter), [filters.holdsFilter])

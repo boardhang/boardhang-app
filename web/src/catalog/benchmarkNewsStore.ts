@@ -238,4 +238,8 @@ export async function fetchEventIdsSince(
 export function __resetBenchmarkNewsForTests(): void {
   cache.clear()
   listeners.clear()
+  // Also reset the monotonic version counter so a test asserting on absolute version values
+  // starts from zero — otherwise it accumulates across tests via the module singleton and a
+  // future test subscribing on `useBenchmarkNewsVersion` sees non-zero initial state.
+  version = 0
 }
