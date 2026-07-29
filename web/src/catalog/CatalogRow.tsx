@@ -5,7 +5,7 @@
 // pill" — who in the crew has sent this problem (see useMemberSenders).
 
 import { useRef } from 'react'
-import { BadgeCheck, CheckCircle2, Heart, Plus } from 'lucide-react'
+import { BadgeCheck, CheckCircle2, Heart, Plus, Sparkles } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import { CatalogBoard } from '../board/CatalogBoard'
 import type { CatalogProblem } from './catalogSync'
@@ -38,6 +38,9 @@ interface CatalogRowProps {
   isSent?: boolean
   /** This problem is in the active session's queue — shows the blue name-line "in queue" marker. */
   isQueued?: boolean
+  /** This problem is a newly-added benchmark — renders the row-level cue picked by the
+   *  current variant (see `catalogRowCueVariants.tsx`). */
+  isNewBenchmark?: boolean
   /** Crew members (self included, self first) who have sent this problem — the sends pill (P2/P3). */
   senders?: SenderChip[]
   /** The projection is paused/stale/offline — dim the last-known sends pill (P5). */
@@ -55,6 +58,7 @@ export function CatalogRow({
   isFavorite = false,
   isSent = false,
   isQueued = false,
+  isNewBenchmark = false,
   senders,
   sendersDimmed = false,
   showThumbnail = false,
@@ -81,6 +85,7 @@ export function CatalogRow({
     boardLayoutId: board.layoutId,
     enabled: swipeEnabled,
   })
+
 
   return (
     // Swipe reveal is a side-by-side flex track (row + action), not an action layered behind the
@@ -128,6 +133,19 @@ export function CatalogRow({
               <span className="truncate text-sm font-semibold uppercase tracking-tight">
                 {problem.name}
               </span>
+              {/* Newly-added-benchmark cue: renders BEFORE all other status glyphs on the name
+                  line so "just added" is the first thing the eye lands on for a row that has
+                  multiple states (benchmark + sent + favorite). Only shown when the problem is
+                  in the events-store unseen set (or the ?newSince deep-link set) — see
+                  CatalogScreen's `newBenchmarkIds` memo. */}
+              {isNewBenchmark && (
+                <Sparkles
+                  role="img"
+                  aria-label="Newly added benchmark"
+                  strokeWidth={2.5}
+                  className="size-3.5 shrink-0 text-amber-500 drop-shadow-[0_0_3px_rgba(251,191,36,0.55)] dark:text-amber-300"
+                />
+              )}
               {problem.is_benchmark && (
                 <BadgeCheck role="img" aria-label="Benchmark" className="size-4 shrink-0 text-benchmark" />
               )}

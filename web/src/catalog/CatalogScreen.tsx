@@ -41,6 +41,7 @@ import {
   refreshBenchmarkNews,
   useBenchmarkNewsVersion,
 } from './benchmarkNewsStore'
+import { NewBenchmarksBanner } from './NewBenchmarksBanner'
 import { loadLists, useSavedLists } from '../lists/listsStore'
 import { useListMemberIds } from '../lists/useListMemberIds'
 import { useSlab } from './useSlab'
@@ -317,6 +318,21 @@ export function CatalogScreen() {
   // filters are left ALONE for the transform (the "view" tap resets them to defaults via the
   // URL, but a user tweak inside the view still works).
   const newSinceFilterOn = newSince !== '' && newSinceState.kind === 'ready'
+
+  // Row-level "new benchmark" set. When `?newSince` is active it's the resolved id set from
+  // that fetch (so the deep-link view highlights exactly the promoted problems). Otherwise
+  // it's the current unseen ids from the events store — the dot on the row matches the
+  // banner's climbable-count set. Falls back to an empty set on error / offline.
+  const newBenchmarkIds = useMemo(() => {
+    if (newSinceFilterOn) {
+      return (newSinceState as { kind: 'ready'; ids: Set<string> }).ids
+    }
+    // Include ALL unseen ids, not only the climbable ones — a user browsing beyond the
+    // installed-hold-set filter (e.g. with "show all" or after tweaking sets) still sees the
+    // cue on any row that IS new. `void newsVersion` re-subscribes to store mutations.
+    void newsVersion
+    return new Set(filterNewsIds(board.layoutId, angle, () => true))
+  }, [newSinceFilterOn, newSinceState, newsVersion, board.layoutId, angle])
   const transform = useMemo(
     () => (list: CatalogProblem[]) => {
       const filtered = applyFilters(list, effectiveFilters, context)
@@ -457,6 +473,19 @@ export function CatalogScreen() {
         </div>
       </div>
       {!added && <UnaddedBoardBanner name={board.name} onAdd={() => addBoard(board.layoutId)} />}
+      {/* Opening from the queue pages over the queue's order (the stack SessionBar/QueueDrawer
+          hands up becomes the pager domain). The always-on queue strip is independent of this.
+          Active session for this board → portal the bar into the sticky header (issue #98);
+          otherwise it renders in flow right here. */}
+      {sessionForBoard && headerSessionSlot ? (
+        createPortal(<SessionBar board={board} onOpenProblem={openDrawer} />, headerSessionSlot)
+      ) : (
+        <SessionBar board={board} onOpenProblem={openDrawer} />
+      )}
+      {/* New-benchmarks surface sits BELOW SessionBar so an active session's crew controls
+          stay the primary at-a-glance surface on the catalog. Dev-picker below swaps the
+          visual design between variants — production ships whichever `useBannerVariant`
+          resolves to (localStorage default). */}
       {added && !newSince && climbableUnseenIds.length > 0 && (
         <NewBenchmarksBanner
           count={climbableUnseenIds.length}
@@ -467,15 +496,6 @@ export function CatalogScreen() {
       {newSince && (
         <NewSinceStrip state={newSinceState} showAllCount={displayed.length} onShowAll={clearNewSince} />
       )}
-      {/* Opening from the queue pages over the queue's order (the stack SessionBar/QueueDrawer
-          hands up becomes the pager domain). The always-on queue strip is independent of this.
-          Active session for this board → portal the bar into the sticky header (issue #98);
-          otherwise it renders in flow right here. */}
-      {sessionForBoard && headerSessionSlot ? (
-        createPortal(<SessionBar board={board} onOpenProblem={openDrawer} />, headerSessionSlot)
-      ) : (
-        <SessionBar board={board} onOpenProblem={openDrawer} />
-      )}
       <CatalogList
         board={board}
         angle={angle}
@@ -485,6 +505,7 @@ export function CatalogScreen() {
         favoriteIds={favoriteIds}
         sentIds={sentIds}
         queuedIds={queuedIds}
+        newBenchmarkIds={newBenchmarkIds}
         senders={memberSenders?.senders}
         sendersDimmed={memberSenders?.state === 'paused'}
         transform={transform}
@@ -572,35 +593,6 @@ function UnaddedBoardBanner({ name, onAdd }: { name: string; onAdd: () => void }
   )
 }
 
-function NewBenchmarksBanner({
-  count,
-  onView,
-  onDismiss,
-}: {
-  count: number
-  onView: () => void
-  onDismiss: () => void
-}) {
-  return (
-    <div
-      role="status"
-      data-testid="new-benchmarks-banner"
-      className="flex items-center justify-between gap-3 border-b border-border bg-primary/5 px-3 py-2 text-sm"
-    >
-      <span className="min-w-0 truncate font-medium">
-        {count === 1 ? '1 new benchmark' : `${count} new benchmarks`}
-      </span>
-      <div className="flex shrink-0 items-center gap-2">
-        <Button size="sm" onClick={onView}>
-          View
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onDismiss} aria-label="Dismiss new benchmarks">
-          Dismiss
-        </Button>
-      </div>
-    </div>
-  )
-}
 
 // The `?newSince=<iso>` strip. Renders four states:
 //   • loading       → "Loading new benchmarks…" (while the events query is in flight)

@@ -42,6 +42,9 @@ interface CatalogListProps {
   sentIds?: Set<string>
   /** Catalog ids in the active session's queue — drives the in-queue marker (empty off a session). */
   queuedIds?: Set<string>
+  /** Catalog ids that are newly-added benchmarks (from the events store or `?newSince` view).
+   *  Drives the row-level "new" cue picked by `useRowCueVariant()`. */
+  newBenchmarkIds?: Set<string>
   /** Per-problem "who sent it" chips for an active session (crew, self included) — the sends pill.
    *  Undefined = no session on this board; an empty/absent entry = nobody sent that problem. */
   senders?: Map<string, SenderChip[]>
@@ -66,6 +69,7 @@ export function CatalogList({
   favoriteIds = new Set(),
   sentIds = new Set(),
   queuedIds = new Set(),
+  newBenchmarkIds = new Set(),
   senders,
   sendersDimmed = false,
   transform,
@@ -167,6 +171,7 @@ export function CatalogList({
           isFavorite={favoriteIds.has(p.source_catalog_id)}
           isSent={sentIds.has(p.source_catalog_id)}
           isQueued={queuedIds.has(p.source_catalog_id)}
+          isNewBenchmark={newBenchmarkIds.has(p.source_catalog_id)}
           senders={senders?.get(p.source_catalog_id)}
           sendersDimmed={sendersDimmed}
           showThumbnail={showThumbnails}
