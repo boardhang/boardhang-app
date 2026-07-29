@@ -145,7 +145,7 @@ export function facetActiveLabel(id: PinnableFacetId, s: FilterState, ctx?: Face
     case 'grade': {
       if (!s.gradeRange) return FACET_BY_ID.grade.label
       const [lo, hi] = s.gradeRange
-      return `${FONT_GRADES[lo]}–${FONT_GRADES[hi]}`
+      return lo === hi ? FONT_GRADES[lo] : `${FONT_GRADES[lo]}–${FONT_GRADES[hi]}`
     }
     case 'holds':
       return s.holdsFilter.length === 0 ? FACET_BY_ID.holds.label : `Holds (${s.holdsFilter.length})`
