@@ -27,8 +27,13 @@ run_case() {
   echo "→ starting throwaway postgres ($IMAGE)…"
   docker run -d --name "$container" -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=app "$IMAGE" >/dev/null
 
-  for _ in $(seq 1 30); do
-    if docker exec "$container" pg_isready -U postgres -d app >/dev/null 2>&1; then break; fi
+  # Wait for Postgres to accept a real query, not just pg_isready — the readiness probe returns
+  # yes a beat before the socket is fully bound (a real race we hit intermittently when running
+  # 12+ cases back-to-back).
+  for _ in $(seq 1 60); do
+    if docker exec "$container" psql -U postgres -d app -tAc 'select 1' >/dev/null 2>&1; then
+      break
+    fi
     sleep 0.5
   done
 
@@ -74,6 +79,14 @@ begin
              where table_schema = 'public' and table_name = 'sessions'
                and column_name = 'lit_problem_id') then
     execute 'grant update on public.sessions to authenticated';
+  end if;
+  -- 0018 chain: benchmark_events public-read + notification_interests / push_subscriptions
+  -- owner-only. Grant the verbs the assertions attempt so RLS — not a missing grant — is
+  -- what denies (grant-the-verb pattern, per docs/solutions/.../testing-supabase-rls-rpc-migrations-locally.md).
+  if to_regclass('public.benchmark_events') is not null then
+    execute 'grant select, insert, update, delete on public.benchmark_events to anon, authenticated';
+    execute 'grant select, insert, update, delete on public.notification_interests to anon, authenticated';
+    execute 'grant select, insert, update, delete on public.push_subscriptions to anon, authenticated';
   end if;
 end $$;
 SQL
@@ -158,5 +171,15 @@ run_case "$HERE/0017_session_lit_problem_rls.sql" \
   "$HERE/../0007_collaboration_sessions.sql" \
   "$HERE/stub_realtime.sql" \
   "$HERE/../0017_session_lit_problem.sql"
+
+# 0018: benchmark notifications — the capture trigger on catalog_problems (rising-edge only +
+# ON CONFLICT re-arm) and RLS across benchmark_events (public read, no client write),
+# notification_interests (owner scope + WITH CHECK on UPDATE for PostgREST upserts), and
+# push_subscriptions (owner scope for SELECT too — endpoint is a capability). Needs 0002 for
+# set_updated_at and 0006 for catalog_problems.
+run_case "$HERE/0018_benchmark_notifications_rls.sql" \
+  "$HERE/../0002_logbook_sync.sql" \
+  "$HERE/../0006_catalog_problems.sql" \
+  "$HERE/../0018_benchmark_notifications.sql"
 
 echo "✅ ALL RLS CASES PASSED"
