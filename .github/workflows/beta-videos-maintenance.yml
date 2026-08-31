@@ -18,14 +18,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'revalidate (prune dead clips) or seed (import the next batch)'
+        description: 'revalidate (prune dead clips) or seed (top up the next batch to the per-problem cap)'
         type: choice
         options: [revalidate, seed]
         default: revalidate
       board:
         description: 'Board to seed (seed mode only)'
         type: choice
-        options: [mini2025, '2019']
+        options: [mini2025, '2024', '2019', '2017', '2016']
         default: mini2025
       limit:
         description: 'Max problems to process this seed run (seed mode only)'
