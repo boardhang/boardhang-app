@@ -3,17 +3,20 @@
 Seed `public.problem_beta_videos` with short YouTube "beta" clips for benchmark problems,
 so a stuck climber sees how a problem is done. This is the server-side seed half of the
 Beta Videos feature (see docs/plans/2026-07-10-001-feat-web-beta-videos-plan.md); user
-submissions are a deferred Phase 2.
+submissions are the Phase 2 half (`--enrich-pending` below).
 
 Pipeline (mirrors import_catalog.py's shape):
 
     catalog-data/*.json  ->  seed_beta_videos.py  ->  Supabase problem_beta_videos
        (benchmarks)          (YouTube Data API)        (clients read approved rows)
 
-For each benchmark (most-repeated first) it runs one YouTube `search.list`
-(`"<name> <board suffix>"`), enriches the top hits with `videos.list` (duration + views),
-and keeps the first candidate whose normalized name is a substring of the video title
-(the confidence gate validated in the pilots: ~zero wrong matches, misses are just no-match).
+The seed is a TOP-UP: each problem carries up to PER_PROBLEM_CAP live seed videos (a cap,
+not a target — matching strictness never loosens to fill it). For each benchmark below the
+cap (most-repeated first) it runs one YouTube `search.list` (`"<name> <board suffix>"`),
+enriches the top hits with `videos.list` (duration + views), and keeps candidates whose
+normalized name is a substring of the video title (the confidence gate validated in the
+pilots: ~zero wrong matches, misses are just no-match) — in YouTube's relevance order, up
+to the problem's shortfall.
 
 Two safety behaviours from the ce-doc-review:
   • Manual-review gate (two conditions to AUTO-APPROVE) — the name is DISTINCTIVE (normalized
@@ -23,13 +26,19 @@ Two safety behaviours from the ce-doc-review:
     alone allowed: a generic name (e.g. "Send It") matching an unrelated video ("How to send
     it") whose title never mentions the board, and a problem matching the WRONG board's clip.
     Print flags: OK=approved, SML=held (short/generic name), OFF=held (title doesn't name board).
-  • Resumable / idempotent — already-seeded problems (source='seed', this board) are fetched
-    up front and skipped, so a daily run processes the NEXT --limit unseeded benchmarks and
-    picks up where the last left off. That skip is what makes re-runs non-duplicating: each
-    batch is all-new problems, so a plain INSERT can't self-conflict. (We can't PostgREST
-    `on_conflict` the dedupe index because it's PARTIAL — `…where not deleted` — and Postgres
-    won't infer a partial index as an ON CONFLICT arbiter; a stray collision is skipped
-    per-row.) On a YouTube quota error (403/429) the run stops cleanly — resume tomorrow.
+  • Top-up / idempotent — every youtube row EVER written (live or soft-deleted, seed or user)
+    is fetched up front. Problems already at the cap are skipped; each processed problem
+    fetches only its shortfall (cap − live seed rows; user rows never count toward the cap);
+    and any video_id ever stored for the problem is EXCLUDED — a clip a user already added
+    isn't re-seeded, and one a moderator soft-deleted/rejected (or --revalidate pruned) never
+    comes back. That exclusion is load-bearing: the dedupe index is PARTIAL (`…where not
+    deleted`), so nothing at the DB layer stops re-inserting a deleted tuple. It also makes
+    re-runs non-duplicating: each batch is all-new (problem, video) pairs, so a plain INSERT
+    can't self-conflict — and we can't PostgREST `on_conflict` that partial index anyway
+    (Postgres won't infer one as an ON CONFLICT arbiter; a stray race collision is skipped
+    per-row). On a YouTube quota error (403/429) the run stops cleanly — resume tomorrow.
+    Below-cap problems ARE re-searched by later runs (100 units each; there's no per-problem
+    "last searched" state) — batch runs with --limit and let quota pace the tail.
 
 Boards: seed the DEFAULT board (Mini 2025) first; 2024, 2019 Masters, 2017 Masters, and 2016
 are separate runs — pick via `--board`.
@@ -42,7 +51,7 @@ Environment
 
 Examples
 --------
-  # seed the next 100 unseeded Mini 2025 benchmarks (default board):
+  # top up the next 100 below-cap Mini 2025 benchmarks (default board) to 6 videos each:
   YOUTUBE_API_KEY=… SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
       python3 scripts/seed_beta_videos.py --board mini2025 --limit 100
 
@@ -68,7 +77,9 @@ from urllib.error import HTTPError
 
 SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
-CANDIDATES = 5          # top-N search hits to consider per problem
+CANDIDATES = 25         # top-N search hits to consider per problem (search.list costs the
+                        # same 100 units for 1 or 50 results, so depth is quota-free)
+PER_PROBLEM_CAP = 6     # max LIVE seed videos per problem — a cap, not a target
 NAME_MIN_SPECIFIC = 6   # normalized-name length at/above which a match auto-approves
 SHORT_MAX_SECS = 60     # <= this = a "Short"
 
@@ -195,15 +206,29 @@ def fetch_video_meta(video_ids, key):
     return meta
 
 
-def pick_match(name, cands):
-    """First candidate whose normalized name is a substring of its title, else None."""
+def pick_matches(name, cands):
+    """Every candidate whose normalized name is a substring of its title, in YouTube's
+    relevance order. The substring gate itself is unchanged from the single-video seed —
+    it's evidence about the title, so it doesn't weaken with search rank."""
     nkey = norm(strip_symbols(name))
     if not nkey:
-        return None
-    for c in cands:
-        if nkey in norm(c["title"]):
-            return c
-    return None
+        return []
+    return [c for c in cands if nkey in norm(c["title"])]
+
+
+def select_new(matches, seen, need):
+    """First `need` matches whose video_id isn't in `seen` (every id ever stored for this
+    problem — any source, any deleted state) and isn't repeated within the batch."""
+    out, taken = [], set()
+    for c in matches:
+        if len(out) >= need:
+            break
+        vid = c["video_id"]
+        if vid in seen or vid in taken:
+            continue
+        out.append(c)
+        taken.add(vid)
+    return out
 
 
 # ── Supabase (service role) ──────────────────────────────────────────────────
@@ -214,13 +239,31 @@ def _sb_headers(key, extra=None):
     return h
 
 
-def seeded_ids(base_url, key):
-    """source_catalog_ids already seeded (source='seed') — the resumable checkpoint."""
+def aggregate_seed_state(db_rows):
+    """Fold DB rows into the two per-problem maps the top-up needs:
+      • live[id] — count of LIVE seed rows (cap arithmetic: fetch cap − live). User rows and
+        deleted rows don't count — a user's pending clip mustn't suppress seeding a visible
+        one, and a deleted clip frees its slot.
+      • seen[id] — every video_id ever stored for the problem, ANY source, ANY deleted
+        state. The exclusion set: never re-seed what a user already added, and never
+        resurrect what a moderator/--revalidate removed (the partial dedupe index wouldn't
+        block that re-insert)."""
+    live, seen = {}, {}
+    for row in db_rows:
+        pid = row["source_catalog_id"]
+        seen.setdefault(pid, set()).add(row["video_id"])
+        if row["source"] == "seed" and not row["deleted"]:
+            live[pid] = live.get(pid, 0) + 1
+    return live, seen
+
+
+def seed_state(base_url, key):
+    """Fetch every youtube row ever written and reduce it to (live counts, seen ids)."""
     url = (f"{base_url}/rest/v1/problem_beta_videos"
-           f"?select=source_catalog_id&source=eq.seed")
+           f"?select=source_catalog_id,video_id,source,deleted&provider=eq.youtube")
     req = Request(url, headers=_sb_headers(key, {"Range-Unit": "items", "Range": "0-99999"}))
     with urlopen(req, timeout=60) as r:
-        return {row["source_catalog_id"] for row in json.load(r)}
+        return aggregate_seed_state(json.load(r))
 
 
 def _insert(url, key, payload):
@@ -230,13 +273,14 @@ def _insert(url, key, payload):
 
 
 def insert_rows(base_url, key, rows):
-    """Insert this run's matched rows. Idempotency across runs comes from the seeded_ids()
-    skip (already-seeded problems are filtered out before we get here), so the batch is all-new
-    problems and never self-conflicts. We deliberately DON'T PostgREST-`on_conflict` the dedupe
-    index: it's PARTIAL (`…where not deleted`), and Postgres won't infer a partial index as an
-    ON CONFLICT arbiter (that's the 42P10 error). If the batch does hit a live duplicate (e.g. a
-    re-run racing a prior partial write), fall back to per-row inserts and skip the 409s so the
-    run still makes progress. Returns the number of rows actually written."""
+    """Insert this run's matched rows. Idempotency across runs comes from the seed_state()
+    exclusion (every video_id ever stored for a problem is filtered out before we get here),
+    so the batch is all-new (problem, video) pairs and never self-conflicts. We deliberately
+    DON'T PostgREST-`on_conflict` the dedupe index: it's PARTIAL (`…where not deleted`), and
+    Postgres won't infer a partial index as an ON CONFLICT arbiter (that's the 42P10 error).
+    If the batch does hit a live duplicate (e.g. racing a user submission made mid-run), fall
+    back to per-row inserts and skip the 409s so the run still makes progress. Returns the
+    number of rows actually written."""
     url = f"{base_url}/rest/v1/problem_beta_videos"
     try:
         with _insert(url, key, rows):
@@ -271,64 +315,71 @@ def run_seed(args, yt_key, base_url, sb_key):
     benchmarks = [p for p in json.load(open(path))["problems"] if p.get("isBenchmark")]
     benchmarks.sort(key=lambda p: p.get("repeats", 0), reverse=True)
 
-    # A real run always reads the seeded checkpoint. A dry run reads it too WHEN Supabase creds
+    # A real run always reads the top-up state. A dry run reads it too WHEN Supabase creds
     # are present (so the preview reflects the true next batch), but falls back to the full list
     # when they're absent — keeping dry-run usable with no keys at all.
     read_db = bool(base_url and sb_key)  # a dry run with no creds skips the DB read entirely
-    done = seeded_ids(base_url, sb_key) if (read_db or not args.dry_run) else set()
-    todo = [p for p in benchmarks if p["id"] not in done][:args.limit]
+    live, seen = seed_state(base_url, sb_key) if (read_db or not args.dry_run) else ({}, {})
+    cap = args.cap
+    at_cap = sum(1 for p in benchmarks if live.get(p["id"], 0) >= cap)
+    todo = [p for p in benchmarks if live.get(p["id"], 0) < cap][:args.limit]
     print(f"{args.board} @{args.angle}°: {len(benchmarks)} benchmarks, "
-          f"{len(done)} already seeded → processing next {len(todo)} (limit {args.limit})")
+          f"{at_cap} at the {cap}-video cap → processing next {len(todo)} (limit {args.limit})")
 
     if args.dry_run:
         # Offline preview — no YouTube calls (so zero quota) and no writes. Shows WHICH benchmarks
-        # would be fetched, most-repeated first; can't show real video matches without the API.
-        note = ("already-seeded excluded via DB" if read_db
+        # would be fetched and each one's shortfall; can't show real video matches without the API.
+        note = ("at-cap excluded via DB" if read_db
                 else "no DB creds → not excluding already-seeded")
         print(f"[dry-run] would fetch YouTube betas for these benchmarks "
               f"(no API calls, no quota, no writes; {note}):")
         for i, p in enumerate(todo, 1):
-            print(f"  {i:>3}. {p.get('repeats', 0):>5}×  {(p.get('name') or '')[:50]}")
+            need = cap - live.get(p["id"], 0)
+            print(f"  {i:>3}. {p.get('repeats', 0):>5}×  need {need}  {(p.get('name') or '')[:50]}")
         return
 
     rows, approved, pending, missed = [], 0, 0, 0
     try:
         for i, p in enumerate(todo, 1):
             name = p.get("name") or ""
+            need = cap - live.get(p["id"], 0)
             _, cands = search(name, suffix, yt_key)
-            best = pick_match(name, enrich(cands, yt_key))
-            if not best:
+            new = select_new(pick_matches(name, enrich(cands, yt_key)),
+                             seen.get(p["id"], set()), need)
+            if not new:
                 missed += 1
-                print(f"  {i:>3}. ——   {name[:40]}  (no confident match)")
+                print(f"  {i:>3}. ——   {name[:40]}  (no new confident match)")
                 continue
-            # Manual-review gate: auto-approve ONLY a DISTINCTIVE name (not short/generic) whose
-            # matched title actually NAMES THIS BOARD. A short name, or a match on a title that
-            # doesn't mention the board, is held `pending` for a human glance rather than
-            # published live — the substring match alone is too weak to trust in those cases.
+            # Manual-review gate — same gate for EVERY rank, per the top-up spec: auto-approve
+            # ONLY a DISTINCTIVE name (not short/generic) whose matched title actually NAMES
+            # THIS BOARD. A short name, or a match on a title that doesn't mention the board,
+            # is held `pending` for a human glance rather than published live — the substring
+            # match alone is too weak to trust in those cases.
             distinctive = len(norm(strip_symbols(name))) >= NAME_MIN_SPECIFIC
-            on_board = title_names_board(best["title"], suffix)
-            status = "approved" if (distinctive and on_board) else "pending"
-            approved += status == "approved"
-            pending += status == "pending"
-            rows.append({
-                "source_catalog_id": p["id"], "provider": "youtube",
-                "video_id": best["video_id"], "title": best["title"],
-                "channel": best["channel"], "duration_s": best["duration_s"],
-                "is_short": best["is_short"], "views": best["views"],
-                "source": "seed", "status": status,
-            })
-            if status == "approved":
-                flag = "OK "
-            else:
-                flag = "REV" if distinctive else "SML"  # SML = held on a short/generic name
-                if distinctive and not on_board:
-                    flag = "OFF"  # OFF = matched a title that doesn't name the board
-            print(f"  {i:>3}. {flag}  {name[:40]:40} → {best['title'][:44]}")
+            for best in new:
+                on_board = title_names_board(best["title"], suffix)
+                status = "approved" if (distinctive and on_board) else "pending"
+                approved += status == "approved"
+                pending += status == "pending"
+                rows.append({
+                    "source_catalog_id": p["id"], "provider": "youtube",
+                    "video_id": best["video_id"], "title": best["title"],
+                    "channel": best["channel"], "duration_s": best["duration_s"],
+                    "is_short": best["is_short"], "views": best["views"],
+                    "source": "seed", "status": status,
+                })
+                if status == "approved":
+                    flag = "OK "
+                else:
+                    flag = "REV" if distinctive else "SML"  # SML = held on a short/generic name
+                    if distinctive and not on_board:
+                        flag = "OFF"  # OFF = matched a title that doesn't name the board
+                print(f"  {i:>3}. {flag}  {name[:40]:40} → {best['title'][:44]}")
     except QuotaExhausted as e:
         print(f"\n⚠️  YouTube quota exhausted — stopping cleanly, resume tomorrow. ({e})")
 
-    print(f"\nMatched {len(rows)} ({approved} approved, {pending} held for review), "
-          f"{missed} no-match.")
+    print(f"\nMatched {len(rows)} clip(s) ({approved} approved, {pending} held for review); "
+          f"{missed} problem(s) with no new match.")
     if not rows:
         return
 
@@ -474,6 +525,9 @@ def main():
                     help="which board to seed (default: mini2025 — the app default)")
     ap.add_argument("--angle", type=int, choices=(25, 40), default=40)
     ap.add_argument("--limit", type=int, default=100, help="max problems to process this run")
+    ap.add_argument("--cap", type=int, default=PER_PROBLEM_CAP,
+                    help="max live seed videos per problem — each run tops problems up to "
+                         f"this (default {PER_PROBLEM_CAP})")
     ap.add_argument("--dir", default=os.path.join(os.path.dirname(__file__), "..", "catalog-data"))
     ap.add_argument("--dry-run", action="store_true", help="no Supabase writes")
     ap.add_argument("--revalidate", action="store_true",
