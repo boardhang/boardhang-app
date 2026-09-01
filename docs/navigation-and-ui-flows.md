@@ -200,7 +200,12 @@ via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fil
   resolved angle back into `boardStore` so `/boards` stays coherent with a deep link.
 - **Problem drawer**: opening pushes history (Back closes it), paging/swiping `replace`s (URL tracks
   the current problem). A deep-linked problem resolves against the **full slab**, so it opens even
-  when the active filters exclude it (prev/next then disable).
+  when the active filters exclude it (prev/next then disable). The drawer's beta strip caps at 4
+  cards — more clips collapse into a "+N View all" tile opening a grid sheet of all of them
+  (`web/src/beta/BetaGridSheet.tsx`). Sheets stacked over the drawer (the beta player, and the
+  grid sheet it can sit on) each push their own history entry via
+  `web/src/beta/useHistoryBackClose.ts`, so Back unwinds player → grid → drawer instead of
+  popping `?problem=`.
 - **Logbook problem drawer**: `/logbook` reuses the same `ProblemDetail` in its own `?problem`
   drawer (`web/src/logbook/logbookSearch.ts` — one param, same `stripSearchParams` + push-on-open /
   `router.history.back()` close as the catalog). It's history-integrated precisely *because*

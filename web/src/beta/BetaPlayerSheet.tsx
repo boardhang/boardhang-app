@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { BetaVideo } from './betaTypes'
+import { useHistoryBackClose } from './useHistoryBackClose'
 
 // Privacy-friendly official embed (no tracking cookie until play). `playsinline` keeps it in
 // the sheet on iOS instead of taking over the screen.
@@ -16,41 +17,22 @@ function watchUrl(v: BetaVideo): string {
  * Full-screen-ish player for one beta clip. States: iframe-loading placeholder → playing.
  * Embedding-disabled videos can't be detected cross-origin, so a "Watch on YouTube" out-link
  * is ALWAYS present as the guaranteed escape hatch. The Dialog itself provides the focus
- * trap + focus-return + Escape + backdrop-close; we add a history entry so the mobile back
- * gesture closes the sheet first without popping the ?problem= drawer.
+ * trap + focus-return + Escape + backdrop-close; useHistoryBackClose adds the history entry
+ * so the mobile back gesture closes the sheet first without popping the ?problem= drawer.
  */
 export function BetaPlayerSheet({ video, onClose }: { video: BetaVideo | null; onClose: () => void }) {
   const [loaded, setLoaded] = useState(false)
-  const close = useCallback(() => onClose(), [onClose])
-  // Read the latest close from a ref so the history effect below depends only on the opened
-  // clip, not on close's identity — otherwise an unstable parent onClose re-runs the effect on
-  // every render, firing history.back() and spuriously closing the sheet (React 18 StrictMode
-  // reproduces it on mount).
-  const closeRef = useRef(close)
-  closeRef.current = close
+  useHistoryBackClose(video !== null, onClose, 'betaSheet')
 
   useEffect(() => {
     setLoaded(false) // reset the loading placeholder for each newly-opened clip
   }, [video?.video_id])
 
-  useEffect(() => {
-    if (!video) return
-    window.history.pushState({ betaSheet: true }, '')
-    const onPop = (): void => closeRef.current()
-    window.addEventListener('popstate', onPop)
-    return () => {
-      window.removeEventListener('popstate', onPop)
-      // Closing via UI (not the back button): pop the entry we pushed so history stays clean.
-      if (window.history.state?.betaSheet) window.history.back()
-    }
-    // Depend only on the opened clip's identity (stable per open) — NOT close.
-  }, [video])
-
   return (
     <Dialog
       open={video !== null}
       onOpenChange={(open) => {
-        if (!open) close()
+        if (!open) onClose()
       }}
     >
       {video && (
