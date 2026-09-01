@@ -49,7 +49,7 @@ export default defineConfig({
         name: 'Boardhang',
         short_name: 'Boardhang',
         description:
-          'Build a problem on the grid and light it on your DIY MoonBoard LEDs over Web Bluetooth.',
+          'The MoonBoard app we wished we had. Fast filters that stick, shareable problems, and sessions with friends.',
         theme_color: '#0E1116',
         background_color: '#0E1116',
         display: 'standalone',
