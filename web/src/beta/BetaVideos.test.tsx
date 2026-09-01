@@ -24,6 +24,10 @@ vi.mock('../auth/SignInDialog', () => ({
 vi.mock('./BetaSubmitDialog', () => ({
   BetaSubmitDialog: ({ open }: { open: boolean }) => (open ? <div data-testid="submit-dialog" /> : null),
 }))
+vi.mock('./BetaGridSheet', () => ({
+  BetaGridSheet: ({ open, videos }: { open: boolean; videos: unknown[] }) =>
+    open ? <div data-testid="grid-sheet">{videos.length}</div> : null,
+}))
 
 import { BetaVideos } from './BetaVideos'
 
@@ -119,6 +123,42 @@ describe('BetaVideos pending-review note (#2)', () => {
     render(<BetaVideos sourceCatalogId="p" />)
     expect(screen.queryByText(/pending review/i)).toBeNull()
     expect(localStorage.getItem('beta-pending:p')).toBeNull()
+  })
+})
+
+describe('BetaVideos strip cap + View all tile', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+
+  it('shows every card and no tile at cap+1 clips (a "+1" tile would hide exactly one)', () => {
+    entry = { status: 'ready', videos: ids.slice(0, 5).map((id) => vid(id)), error: null }
+    render(<BetaVideos sourceCatalogId="p" />)
+    expect(screen.getAllByLabelText(/Beta by/)).toHaveLength(5)
+    expect(screen.queryByRole('button', { name: /view all/i })).toBeNull()
+  })
+
+  it('caps the strip at 4 cards and ends in a +N tile past that', () => {
+    entry = { status: 'ready', videos: ids.map((id) => vid(id)), error: null }
+    render(<BetaVideos sourceCatalogId="p" />)
+    expect(screen.getAllByLabelText(/Beta by/)).toHaveLength(4)
+    const tile = screen.getByRole('button', { name: 'View all 6 beta videos' })
+    expect(tile.textContent).toContain('+2') // the tile's own clip counts as hidden
+  })
+
+  it('opens the grid sheet with every clip when the tile is tapped', () => {
+    entry = { status: 'ready', videos: ids.map((id) => vid(id)), error: null }
+    render(<BetaVideos sourceCatalogId="p" />)
+    expect(screen.queryByTestId('grid-sheet')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /view all/i }))
+    expect(screen.getByTestId('grid-sheet').textContent).toBe('6') // uncapped list
+  })
+
+  it('does not count the pending placeholder toward the cap', () => {
+    localStorage.setItem('beta-pending:p', JSON.stringify({ videoId: 'x', ts: Date.now() }))
+    entry = { status: 'ready', videos: ids.map((id) => vid(id)), error: null }
+    render(<BetaVideos sourceCatalogId="p" />)
+    expect(screen.getByText(/pending review/i)).toBeTruthy()
+    expect(screen.getAllByLabelText(/Beta by/)).toHaveLength(4)
+    expect(screen.getByRole('button', { name: 'View all 6 beta videos' })).toBeTruthy()
   })
 })
 
