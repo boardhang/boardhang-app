@@ -16,7 +16,7 @@ robots.txt** (AI Crawl Control → Overview) and its **Block AI bots** WAF scope
 (Security → Settings) are both **off** — with them on, Cloudflare injected a 64-line
 `robots.txt` that `Disallow`ed ClaudeBot, GPTBot, CCBot, Google-Extended,
 Applebot-Extended, Amazonbot and meta-externalagent on *both* hosts, overriding
-`robots.ts`. **If crawl traffic ever drops to zero, re-check those two settings
+`app/robots.txt/route.ts`. **If crawl traffic ever drops to zero, re-check those two settings
 first** — they are zone-level and outside the repo. Google Search Console is verified
 as a domain property via DNS TXT with the apex sitemap submitted.
 
@@ -24,7 +24,7 @@ as a domain property via DNS TXT with the apex sitemap submitted.
 
 | Host | Project | Role | Indexable? |
 | --- | --- | --- | --- |
-| `boardhang.app` (apex) | `boardhang-site` (`site/`) | Landing page, `/guides`, future problem/benchmark pages | **Yes** — `robots.ts` allows all crawlers incl. AI bots; `sitemap.ts` lists every page; every page sets `alternates.canonical`, resolved against `metadataBase` |
+| `boardhang.app` (apex) | `boardhang-site` (`site/`) | Landing page, `/guides`, future problem/benchmark pages | **Yes** — `app/robots.txt/route.ts` allows all crawlers incl. AI bots and carries an advisory `Content-Signal: search=yes, ai-input=yes, ai-train=yes` line in every group; `sitemap.ts` lists every page; every page sets `alternates.canonical`, resolved against `metadataBase` |
 | `www.boardhang.app` | `boardly` (`web/`) | The PWA (catalog, BLE lighting, logbook, sessions) | **No** — every response carries `X-Robots-Tag: noindex` (`web/vercel.json` headers); `web/public/robots.txt` allows crawling so the noindex is seen; `web/public/sitemap.xml` is an intentionally empty urlset |
 
 **Why the cross-host split is load-bearing:** the PWA's service worker registers
@@ -87,7 +87,7 @@ Follow-ups this decision created:
   part of shipping the programmatic problem pages, not before.
 
 Cloudflare fronts both hosts. Its "managed robots.txt / block AI bots" zone feature,
-when enabled, overrides **both** `web/public/robots.txt` and `site/`'s `robots.ts` —
+when enabled, overrides **both** `web/public/robots.txt` and `site/`'s `app/robots.txt/route.ts` —
 it must stay disabled (dashboard setting; verify with
 `curl https://www.boardhang.app/robots.txt`).
 
