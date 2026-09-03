@@ -2,7 +2,7 @@
 // (`Board.all`) and ios/MoonBoardLED/Board/MoonBoardSetup.swift (`MoonBoardSetup.all`).
 // This is the set of boards the app supports end-to-end (each has a bundled catalog
 // slab). Server catalog rows are partitioned by (layoutId, angle); full boards have
-// two slabs (40°/25°), Mini has one.
+// two slabs (40°/25°), each Mini has one (40° only).
 
 import type { RenderGeometry } from './renderGeometry'
 import { MINI_GEOMETRY, STANDARD_GEOMETRY } from './renderGeometry'
@@ -54,6 +54,22 @@ export const BOARDS: CatalogBoardDef[] = [
       set(29, 'Original School Holds', 'originalschoolholds'),
       set(30, 'Wooden Holds B', 'woodenholdsb'),
       set(31, 'Wooden Holds C', 'woodenholdsc'),
+    ],
+  },
+  {
+    layoutId: 6,
+    name: 'Mini MoonBoard 2020',
+    angles: [40],
+    folder: 'minimoonboard2020',
+    background: 'minimoonboard-bg',
+    catalogPrefix: 'MiniMoonBoard2020Catalog',
+    membershipResource: 'MiniMoonBoard2020HoldSets',
+    geometry: MINI_GEOMETRY,
+    holdSets: [
+      set(24, 'Original School Holds', 'originalschoolholds'),
+      set(25, 'Wooden Holds', 'woodenholds'),
+      set(26, 'Wooden Holds B', 'woodenholdsb'),
+      set(27, 'Wooden Holds C', 'woodenholdsc'),
     ],
   },
   {

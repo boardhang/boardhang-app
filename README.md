@@ -21,7 +21,7 @@ The web app is live at [www.boardhang.app](https://www.boardhang.app) —
   off → start (green) → move (blue) → end (red).
 - Name + Font grade; saved locally (SwiftData), with a logbook of your ascents.
 - Browse bundled read-only **official-problem catalogs** for several MoonBoard setups
-  (Mini 2025, 2016, 2024, Masters 2017/2019).
+  (Mini 2025, 2016, 2024, Masters 2017/2019; the web PWA also has Mini 2020).
 - Connect to the board over BLE; **live preview** lights holds as you tap them; "Light up" /
   "Clear board" from any problem.
 - **LED Test / Calibration** screen to verify the hold→LED mapping against your physical

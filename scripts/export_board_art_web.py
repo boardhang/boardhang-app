@@ -33,6 +33,8 @@ OUT = os.path.join(ROOT, "web", "public", "boards")
 BOARDS = [
     ("minimoonboard2025", "minimoonboard-bg",
      ["holdsetf", "originalschoolholds", "woodenholdsb", "woodenholdsc"]),
+    ("minimoonboard2020", "minimoonboard-bg",
+     ["originalschoolholds", "woodenholds", "woodenholdsb", "woodenholdsc"]),
     ("moonboardmasters2019", "moonboard-bg",
      ["holdseta", "holdsetb", "originalschoolholds", "screw-onfeet",
       "woodenholds", "woodenholdsb", "woodenholdsc"]),

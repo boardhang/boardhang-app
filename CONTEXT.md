@@ -20,8 +20,9 @@ holds). LED geometry is row-parameterized (12-row Mini / 18-row full boards) and
 path can drive a full wall too — the Mini is a hardware limit, not a code one; only the
 custom-problem editor is Mini-specific.
 
-Beyond authoring it browses read-only **official-problem catalogs** for five layouts (Mini
-2025, 2016, 2024, Masters 2017/2019 — ~12k problems across 40°/25°) with search/sort/filter/
+Beyond authoring it browses read-only **official-problem catalogs** for six layouts (Mini
+2025, Mini 2020, 2016, 2024, Masters 2017/2019 — ~75k problems across 40°/25°; Mini 2020 is
+web-only, the iOS registry lists five) with search/sort/filter/
 favorites, a **multi-board** model (per-board angle + installed hold-set filtering), a local
 **logbook** of ascents/attempts with a grade-pyramid view, and **optional accounts** (email
 code or Google, `@handle`). The catalog is **server-distributed** (synced from Supabase into a

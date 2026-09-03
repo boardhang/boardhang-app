@@ -3,17 +3,28 @@ import { BOARDS, boardByLayoutId, defaultAngle, hasAngleChoice } from './boards'
 import { MINI_GEOMETRY } from './renderGeometry'
 
 describe('board registry', () => {
-  it('exposes exactly the five supported boards', () => {
-    expect(BOARDS.map((b) => b.layoutId).sort((a, b) => a - b)).toEqual([2, 3, 4, 5, 7])
+  it('exposes exactly the six supported boards', () => {
+    expect(BOARDS.map((b) => b.layoutId).sort((a, b) => a - b)).toEqual([2, 3, 4, 5, 6, 7])
   })
 
-  it('gives Mini 2025 a single 40° angle and mini geometry', () => {
-    const mini = boardByLayoutId(7)!
-    expect(mini.angles).toEqual([40])
-    expect(hasAngleChoice(mini)).toBe(false)
-    expect(defaultAngle(mini)).toBe(40)
-    expect(mini.geometry).toBe(MINI_GEOMETRY)
-    expect(mini.geometry.numRows).toBe(12)
+  it('gives both Minis a single 40° angle and mini geometry', () => {
+    for (const id of [6, 7]) {
+      const mini = boardByLayoutId(id)!
+      expect(mini.angles).toEqual([40])
+      expect(hasAngleChoice(mini)).toBe(false)
+      expect(defaultAngle(mini)).toBe(40)
+      expect(mini.geometry).toBe(MINI_GEOMETRY)
+      expect(mini.geometry.numRows).toBe(12)
+    }
+  })
+
+  it('bundles a membership resource for every board', async () => {
+    const { membershipFor } = await import('./holdSetMembership')
+    for (const b of BOARDS) {
+      const data = membershipFor(b.membershipResource)
+      expect(data.sets.map((s) => s.id), b.name).toEqual(b.holdSets.map((h) => h.id))
+      expect(Object.keys(data.membership).length, b.name).toBeGreaterThan(0)
+    }
   })
 
   it('gives full boards both 40° and 25° and 18-row geometry', () => {

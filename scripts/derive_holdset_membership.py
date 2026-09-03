@@ -57,6 +57,12 @@ BOARDS = [
         (30, "Wooden Holds B", "woodenholdsb"),
         (31, "Wooden Holds C", "woodenholdsc"),
     ]),
+    ("minimoonboard2020", MINI, "MiniMoonBoard2020HoldSets", [
+        (24, "Original School Holds", "originalschoolholds"),
+        (25, "Wooden Holds", "woodenholds"),
+        (26, "Wooden Holds B", "woodenholdsb"),
+        (27, "Wooden Holds C", "woodenholdsc"),
+    ]),
     ("moonboard2016", STD, "MoonBoard2016HoldSets", [
         (2, "Hold Set A", "holdseta"),
         (3, "Hold Set B", "holdsetb"),
