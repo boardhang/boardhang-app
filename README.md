@@ -1,14 +1,16 @@
 # Boardhang
 
-A native iOS app (with a companion Web Bluetooth PWA) to create boulder problems and light
-them on a MoonBoard LED system running the
-[ArduinoMoonBoardLED](https://github.com/FabianRig/ArduinoMoonBoardLED) firmware.
+Boardhang is a free, unofficial web app for MoonBoards: browse around 12,000 problems,
+keep your filters between visits, and light any problem on a DIY LED board over Web
+Bluetooth. It runs in the browser — no install, no account — and is not affiliated with
+Moon Climbing Ltd.
 
-The Arduino firmware is treated as fixed — this app speaks its Nordic-UART protocol correctly
-and does not modify the firmware.
-
-The web app is live at [www.boardhang.app](https://www.boardhang.app) —
-[boardhang.app](https://boardhang.app) is the project site.
+- **Use it:** [www.boardhang.app](https://www.boardhang.app)
+- **Guides and project site:** [boardhang.app](https://boardhang.app)
+- **Hardware:** DIY LED MoonBoards running the open-source
+  [ArduinoMoonBoardLED](https://github.com/FabianRig/ArduinoMoonBoardLED) firmware. The
+  firmware is treated as fixed — Boardhang speaks its Nordic-UART protocol correctly and
+  does not modify it.
 
 > **Contributing / picking this up?** Read [`CONTEXT.md`](CONTEXT.md) first — it's the
 > orientation doc (repo map, build, gotchas, and links into [`docs/`](docs/README.md)). This
@@ -17,19 +19,45 @@ The web app is live at [www.boardhang.app](https://www.boardhang.app) —
 
 ## What it does
 
-- Create problems by tapping holds on the board grid; each tap cycles
-  off → start (green) → move (blue) → end (red).
-- Name + Font grade; saved locally (SwiftData), with a logbook of your ascents.
-- Browse bundled read-only **official-problem catalogs** for several MoonBoard setups
-  (Mini 2025, 2016, 2024, Masters 2017/2019).
-- Connect to the board over BLE; **live preview** lights holds as you tap them; "Light up" /
-  "Clear board" from any problem.
-- **LED Test / Calibration** screen to verify the hold→LED mapping against your physical
-  wiring (with a flip toggle if it's wired from the other end).
-- Optional **accounts** (email code or Google sign-in, `@handle` profile). Entirely optional —
-  the app is fully usable signed-out.
+- **Browse a curated catalog** — around 12,000 MoonBoard problems, including 2,832 official
+  benchmarks, across five layouts (MoonBoard 2016, 2024, Masters 2017, Masters 2019 and
+  Mini MoonBoard 2025), with search, grade filters and favorites.
+- **Keep your filters** — sort and filter once; Boardhang remembers your setup per board, so
+  every visit starts where you left off.
+- **Light problems on the wall** — pick a problem and Boardhang sends it to the board over
+  Web Bluetooth, with start, hand and finish holds each in their own color.
+- **Session with friends** — sign in (free, optional) to see what everyone has sent or
+  tried, find a problem to work on together, and always know what's lit on the wall.
+- **Share problems as links** — every problem has a web address that opens in any browser.
+- **Log your ascents** — a local logbook builds a grade pyramid from what you climb, with
+  CSV/JSON export so the data stays yours.
+- **Create your own problems** — tap holds on the board grid, with a live preview on the
+  board as you tap.
 
-## Run it on your iPhone
+Browsing works in any modern browser. Lighting the board needs Web Bluetooth: desktop
+Chrome/Edge, Android Chrome, or iPhone via the Bluefy browser.
+
+## Run the web app locally
+
+```sh
+cd web && npm install && npm run dev
+```
+
+[web/README.md](web/README.md) has the develop/build/test guide; the deploy runbook is in
+[web/CLAUDE.md](web/CLAUDE.md).
+
+## First-run checklist (with a board)
+
+1. Power the Arduino. In the app, add your board and connect — the browser shows a device
+   picker; choose the board.
+2. Light a problem and check that the bottom-left hold (A1) lights where you expect. If the
+   board lights mirrored, use the board's flip setting — it is wired from the other end.
+3. Light a few more problems, log a send, and start a session with a friend.
+
+## iOS app (on hold)
+
+A native SwiftUI app lives in [`ios/`](ios/). It is not under active development — the web
+app is the active client — but it still builds and runs on your own iPhone:
 
 1. Open **`ios/MoonBoardLED.xcodeproj`** in Xcode.
 2. Select the **MoonBoardLED** scheme and your iPhone as the run destination.
@@ -44,13 +72,6 @@ Accounts are off unless you configure Supabase — see
 [docs/social-accounts-login-SETUP.md](docs/social-accounts-login-SETUP.md). Without it, the app
 simply hides sign-in and runs offline.
 
-## First-run checklist
-
-1. Power the Arduino. In the app, tap the connection status → **Scan** → tap your board to connect.
-2. Open **LED Test / Calibration**. Step to LED 0 and confirm the bottom-left hold (A1) lights.
-   Step a couple more to confirm direction; toggle "flip" if your board is wired from the other end.
-3. Create a problem, watch the live preview, save, and light it from the list.
-
 ## Protocol notes
 
 Message sent to the board: `l#<tokens>#`, tokens comma-separated `<type><led>`
@@ -58,12 +79,6 @@ Message sent to the board: `l#<tokens>#`, tokens comma-separated `<type><led>`
 along the serpentine strip. Mapping lives in `BoardGeometry.ledIndex`. The critical
 implementation detail (≤20-byte chunked writes) is covered in
 [docs/ble-hardware.md](docs/ble-hardware.md).
-
-## Web app
-
-A companion Web Bluetooth PWA lives in [`web/`](web/) (`cd web && npm run dev`). It's a partial
-port — connect, build a problem, light/clear. Web Bluetooth requires desktop Chrome/Edge,
-Android Chrome, or iPhone via Bluefy. See [web/README.md](web/README.md).
 
 ## Layout & docs
 
