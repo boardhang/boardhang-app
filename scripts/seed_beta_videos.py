@@ -27,7 +27,8 @@ Two safety behaviours from the ce-doc-review:
     it") whose title never mentions the board, and a problem matching the WRONG board's clip.
     Print flags: OK=approved, SML=held (short/generic name), OFF=held (title doesn't name board).
   • Top-up / idempotent — every youtube row EVER written (live or soft-deleted, seed or user)
-    is fetched up front. Problems already at the cap are skipped; each processed problem
+    is fetched up front — PAGED, because hosted PostgREST silently clamps any one read to 1000
+    rows (see sb_get_all). Problems already at the cap are skipped; each processed problem
     fetches only its shortfall (cap − live seed rows; user rows never count toward the cap);
     and any video_id ever stored for the problem is EXCLUDED — a clip a user already added
     isn't re-seeded, and one a moderator soft-deleted/rejected (or --revalidate pruned) never
@@ -71,6 +72,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.parse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
@@ -82,6 +84,7 @@ CANDIDATES = 25         # top-N search hits to consider per problem (search.list
 PER_PROBLEM_CAP = 6     # max LIVE seed videos per problem — a cap, not a target
 NAME_MIN_SPECIFIC = 6   # normalized-name length at/above which a match auto-approves
 SHORT_MAX_SECS = 60     # <= this = a "Short"
+PAGE = 1000             # hosted PostgREST's `db-max-rows` — every response is clamped to this
 
 # Board slug (for the catalog-data filename) + the YouTube query suffix climbers actually type.
 # Suffix convention is "moonboard <year>" — the year is what disambiguates on YouTube; climbers
@@ -257,13 +260,54 @@ def aggregate_seed_state(db_rows):
     return live, seen
 
 
+def sb_get_all(base_url, key, query, order="id.asc"):
+    """Every row of `query` (`<table>?select=…&<filters>`, no `order=`), paged PAGE rows at a time.
+
+    Hosted Supabase clamps every REST read to `db-max-rows` (1000) SILENTLY: `Range: 0-99999`
+    still answers 200 with exactly 1000 rows and `Content-Range: 0-999/*` — no error. A single
+    "fetch everything" request therefore rots the moment the table passes 1000 rows, and it fails
+    as wrong logic rather than a crash: here, problems at the cap looked below it, were
+    re-searched on YouTube (100 units each) and topped up PAST the cap. Page in a stable order,
+    ask for the exact count, and stop when the reported total is reached — advancing by the rows
+    actually returned, so a server capping below PAGE neither under-reads (a short page misread
+    as the last) nor over-reads past the end."""
+    rows, offset, total = [], 0, None
+    url = f"{base_url}/rest/v1/{query}&order={order}"
+    while total is None or offset < total:
+        batch, content_range = _sb_get_page(url, key, {
+            "Prefer": "count=exact", "Range-Unit": "items",
+            "Range": f"{offset}-{offset + PAGE - 1}"})
+        tail = (content_range or "").rsplit("/", 1)[-1]
+        if tail.isdigit():
+            total = int(tail)
+        if not batch:
+            break
+        rows.extend(batch)
+        offset += len(batch)
+    return rows
+
+
+def _sb_get_page(url, key, headers, retries=4):
+    """One paged GET → (rows, Content-Range). A paged read is several requests where there used
+    to be one, so a transient blip (429/502/503) is retried with a short backoff — the same
+    shape as prune_catalog_orphans.py's `_req`. Anything else exits with the status and body,
+    this script's convention for a Supabase error that won't clear by itself (see insert_rows)."""
+    for attempt in range(retries):
+        try:
+            with urlopen(Request(url, headers=_sb_headers(key, headers)), timeout=60) as r:
+                return json.load(r), r.headers.get("Content-Range")
+        except HTTPError as e:
+            if e.code in (429, 502, 503) and attempt < retries - 1:
+                time.sleep(2 * (attempt + 1))
+                continue
+            sys.exit(f"Supabase read failed ({e.code}): {e.read().decode(errors='replace')[:300]}")
+
+
 def seed_state(base_url, key):
     """Fetch every youtube row ever written and reduce it to (live counts, seen ids)."""
-    url = (f"{base_url}/rest/v1/problem_beta_videos"
-           f"?select=source_catalog_id,video_id,source,deleted&provider=eq.youtube")
-    req = Request(url, headers=_sb_headers(key, {"Range-Unit": "items", "Range": "0-99999"}))
-    with urlopen(req, timeout=60) as r:
-        return aggregate_seed_state(json.load(r))
+    return aggregate_seed_state(sb_get_all(
+        base_url, key,
+        "problem_beta_videos?select=source_catalog_id,video_id,source,deleted&provider=eq.youtube"))
 
 
 def _insert(url, key, payload):
@@ -410,11 +454,8 @@ def run_from_file(args, base_url, sb_key):
 
 def run_revalidate(args, yt_key, base_url, sb_key):
     """Fetch stored video_ids, check they still exist on YouTube, soft-delete dead ones."""
-    url = (f"{base_url}/rest/v1/problem_beta_videos"
-           f"?select=id,video_id&provider=eq.youtube&deleted=eq.false")
-    req = Request(url, headers=_sb_headers(sb_key, {"Range-Unit": "items", "Range": "0-99999"}))
-    with urlopen(req, timeout=60) as r:
-        stored = json.load(r)
+    stored = sb_get_all(base_url, sb_key,
+                        "problem_beta_videos?select=id,video_id&provider=eq.youtube&deleted=eq.false")
     print(f"Re-validating {len(stored)} stored clips…")
 
     alive, dead = set(), []
@@ -471,13 +512,10 @@ def run_enrich_pending(args, yt_key, base_url, sb_key):
     a channelTitle, so a fetched row is done. We deliberately do NOT re-select on
     `duration_s is null`: a live stream / premiere legitimately has no duration, and filtering on
     it would re-fetch that row (burning a quota unit) on every run forever without ever clearing."""
-    q = ("?select=id,source_catalog_id,video_id,status"
-         "&source=eq.user&deleted=eq.false&status=in.(pending,approved)"
-         "&channel=eq.")
-    req = Request(f"{base_url}/rest/v1/problem_beta_videos{q}",
-                  headers=_sb_headers(sb_key, {"Range-Unit": "items", "Range": "0-99999"}))
-    with urlopen(req, timeout=60) as r:
-        rows = json.load(r)
+    rows = sb_get_all(base_url, sb_key,
+                      "problem_beta_videos?select=id,source_catalog_id,video_id,status"
+                      "&source=eq.user&deleted=eq.false&status=in.(pending,approved)"
+                      "&channel=eq.")
     print(f"{len(rows)} user submission(s) need enrichment.")
 
     if rows and args.dry_run:
@@ -502,12 +540,10 @@ def run_enrich_pending(args, yt_key, base_url, sb_key):
 
     # Reconciliation list: every pending user clip awaiting a moderation decision. This — not the
     # submission notification — is the authoritative "what's waiting for me" surface.
-    pq = ("?select=source_catalog_id,video_id,channel,duration_s,is_short"
-          "&source=eq.user&status=eq.pending&deleted=eq.false&order=created_at.asc")
-    req = Request(f"{base_url}/rest/v1/problem_beta_videos{pq}",
-                  headers=_sb_headers(sb_key, {"Range-Unit": "items", "Range": "0-99999"}))
-    with urlopen(req, timeout=60) as r:
-        pending = json.load(r)
+    pending = sb_get_all(base_url, sb_key,
+                         "problem_beta_videos?select=source_catalog_id,video_id,channel,"
+                         "duration_s,is_short&source=eq.user&status=eq.pending&deleted=eq.false",
+                         order="created_at.asc,id.asc")  # id tiebreak keeps the pages stable
     print(f"\n── Pending moderation queue: {len(pending)} clip(s) ──")
     for c in pending:
         flag = "" if c.get("is_short") else "  ⚠ non-Short"
