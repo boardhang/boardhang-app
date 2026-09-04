@@ -217,6 +217,13 @@ the confirm dialog.
   Both fetch scripts use the full `28,29,30,31`. If a board's live count ever collapses, probe
   adjacent setIds before assuming data was deleted.
 - API returns may hit `429/502/503`; the fetch scripts have retry/`--delay` handling.
+- **Supabase REST reads are silently clamped to 1000 rows.** Hosted PostgREST's `db-max-rows`
+  caps every `/rest/v1` response at 1000 — `Range: 0-99999` still returns 200 with 1000 rows and
+  `Content-Range: 0-999/*`, no error. Any script that "fetches everything" must page with a
+  stable `order=`, advancing by the rows actually returned: `sb_get_all` in `seed_beta_videos.py`
+  asks for the `Prefer: count=exact` total and stops there; `live_ids` in
+  `prune_catalog_orphans.py` pages until an empty page. See
+  [the solutions entry](solutions/developer-experience/paginate-supabase-rest-reads-past-the-1000-row-clamp.md).
 - Hold-id ↔ (col,row) conversion inside the scripts: `holdId = (row-1)*11 + col + 1`; reverse is
   `col = (holdId-1) % 11`, `row = (holdId-1)//11 + 1`.
 - `catalog-data/` is staging (the input to `import_catalog.py`); **Supabase** is the catalog source
