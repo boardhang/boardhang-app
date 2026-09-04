@@ -85,7 +85,7 @@ describe('MyBoards', () => {
   it('shows the first-run prompt and every addable board when none are added', () => {
     render(<MyBoards onActivated={() => {}} />)
     expect(screen.getByText('Add your first board')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(5)
+    expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(6)
   })
 
   it('offers Join a session with no active session (including first-run)', () => {

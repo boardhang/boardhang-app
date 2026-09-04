@@ -20,8 +20,8 @@ Moon Climbing Ltd.
 ## What it does
 
 - **Browse a curated catalog** — around 12,000 MoonBoard problems, including 2,832 official
-  benchmarks, across five layouts (MoonBoard 2016, 2024, Masters 2017, Masters 2019 and
-  Mini MoonBoard 2025), with search, grade filters and favorites.
+  benchmarks, across six layouts (MoonBoard 2016, 2024, Masters 2017, Masters 2019, Mini
+  MoonBoard 2025 and Mini MoonBoard 2020), with search, grade filters and favorites.
 - **Keep your filters** — sort and filter once; Boardhang remembers your setup per board, so
   every visit starts where you left off.
 - **Light problems on the wall** — pick a problem and Boardhang sends it to the board over

@@ -53,7 +53,8 @@ The catalog resource base name (from `Board.catalogResource(angle:)`) is still t
 board+angle "slab" — it's now the **cache filename** (`Application Support/CatalogCache/<name>.json`
 on iOS) rather than a bundled resource:
 
-- **Single-angle** (Mini 2025 only, 40°): `MiniMoonBoard2025Catalog` — no angle suffix.
+- **Single-angle** (the Minis, 40° only): `MiniMoonBoard2025Catalog`, `MiniMoonBoard2020Catalog` —
+  no angle suffix.
 - **Multi-angle**: `<Name>Catalog_<angle>`, e.g. `MoonBoardMasters2019Catalog_40`. `_25` and `_40`
   are the wall angle in degrees.
 - **Hold sets** (still bundled): `<Name>HoldSets.json`, e.g. `MiniMoonBoard2025HoldSets.json`.
@@ -143,8 +144,13 @@ python3 scripts/derive_holdset_membership.py                # scans its BOARDS l
 # 5. (New board only) import board art
 python3 scripts/import_board_images.py [--src /path/to/boardsesh]
 
-# 6. Register the board in Swift: add to Board.all in MoonBoardLED/Board/Board.swift
-#    (and a MoonBoardSetup in MoonBoardSetup.swift if geometry differs). Clients then sync the
+# 5b. (New board only) export the art the PWA renders (straight copy of the iOS imagesets;
+#     add the board to the script's BOARDS list first)
+python3 scripts/export_board_art_web.py                     # -> web/public/boards/<folder>/*.png
+
+# 6. Register the board: web in web/src/board/boards.ts (BOARDS) — the boardArt test fails
+#    until step 5b has run; iOS in Board.all in MoonBoardLED/Board/Board.swift (and a
+#    MoonBoardSetup in MoonBoardSetup.swift if geometry differs). Clients then sync the
 #    board's slab from Supabase the first time it's added/opened — no rebuild needed to ship data.
 ```
 

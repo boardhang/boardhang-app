@@ -21,7 +21,8 @@ There are three nested concepts — keep them distinct:
 
 ### Board / layout id table
 
-layout ids 1–7. The app currently **registers 5** of them in `Board.all`:
+layout ids 1–7. iOS currently **registers 5** of them in `Board.all`; the web PWA registers
+those five **plus Mini 2020** (see [Web port](#web-port)):
 
 | Layout id | Board          | slug                   | Registered?            |
 | --------- | -------------- | ---------------------- | ---------------------- |
@@ -30,7 +31,7 @@ layout ids 1–7. The app currently **registers 5** of them in `Board.all`:
 | 3         | MoonBoard 2024 | `moonboard2024`        | yes                    |
 | 4         | Masters 2017   | `moonboardmasters2017` | yes                    |
 | 5         | Masters 2019   | `moonboardmasters2019` | yes                    |
-| 6         | Mini 2020      | `minimoonboard2020`    | no                     |
+| 6         | Mini 2020      | `minimoonboard2020`    | web only               |
 | 7         | **Mini 2025**  | `minimoonboard2025`    | yes (the user's board) |
 
 Mini boards have `rowTop = 12`; standard boards `rowTop = 18`.
@@ -63,7 +64,8 @@ Each board namespaces its settings by layout id:
 
 ## Angles & catalog resources
 
-- Single-angle boards (Mini 2025): catalog resource = the prefix, e.g. `MiniMoonBoard2025Catalog`.
+- Single-angle boards (the Minis, 40° only): catalog resource = the prefix, e.g.
+  `MiniMoonBoard2025Catalog`.
 - Multi-angle boards: `board.catalogResource(angle:)` appends the angle, e.g.
   `MoonBoardMasters2019Catalog_40`. The angle suffix is only applied when `board.hasAngleChoice`.
 - Default angle is the first entry in the board's `angles` array.
@@ -142,6 +144,9 @@ The PWA (`web/`) mirrors this model in TypeScript, keyed by the same layout ids 
 `localStorage` keys so state is traceable across apps:
 
 - `web/src/board/boards.ts` — the board registry + render geometry (the `Board`/`MoonBoardSetup` port).
+  It also registers **Mini MoonBoard 2020** (layout 6, 40° only, hold sets 24–27), which iOS
+  defines in `MoonBoardSetup.all` but does not list in `Board.all`. Its art is exported to
+  `web/public/boards/minimoonboard2020/` by `scripts/export_board_art_web.py`.
 - `web/src/board/boardStore.ts` — added/active/per-board state on `localStorage`, using the same
   `addedBoards` / `activeBoardId` / `angle_<id>` / `flipped_<id>` / `activeHoldSets_<id>` keys.
 - `web/src/board/holdSetMembership.ts` — the `HoldSetMembership` + `ActiveHoldSets` port.
