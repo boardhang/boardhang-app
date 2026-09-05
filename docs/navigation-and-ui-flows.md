@@ -206,6 +206,20 @@ via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fil
   grid sheet it can sit on) each push their own history entry via
   `web/src/beta/useHistoryBackClose.ts`, so Back unwinds player → grid → drawer instead of
   popping `?problem=`.
+- **Share button** (drawer header, top-right, the same `Share2` glyph as the session share):
+  hands a friend the canonical deep link `/board/{layout}/catalog?angle={angle}&problem={id}`,
+  built by `web/src/catalog/problemShareUrl.ts` from the problem **row** (`layout_id`, `angle`,
+  `source_catalog_id`) with `window.location.origin` — never from the address bar, which
+  carries the sharer's filters and, on the logbook/list hosts, isn't a catalog URL at all.
+  `shareProblem` calls `navigator.share` synchronously in the tap (Safari revokes the gesture
+  across an `await`) with title/text "Name Grade"; cancel is silent, any other rejection or a
+  missing share API copies the link and toasts "Link copied", and with no clipboard either an
+  error toast carries the link. The button dims while a share is in flight. Because
+  `ProblemDetail` is shared, the button exists on the catalog, logbook and list-detail drawers.
+  The recipient lands on the ordinary deep-link path (spinner until the slab syncs, "Add this
+  board" banner if needed, angle mirrored into `boardStore`). Chat apps unfurl these URLs with a
+  per-problem card served by Vercel functions on www — see
+  [content-site.md](content-site.md#link-previews-for-shared-problem-urls-www).
 - **Logbook problem drawer**: `/logbook` reuses the same `ProblemDetail` in its own `?problem`
   drawer (`web/src/logbook/logbookSearch.ts` — one param, same `stripSearchParams` + push-on-open /
   `router.history.back()` close as the catalog). It's history-integrated precisely *because*

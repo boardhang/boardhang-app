@@ -1,6 +1,25 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "functions": {
+    "api/og-image.ts": {
+      "includeFiles": "{public/boards/**,api/_assets/**,node_modules/harfbuzzjs/hb.wasm,node_modules/satori/yoga.wasm,node_modules/yoga-layout/**/*.wasm}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/board/:layoutId/catalog",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|Facebot|Twitterbot|WhatsApp/|TelegramBot|Discordbot|Slackbot-LinkExpanding|LinkedInBot|Bluesky Cardyb|Mastodon/|SkypeUriPreview|GoogleMessages|Google-PageRenderer).*"
+        },
+        { "type": "query", "key": "problem", "value": "(?<problem>.+)" }
+      ],
+      "destination": "/api/og-page?layoutId=:layoutId&problem=:problem"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

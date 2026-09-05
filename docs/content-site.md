@@ -76,20 +76,86 @@ Follow-ups this decision created:
   execute JavaScript, which is every AI crawler. Both are pinned by tests in
   `SettingsScreen.test.tsx` — the links exist for a reason and should not be quietly
   dropped.
-- **Blocked: the PWA's share button cannot emit apex content URLs yet.** Two reasons,
-  and both have to clear first. (1) There is no problem-share button — the only share
-  surface is `web/src/sessions/ShareSession.tsx`, which shares *session invites*, and
-  those must stay on www: a session has no content-page equivalent, and `joinUrl.ts`
-  builds from `window.location.origin` on purpose so a QR works on prod, preview and
-  localhost alike. (2) The apex problem pages do not exist —
-  `/problems/<layout>/<slug>-<id>` is reserved, not built, and is not in the apex→www
-  redirect list, so emitting such a URL today yields a 404. This becomes actionable as
-  part of shipping the programmatic problem pages, not before.
+- **Half-cleared: the problem Share button exists; apex content URLs do not.** The
+  drawer's Share button (see
+  [navigation-and-ui-flows.md](navigation-and-ui-flows.md#web-pwa-routing)) emits the
+  www deep link built by `web/src/catalog/problemShareUrl.ts` — a single exported
+  function, so switching to apex content URLs is a one-function change. What still
+  blocks that switch: the apex problem pages (`/problems/<layout>/<slug>-<id>`) are
+  reserved, not built, and not in the apex→www redirect list, so emitting such a URL
+  today yields a 404. Actionable as part of shipping the programmatic problem pages,
+  not before. Session invites (`web/src/sessions/ShareSession.tsx`) stay on www
+  regardless — a session has no content-page equivalent, and `joinUrl.ts` builds from
+  `window.location.origin` on purpose so a QR works on prod, preview and localhost alike.
 
 Cloudflare fronts both hosts. Its "managed robots.txt / block AI bots" zone feature,
 when enabled, overrides **both** `web/public/robots.txt` and `site/`'s `app/robots.txt/route.ts` —
 it must stay disabled (dashboard setting; verify with
 `curl https://www.boardhang.app/robots.txt`).
+
+## Link previews for shared problem URLs (www)
+
+The www shell's static Open Graph tags (`web/index.html`) give every shared link the
+generic Boardhang card. Problem URLs (`/board/:layoutId/catalog?problem=<id>`) get a
+per-problem card instead, served by two Vercel Node functions under `web/api/` —
+without touching what humans receive:
+
+- **Routing** — a `vercel.json` rewrite ahead of the SPA catch-all sends the request to
+  `api/og-page` only when the user agent matches a known link-preview crawler **and**
+  `problem` is non-empty. The agent pattern lives in `web/api/_lib/crawlers.ts` (a test
+  keeps it byte-identical to `vercel.json`); it is anchored by Vercel, so it is written
+  `.*(token|…).*` with no inline flags. **Admission rule:** a token goes in only if no
+  in-app browser sends it — a human whose agent matched would get the meta document and
+  loop on its one link. iMessage fetches from the sender's device as
+  `facebookexternalhit/1.1 Facebot Twitterbot/1.0`; Signal sends `WhatsApp/2`. Humans and
+  unlisted crawlers keep getting `index.html`.
+- **`api/og-page`** — reads the row from `catalog_problems` over REST with the anon key
+  (`web/api/_lib/catalogRow.ts`, one row by primary key) and returns a tiny HTML head:
+  `og:title` "Name Grade", a board/angle/setter/stars/repeats/Benchmark description,
+  `og:url` on the request's host, `og:image` pointing at `api/og-image`. Always a 200 —
+  an unknown/deleted row, a `layoutId` that doesn't match the row, or any failure serves
+  the generic tags (a crawler that sees a 5xx shows nothing). Sent with
+  `Cache-Control: no-store`: Vercel's CDN key is the request URL, not the matched route,
+  so a cached crawler document would otherwise be served to humans on the same URL.
+- **`api/og-image?problem=&v=`** — the 1200×630 card: every hold set's overlay art from
+  `web/public/boards/` with the holds marked over `renderGeometry.center()`, beside name,
+  grade, board and angle; rendered by satori + native resvg with the vendored Geist TTF
+  in `web/api/_assets/` (`@vercel/og`'s Node build throws on a dynamic `require` under
+  native ESM, and the builder does not bundle). The function's `includeFiles` glob in
+  `vercel.json` ships the board art, the font, and the wasm files satori's dependencies
+  read from `node_modules` at runtime (`harfbuzzjs/hb.wasm`, `satori/yoga.wasm`, and
+  defensively `yoga-layout/**/*.wasm`) — the
+  file tracer does not see those reads, and a missing one is a 500 on every card. `v` is
+  the row's `updated_at` as epoch milliseconds (digits only, so the canonical URL has no
+  percent-encoding for a fetcher to re-normalize), and the whole query string must be
+  byte-identical to the canonical `?problem=<id>&v=<version>` — a forged `v`, an extra
+  param, a reordering or a re-encoding each 302 to the canonical URL instead of
+  rendering, because the CDN key is the full URL and every variant would otherwise be a
+  fresh render. A catalog re-import re-stamps `updated_at`, so the URL still changes.
+  Cached a day at the CDN with a week of stale-while-revalidate. Failures log once
+  (`console.error` with a reason that distinguishes a Supabase outage or rejected key
+  from a plain not-found, visible in `vercel logs`) and 302 to `/og.png`. Card text drops
+  glyphs the bundled Geist face lacks (emoji, CJK, Greek); the tags keep the full string.
+- **Absolute URLs** come from the host header only when it is `www.boardhang.app` or one
+  of the deployment's own Vercel hosts; anything else falls back to the canonical origin
+  (`web/api/_lib/origin.ts`). The image failure redirect is relative.
+- **Module rules** — `api/` runs as ESM under Node's resolver, so it imports `src/` with
+  `.js`-suffixed specifiers and only the leaf modules `src/board/boards.js`,
+  `src/board/renderGeometry.js`, `src/board/holdMarkerStyle.js`, `src/types.js` and
+  `src/catalog/problemPath.js`. Two of those are single definitions shared with the app
+  so the card cannot drift from it: the hold-marker style (`holdMarkerStyle.ts`, also
+  used by `CatalogBoard.tsx`) and the canonical problem path (`problemPath.ts`, also used
+  by the Share button). Anything else reaches the Supabase
+  client, `import.meta.env` or DOM globals. `web/tsconfig.api.json` type-checks it as
+  part of `npm run build`. `_lib/` and `_assets/` are not deployed as functions.
+- **Service worker** — `/api/` is on the `navigateFallback` denylist, so an installed PWA
+  never answers one of these navigations with the shell.
+- **Cloudflare** — Bot Fight Mode (Free plan) challenges "definitely automated" traffic
+  and cannot be skipped by rule; Super Bot Fight Mode (Pro+) can, via a WAF custom rule
+  with *Skip → All Super Bot Fight Mode rules* scoped to `/board/*`. iMessage, Signal
+  and WhatsApp fetch from end-user IPs with bot agents and can never be "verified bots".
+  After a production deploy, `curl -A "WhatsApp/2" https://www.boardhang.app/board/2/catalog?angle=40&problem=<id>`
+  must return the meta document, not a challenge.
 
 ## Apex→www redirect rule
 

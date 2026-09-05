@@ -27,8 +27,10 @@ export default defineConfig({
         // they resolve to the real file, not index.html.
         navigateFallback: '/index.html',
         // robots.txt / sitemap.xml must resolve to the real static files (crawlers
-        // expect text/XML, not the app shell), same as the hashed build assets.
-        navigateFallbackDenylist: [/^\/assets\//, /^\/robots\.txt$/, /^\/sitemap\.xml$/],
+        // expect text/XML, not the app shell), same as the hashed build assets. /api/
+        // is the link-preview functions (og-page, og-image): an installed PWA must never
+        // answer one of those navigations with the shell.
+        navigateFallbackDenylist: [/^\/assets\//, /^\/robots\.txt$/, /^\/sitemap\.xml$/, /^\/api\//],
         // The ~433 kB QR-decoder WASM is fetched on demand when the scanner opens,
         // never precached — it would bloat every install for a feature most users
         // rarely touch. A CacheFirst runtime route keeps repeat scans decodable
