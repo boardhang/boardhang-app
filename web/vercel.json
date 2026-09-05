@@ -1,7 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/og-image.ts": { "includeFiles": "public/boards/**" }
+    "api/og-image.ts": {
+      "includeFiles": "{public/boards/**,api/_assets/**,node_modules/harfbuzzjs/hb.wasm,node_modules/satori/yoga.wasm,node_modules/yoga-layout/**/*.wasm}"
+    }
   },
   "rewrites": [
     {
