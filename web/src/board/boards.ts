@@ -4,8 +4,11 @@
 // slab). Server catalog rows are partitioned by (layoutId, angle); full boards have
 // two slabs (40°/25°), each Mini has one (40° only).
 
-import type { RenderGeometry } from './renderGeometry'
-import { MINI_GEOMETRY, STANDARD_GEOMETRY } from './renderGeometry'
+// `.js` suffix on purpose: the Vercel functions under api/ import this module and run
+// as ESM under Node's resolver, which needs explicit extensions (Vite and tsc map
+// `.js` back to the `.ts` source).
+import type { RenderGeometry } from './renderGeometry.js'
+import { MINI_GEOMETRY, STANDARD_GEOMETRY } from './renderGeometry.js'
 
 /** A hold set within a board: its stable id, display name, and overlay-art basename. */
 export interface HoldSet {
