@@ -74,11 +74,21 @@ function nameFontSize(name: string): number {
   return 40
 }
 
-// "★" is not in the bundled Geist face (it renders as a box), so the card spells it out;
-// the og:description keeps the glyph, which chat apps render from system fonts.
+/** Code points the bundled Geist Regular face covers: Basic Latin, Latin-1, Latin
+ *  Extended-A/B, Cyrillic, General Punctuation and the euro sign. Anything else (Greek,
+ *  CJK, emoji, variation selectors, ZWJ) renders as a box, so card text drops it; the
+ *  og:title/og:description keep the full string, which chat apps render themselves. */
+const UNRENDERABLE = /[^\u0020-\u007E\u00A0-\u024F\u0400-\u04FF\u2000-\u206F\u20AC]/gu
+
+export function cardText(text: string): string {
+  return text.replace(UNRENDERABLE, '').replace(/\s+/g, ' ').trim()
+}
+
+// "★" is not in the bundled face either, so the card spells the rating out.
 function metaLine(row: ProblemRow): string {
   const parts: string[] = []
-  if (row.setter) parts.push(`by ${row.setter}`)
+  const setter = cardText(row.setter)
+  if (setter) parts.push(`by ${setter}`)
   parts.push(`${row.stars} ${row.stars === 1 ? 'star' : 'stars'}`, `${row.repeats} repeats`)
   return parts.join(' · ')
 }
@@ -88,6 +98,8 @@ export function boardCardElement(args: { row: ProblemRow; board: CatalogBoardDef
   const { box, markers } = cardLayout(board, row.holds)
   const textLeft = box.left + box.width + GAP
   const textWidth = CARD_WIDTH - textLeft - PAD
+  // A name made only of unrenderable glyphs leaves the grade row as the heading.
+  const name = cardText(row.name)
 
   const overlays = art.map((src, i) =>
     h('img', {
@@ -158,7 +170,7 @@ export function boardCardElement(args: { row: ProblemRow; board: CatalogBoardDef
           height: box.height,
         },
       },
-      h('div', { style: { fontSize: nameFontSize(row.name), lineHeight: 1.1, fontWeight: 700 } }, row.name),
+      name ? h('div', { style: { fontSize: nameFontSize(name), lineHeight: 1.1, fontWeight: 700 } }, name) : null,
       h(
         'div',
         { style: { display: 'flex', alignItems: 'center', marginTop: 20 } },

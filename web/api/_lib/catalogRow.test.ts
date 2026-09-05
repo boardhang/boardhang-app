@@ -24,12 +24,20 @@ function fetchReturning(status: number, body: unknown) {
   return vi.fn(async () => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }))
 }
 
+function fetchThrowing(name?: string) {
+  return vi.fn(async () => {
+    const e = new Error('boom')
+    if (name) e.name = name
+    throw e
+  })
+}
+
 describe('fetchProblemRow', () => {
   it('resolves the row and round-trips the {c, r, t} hold shape', async () => {
-    const fetch = fetchReturning(200, [row])
-    const got = await fetchProblemRow('abc', { fetch, env })
-    expect(got).toEqual(row)
-    expect(got?.holds).toEqual([{ c: 3, r: 5, t: 'start' }])
+    const got = await fetchProblemRow('abc', { fetch: fetchReturning(200, [row]), env })
+    expect(got.row).toEqual(row)
+    expect(got.reason).toBeUndefined()
+    expect(got.row?.holds).toEqual([{ c: 3, r: 5, t: 'start' }])
   })
 
   it('queries by primary key with the anon key, the exact column list and limit=1', async () => {
@@ -47,31 +55,28 @@ describe('fetchProblemRow', () => {
     expect(headers.get('authorization')).toBe('Bearer anon-key')
   })
 
-  it('resolves null for an empty result', async () => {
-    expect(await fetchProblemRow('abc', { fetch: fetchReturning(200, []), env })).toBeNull()
+  it.each([
+    ['not-found', fetchReturning(200, [])],
+    ['deleted', fetchReturning(200, [{ ...row, deleted: true }])],
+    ['unknown-layout', fetchReturning(200, [{ ...row, layout_id: 99 }])],
+    ['http-500', fetchReturning(500, 'boom')],
+    ['http-401', fetchReturning(401, '{"message":"bad key"}')],
+    ['network', fetchThrowing()],
+    ['timeout', fetchThrowing('TimeoutError')],
+    ['malformed', fetchReturning(200, '<html>')],
+    ['malformed', fetchReturning(200, { not: 'an array' })],
+    ['malformed', fetchReturning(200, [{ source_catalog_id: 'abc', layout_id: 7 }])],
+    ['malformed', fetchReturning(200, [{ ...row, holds: [{ c: 'x', r: 1, t: 'start' }] }])],
+  ])('resolves { row: null, reason: %s } without throwing', async (reason, fetch) => {
+    expect(await fetchProblemRow('abc', { fetch, env })).toEqual({ row: null, reason })
   })
 
-  it('resolves null for a deleted row', async () => {
-    expect(await fetchProblemRow('abc', { fetch: fetchReturning(200, [{ ...row, deleted: true }]), env })).toBeNull()
-  })
-
-  it('resolves null for a layout that is not in the registry', async () => {
-    expect(await fetchProblemRow('abc', { fetch: fetchReturning(200, [{ ...row, layout_id: 99 }]), env })).toBeNull()
-  })
-
-  it('resolves null on a 500, a thrown fetch, and a non-JSON body', async () => {
-    expect(await fetchProblemRow('abc', { fetch: fetchReturning(500, 'boom'), env })).toBeNull()
-    const throwing = vi.fn(async () => {
-      throw new Error('network')
-    })
-    expect(await fetchProblemRow('abc', { fetch: throwing, env })).toBeNull()
-    expect(await fetchProblemRow('abc', { fetch: fetchReturning(200, '<html>'), env })).toBeNull()
-  })
-
-  it('resolves null without fetching when the id is empty or the env is missing', async () => {
+  it('resolves bad-id or unconfigured without fetching', async () => {
     const fetch = fetchReturning(200, [row])
-    expect(await fetchProblemRow('', { fetch, env })).toBeNull()
-    expect(await fetchProblemRow('abc', { fetch, env: {} })).toBeNull()
+    expect(await fetchProblemRow('', { fetch, env })).toEqual({ row: null, reason: 'bad-id' })
+    expect(await fetchProblemRow('a b', { fetch, env })).toEqual({ row: null, reason: 'bad-id' })
+    expect(await fetchProblemRow('x'.repeat(129), { fetch, env })).toEqual({ row: null, reason: 'bad-id' })
+    expect(await fetchProblemRow('abc', { fetch, env: {} })).toEqual({ row: null, reason: 'unconfigured' })
     expect(fetch).not.toHaveBeenCalled()
   })
 })

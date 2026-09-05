@@ -123,11 +123,19 @@ without touching what humans receive:
   in `web/api/_assets/` (`@vercel/og`'s Node build throws on a dynamic `require` under
   native ESM, and the builder does not bundle). The function's `includeFiles` glob in
   `vercel.json` ships the board art, the font, and the wasm files satori's dependencies
-  read from `node_modules` at runtime (`harfbuzzjs/hb.wasm`, `satori/yoga.wasm`) — the
-  file tracer does not see those reads, and a missing one is a 500 on every card. `v` must equal the row's `updated_at` — any other value 302s to the canonical
-  URL, so a forged version can't force an uncached render, while a catalog re-import
-  yields a fresh URL. Cached a day at the CDN with a week of stale-while-revalidate.
-  Failures log once (`console.error`, visible in `vercel logs`) and 302 to `/og.png`.
+  read from `node_modules` at runtime (`harfbuzzjs/hb.wasm`, `satori/yoga.wasm`, and
+  defensively `yoga-layout/**/*.wasm`) — the
+  file tracer does not see those reads, and a missing one is a 500 on every card. `v` is
+  the row's `updated_at` as epoch milliseconds (digits only, so the canonical URL has no
+  percent-encoding for a fetcher to re-normalize), and the whole query string must be
+  byte-identical to the canonical `?problem=<id>&v=<version>` — a forged `v`, an extra
+  param, a reordering or a re-encoding each 302 to the canonical URL instead of
+  rendering, because the CDN key is the full URL and every variant would otherwise be a
+  fresh render. A catalog re-import re-stamps `updated_at`, so the URL still changes.
+  Cached a day at the CDN with a week of stale-while-revalidate. Failures log once
+  (`console.error` with a reason that distinguishes a Supabase outage or rejected key
+  from a plain not-found, visible in `vercel logs`) and 302 to `/og.png`. Card text drops
+  glyphs the bundled Geist face lacks (emoji, CJK, Greek); the tags keep the full string.
 - **Absolute URLs** come from the host header only when it is `www.boardhang.app` or one
   of the deployment's own Vercel hosts; anything else falls back to the canonical origin
   (`web/api/_lib/origin.ts`). The image failure redirect is relative.

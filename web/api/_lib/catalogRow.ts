@@ -65,6 +65,26 @@ export interface RowDeps {
   timeoutMs?: number
 }
 
+/**
+ * Why there is no row. The routine cases (`not-found`, `deleted`, `unknown-layout`) and
+ * the operational ones (`unconfigured`, `http-<status>`, `timeout`, `network`,
+ * `malformed`) must stay distinguishable in the functions' fallback logs — during a
+ * Supabase outage every shared link falls back, and "no row" would look identical to a
+ * friend opening a link to a pruned problem.
+ */
+export type RowMissReason =
+  | 'bad-id'
+  | 'unconfigured'
+  | `http-${number}`
+  | 'timeout'
+  | 'network'
+  | 'malformed'
+  | 'not-found'
+  | 'deleted'
+  | 'unknown-layout'
+
+export type RowLookup = { row: ProblemRow; reason?: undefined } | { row: null; reason: RowMissReason }
+
 const DEFAULT_TIMEOUT_MS = 3000
 const MAX_ID_LENGTH = 128
 
@@ -101,14 +121,18 @@ function asRow(v: unknown): ProblemRow | null {
   }
 }
 
+const miss = (reason: RowMissReason): RowLookup => ({ row: null, reason })
+
 /**
- * Read one problem by primary key. Resolves null — never throws — for an empty or
- * malformed id, missing credentials, a non-2xx, a timeout, a body that isn't JSON, an
- * empty result, a deleted row, or a layout the registry doesn't know.
+ * Read one problem by primary key. Never throws: every failure resolves to
+ * `{ row: null, reason }` — a malformed id, missing credentials, a non-2xx, a timeout, a
+ * body that isn't JSON, an empty result, a deleted row, or a layout the registry
+ * doesn't know.
  */
-export async function fetchProblemRow(id: string, deps: RowDeps): Promise<ProblemRow | null> {
+export async function fetchProblemRow(id: string, deps: RowDeps): Promise<RowLookup> {
   const { VITE_SUPABASE_URL: base, VITE_SUPABASE_ANON_KEY: key } = deps.env
-  if (!id || id.length > MAX_ID_LENGTH || /\s/.test(id) || !base || !key) return null
+  if (!id || id.length > MAX_ID_LENGTH || /\s/.test(id)) return miss('bad-id')
+  if (!base || !key) return miss('unconfigured')
 
   const params = new URLSearchParams({
     select: PROBLEM_ROW_COLUMNS.join(','),
@@ -117,19 +141,29 @@ export async function fetchProblemRow(id: string, deps: RowDeps): Promise<Proble
   })
   const url = `${base.replace(/\/$/, '')}/rest/v1/catalog_problems?${params.toString()}`
 
+  let res: Response
   try {
-    const res = await deps.fetch(url, {
+    res = await deps.fetch(url, {
       headers: { apikey: key, authorization: `Bearer ${key}`, accept: 'application/json' },
       signal: AbortSignal.timeout(deps.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     })
-    if (!res.ok) return null
-    const body: unknown = await res.json()
-    if (!Array.isArray(body) || body.length === 0) return null
-    const row = asRow(body[0])
-    if (!row || row.deleted) return null
-    if (boardByLayoutId(row.layout_id) === undefined) return null
-    return row
-  } catch {
-    return null
+  } catch (err) {
+    const name = err instanceof Error ? err.name : ''
+    return miss(name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'network')
   }
+  if (!res.ok) return miss(`http-${res.status}`)
+
+  let body: unknown
+  try {
+    body = await res.json()
+  } catch {
+    return miss('malformed')
+  }
+  if (!Array.isArray(body)) return miss('malformed')
+  if (body.length === 0) return miss('not-found')
+  const row = asRow(body[0])
+  if (!row) return miss('malformed')
+  if (row.deleted) return miss('deleted')
+  if (boardByLayoutId(row.layout_id) === undefined) return miss('unknown-layout')
+  return { row }
 }

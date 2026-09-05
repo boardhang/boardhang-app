@@ -4,7 +4,9 @@ import type { ProblemRow } from './catalogRow.js'
 import {
   canonicalProblemUrl,
   problemDescription,
+  problemImageSearch,
   problemImageUrl,
+  problemImageVersion,
   renderGenericMeta,
   renderProblemMeta,
 } from './problemMeta.js'
@@ -41,10 +43,17 @@ describe('URLs', () => {
     expect(canonicalProblemUrl(origin, row)).toBe('https://preview.example/board/2/catalog?angle=40&problem=abc')
   })
 
-  it('image URL carries the id and the updated_at version', () => {
-    expect(problemImageUrl(origin, row)).toBe(
-      'https://preview.example/api/og-image?problem=abc&v=2026-09-01T10%3A00%3A00%2B00%3A00',
-    )
+  it('image URL carries the id and a digits-only version derived from updated_at, with no percent-encoding', () => {
+    const expectedVersion = String(Date.parse('2026-09-01T10:00:00+00:00'))
+    expect(problemImageUrl(origin, row)).toBe(`https://preview.example/api/og-image?problem=abc&v=${expectedVersion}`)
+    expect(problemImageUrl(origin, row)).not.toContain('%')
+  })
+
+  it('round-trips: the emitted image URL parses back to exactly the canonical search og-image renders', () => {
+    const url = new URL(problemImageUrl(origin, row))
+    expect(url.search).toBe(problemImageSearch(row))
+    expect(url.searchParams.get('v')).toBe(problemImageVersion(row))
+    expect(url.searchParams.get('problem')).toBe(row.source_catalog_id)
   })
 })
 
@@ -69,7 +78,7 @@ describe('renderProblemMeta', () => {
     expect(meta(html, 'og:type')).toBe('website')
     expect(meta(html, 'og:url')).toBe('https://preview.example/board/2/catalog?angle=40&amp;problem=abc')
     expect(meta(html, 'og:image')).toBe(
-      'https://preview.example/api/og-image?problem=abc&amp;v=2026-09-01T10%3A00%3A00%2B00%3A00',
+      `https://preview.example/api/og-image?problem=abc&amp;v=${problemImageVersion(row)}`,
     )
     expect(meta(html, 'og:image:width')).toBe('1200')
     expect(meta(html, 'og:image:height')).toBe('630')

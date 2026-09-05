@@ -71,17 +71,19 @@ describe('handleOgPage', () => {
   })
 
   it.each([
-    ['unknown id', 'layoutId=2&problem=nope', fetchReturning([])],
-    ['missing problem', 'layoutId=2', fetchReturning([row])],
-    ['layout mismatch', 'layoutId=7&problem=abc', fetchReturning([row])],
+    ['unknown id', 'layoutId=2&problem=nope', fetchReturning([]), 'not-found'],
+    ['missing problem', 'layoutId=2', fetchReturning([row]), 'bad-id'],
+    ['layout mismatch', 'layoutId=7&problem=abc', fetchReturning([row]), 'layout-mismatch'],
+    ['Supabase 503', 'layoutId=2&problem=abc', vi.fn(async () => new Response('down', { status: 503 })), 'http-503'],
     [
-      'reader throws',
+      'network failure',
       'layoutId=2&problem=abc',
       vi.fn(async () => {
         throw new Error('boom')
       }),
+      'network',
     ],
-  ])('serves the generic document (200, no-store) and logs once when %s', async (_label, query, fetch) => {
+  ])('serves the generic document (200, no-store) and logs the reason once when %s', async (_label, query, fetch, reason) => {
     const res = await handleOgPage(request(query), { fetch, env })
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
@@ -89,5 +91,6 @@ describe('handleOgPage', () => {
     expect(meta(html, 'og:title')).toBe('Boardhang')
     expect(meta(html, 'og:image')).toBe('https://preview.example/og.png')
     expect(console.error).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(console.error).mock.calls[0][1]).toMatchObject({ reason })
   })
 })

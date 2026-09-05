@@ -26,8 +26,13 @@ export type CardRenderer = (element: ReactElement, opts: RenderOptions) => Promi
 const FONT_URL = new URL('../_assets/Geist-Regular.ttf', import.meta.url)
 let fontData: Promise<Buffer> | undefined
 
+// Memoised across warm invocations. A rejected read is NOT kept: a cached rejection
+// would poison every later card on the instance until it recycles.
 function loadFont(): Promise<Buffer> {
-  fontData ??= readFile(fileURLToPath(FONT_URL))
+  fontData ??= readFile(fileURLToPath(FONT_URL)).catch((err: unknown) => {
+    fontData = undefined
+    throw err
+  })
   return fontData
 }
 

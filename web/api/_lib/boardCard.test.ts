@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { boardByLayoutId } from '../../src/board/boards.js'
 import { MINI_GEOMETRY, STANDARD_GEOMETRY, center } from '../../src/board/renderGeometry.js'
 import { holdColor } from '../../src/types.js'
-import { CARD_HEIGHT, CARD_WIDTH, boardCardElement, cardLayout } from './boardCard.js'
+import { CARD_HEIGHT, CARD_WIDTH, boardCardElement, cardLayout, cardText } from './boardCard.js'
 import type { ProblemRow } from './catalogRow.js'
 
 const mini = boardByLayoutId(7)!
@@ -118,6 +118,43 @@ describe('boardCardElement', () => {
     expect(all).toContain('by Alice · 4 stars · 120 repeats')
     expect(all).not.toContain('★')
     expect(all).toContain('Benchmark')
+  })
+
+  it('picks the name font size by length tier', () => {
+    const sizeOf = (name: string) => {
+      let size: unknown
+      walk(boardCardElement({ row: { ...row, name }, board: mini, art }), (n) => {
+        const children = n.props.children
+        if (children === name) size = n.props.style?.fontSize
+      })
+      return size
+    }
+    expect(sizeOf('Short name')).toBe(64)
+    expect(sizeOf('A medium length name')).toBe(52)
+    expect(sizeOf('A very long problem name that wraps')).toBe(40)
+  })
+
+  it('omits the setter when empty, uses singular "star", and omits Benchmark when not one', () => {
+    const all = texts(boardCardElement({ row: { ...row, setter: '', stars: 1, is_benchmark: false }, board: mini, art })).join(' | ')
+    expect(all).toContain('1 star · 120 repeats')
+    expect(all).not.toContain('by ')
+    expect(all).not.toContain('Benchmark')
+  })
+
+  it('strips glyphs the bundled face cannot render from card text, keeping Latin and Cyrillic', () => {
+    expect(cardText('EASY DOES IT 🔆')).toBe('EASY DOES IT')
+    expect(cardText('Café Ünïcödé — ok')).toBe('Café Ünïcödé — ok')
+    expect(cardText('Проблема')).toBe('Проблема')
+    expect(cardText('日本語の課題 ★')).toBe('')
+    expect(cardText('  spaced   out  ')).toBe('spaced out')
+  })
+
+  it('renders no name node when the name has no renderable glyphs, and strips the setter too', () => {
+    const el = boardCardElement({ row: { ...row, name: '日本語 🧗', setter: 'Ωmega 👑' }, board: mini, art })
+    const all = texts(el)
+    expect(all).not.toContain('日本語 🧗')
+    expect(all.join(' | ')).toContain('by mega · 4 stars')
+    expect(all.join(' | ')).toContain('7A')
   })
 
   it('declares display flex on every element with more than one child (Satori rule)', () => {

@@ -97,6 +97,17 @@ describe('shareProblem', () => {
     expect(writeText).toHaveBeenCalledWith(problemShareUrl(row))
   })
 
+  it('falls back to the clipboard when navigator.share throws synchronously', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const share = vi.fn(() => {
+      throw new TypeError('Illegal invocation')
+    })
+    setNavigator({ share, clipboard: { writeText } })
+    expect(await shareProblem(row)).toBe('copied')
+    expect(share).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith(problemShareUrl(row))
+  })
+
   it('copies the link when there is no share API (AE4)', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     setNavigator({ clipboard: { writeText } })

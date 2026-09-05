@@ -153,7 +153,7 @@ describe('ProblemDetail — Share button', () => {
     await waitFor(() => expect(button).toBeEnabled())
   })
 
-  it('shares the currently shown problem after paging', () => {
+  it('shares the currently shown problem after paging', async () => {
     const share = vi.fn().mockResolvedValue(undefined)
     setNavigator({ share, clipboard: { writeText: vi.fn() } })
     const { rerender } = mount()
@@ -171,5 +171,22 @@ describe('ProblemDetail — Share button', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Share problem' }))
     expect(share).toHaveBeenCalledWith(expect.objectContaining({ url: expect.stringContaining('problem=def') }))
+    await flush()
+  })
+
+  it('shows the error toast when the sheet rejects for a non-cancel reason and the clipboard also fails', async () => {
+    const err = new Error('nope')
+    err.name = 'NotAllowedError'
+    setNavigator({
+      share: vi.fn().mockRejectedValue(err),
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    })
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Share problem' }))
+    await flush()
+    expect(toast).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledTimes(1)
+    const [, opts] = vi.mocked(toast.error).mock.calls[0] as [string, { description?: string }]
+    expect(opts.description).toBe(expectedLink)
   })
 })

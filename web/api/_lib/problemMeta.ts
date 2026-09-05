@@ -23,10 +23,24 @@ export function canonicalProblemUrl(origin: string, row: Pick<ProblemRow, 'layou
   return `${origin}${problemCatalogPath(row)}`
 }
 
-/** The card URL, versioned by the row's updated_at so a re-import yields a new URL. */
+/** The card's version token: `updated_at` as epoch milliseconds. Digits only, so the
+ *  canonical image URL carries no percent-encoding for a fetcher to re-normalize (the
+ *  raw timestamp's `+00:00` would encode to `%2B`, and a fetcher decoding it back to `+`
+ *  would read a space). A re-import re-stamps `updated_at`, so the token still changes. */
+export function problemImageVersion(row: Pick<ProblemRow, 'updated_at'>): string {
+  return String(Date.parse(row.updated_at))
+}
+
+/** The canonical query string of the card URL — the ONLY form og-image renders; any
+ *  other byte sequence for the same problem 302s to this one (see ogImage.ts). */
+export function problemImageSearch(row: Pick<ProblemRow, 'source_catalog_id' | 'updated_at'>): string {
+  const params = new URLSearchParams({ problem: row.source_catalog_id, v: problemImageVersion(row) })
+  return `?${params.toString()}`
+}
+
+/** The card URL, versioned so a catalog re-import yields a new URL. */
 export function problemImageUrl(origin: string, row: Pick<ProblemRow, 'source_catalog_id' | 'updated_at'>): string {
-  const params = new URLSearchParams({ problem: row.source_catalog_id, v: row.updated_at })
-  return `${origin}/api/og-image?${params.toString()}`
+  return `${origin}/api/og-image${problemImageSearch(row)}`
 }
 
 export function problemTitle(row: Pick<ProblemRow, 'name' | 'grade'>): string {

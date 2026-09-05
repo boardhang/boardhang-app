@@ -55,7 +55,7 @@ glyph; spell "4 stars" out in rendered text.
 `node_modules/harfbuzzjs/hb.wasm` via a computed path; nft does not follow it and the
 function died with `ENOENT … /var/task/web/node_modules/harfbuzzjs/hb.wasm`. The fix is
 the function's `includeFiles` glob in `web/vercel.json`, which carries the board art, the
-font, `harfbuzzjs/hb.wasm` and `satori/yoga.wasm`. A literal
+font, `harfbuzzjs/hb.wasm`, `satori/yoga.wasm` and, defensively, `yoga-layout/**/*.wasm`. A literal
 `new URL('./file', import.meta.url)` *is* traced, so module-relative asset paths work
 without `includeFiles`; `process.cwd()` paths and directory URLs are not.
 
@@ -71,6 +71,13 @@ fail — it silently created a new project named `web`, connected it to the GitH
 and deployed. Always deploy from the linked repo root (or the worktree root after
 `npx vercel@latest link --yes --project boardly --scope skepparpaulbertil-1035s-projects`),
 and `git checkout -- .gitignore` afterwards: `link` appends `.env.local` lines to it.
+
+**6. A per-URL CDN cache needs a canonical URL.** Vercel keys the image cache on the
+whole URL, so any variant of a valid card URL (extra `&x=`, reordered params, a
+re-encoded id, a forged `v`) is a fresh full render. `og-image` renders only when the
+raw query string equals the canonical `?problem=<id>&v=<version>` it emits itself and
+302s everything else to it; `v` is `updated_at` as epoch milliseconds so the canonical
+URL carries no percent-encoding a fetcher could normalise differently.
 
 ## What was tried that didn't work
 

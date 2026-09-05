@@ -28,12 +28,16 @@ export async function handleOgPage(request: Request, deps: OgPageDeps): Promise<
 
   let html: string
   try {
-    const row = await fetchProblemRow(id, { fetch: deps.fetch, env: deps.env })
+    const { row, reason } = await fetchProblemRow(id, { fetch: deps.fetch, env: deps.env })
     const board = row ? boardByLayoutId(row.layout_id) : undefined
     if (row && board && String(row.layout_id) === layoutId) {
       html = renderProblemMeta({ row, board, origin })
     } else {
-      console.error('[og-page] generic fallback', { problem: id, layoutId, reason: row ? 'layout mismatch' : 'no row' })
+      console.error('[og-page] generic fallback', {
+        problem: id,
+        layoutId,
+        reason: row ? 'layout-mismatch' : (reason ?? 'unknown-layout'),
+      })
       html = renderGenericMeta({ origin })
     }
   } catch (err) {
