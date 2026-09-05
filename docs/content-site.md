@@ -118,11 +118,13 @@ without touching what humans receive:
   `Cache-Control: no-store`: Vercel's CDN key is the request URL, not the matched route,
   so a cached crawler document would otherwise be served to humans on the same URL.
 - **`api/og-image?problem=&v=`** — the 1200×630 card: every hold set's overlay art from
-  `web/public/boards/` (bundled into the function via `includeFiles`) with the holds
-  marked over `renderGeometry.center()`, beside name, grade, board and angle; rendered by
-  satori + native resvg with the vendored Geist TTF in `web/api/_assets/` (`@vercel/og`'s
-  Node build throws on a dynamic `require` under native ESM, and the builder does not
-  bundle). `v` must equal the row's `updated_at` — any other value 302s to the canonical
+  `web/public/boards/` with the holds marked over `renderGeometry.center()`, beside name,
+  grade, board and angle; rendered by satori + native resvg with the vendored Geist TTF
+  in `web/api/_assets/` (`@vercel/og`'s Node build throws on a dynamic `require` under
+  native ESM, and the builder does not bundle). The function's `includeFiles` glob in
+  `vercel.json` ships the board art, the font, and the wasm files satori's dependencies
+  read from `node_modules` at runtime (`harfbuzzjs/hb.wasm`, `satori/yoga.wasm`) — the
+  file tracer does not see those reads, and a missing one is a 500 on every card. `v` must equal the row's `updated_at` — any other value 302s to the canonical
   URL, so a forged version can't force an uncached render, while a catalog re-import
   yields a fresh URL. Cached a day at the CDN with a week of stale-while-revalidate.
   Failures log once (`console.error`, visible in `vercel logs`) and 302 to `/og.png`.
