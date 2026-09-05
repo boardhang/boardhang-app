@@ -1,5 +1,14 @@
+// @vitest-environment node
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { PREVIEW_CRAWLER_PATTERN, isPreviewCrawler } from './crawlers.js'
+
+interface VercelRewrite {
+  source: string
+  destination: string
+  has?: { type: string; key: string; value?: string }[]
+}
 
 const crawlers: Record<string, string> = {
   iMessage: 'facebookexternalhit/1.1 Facebot Twitterbot/1.0',
@@ -58,5 +67,21 @@ describe('preview crawler pattern', () => {
     expect(PREVIEW_CRAWLER_PATTERN.startsWith('.*(')).toBe(true)
     expect(PREVIEW_CRAWLER_PATTERN.endsWith(').*')).toBe(true)
     expect(PREVIEW_CRAWLER_PATTERN).not.toContain('(?i)')
+  })
+
+  it('is byte-identical to the user-agent condition of the crawler rewrite in vercel.json, which precedes the catch-all', () => {
+    const config = JSON.parse(readFileSync(fileURLToPath(new URL('../../vercel.json', import.meta.url)), 'utf8')) as {
+      rewrites: VercelRewrite[]
+    }
+    const crawlerIndex = config.rewrites.findIndex((r) => r.source === '/board/:layoutId/catalog')
+    const catchAllIndex = config.rewrites.findIndex((r) => r.source === '/(.*)')
+    expect(crawlerIndex).toBeGreaterThanOrEqual(0)
+    expect(crawlerIndex).toBeLessThan(catchAllIndex)
+    const rule = config.rewrites[crawlerIndex]
+    const ua = rule.has?.find((h) => h.type === 'header' && h.key === 'user-agent')
+    expect(ua?.value).toBe(PREVIEW_CRAWLER_PATTERN)
+    const query = rule.has?.find((h) => h.type === 'query' && h.key === 'problem')
+    expect(query?.value).toBe('(?<problem>.+)')
+    expect(rule.destination).toBe('/api/og-page?layoutId=:layoutId&problem=:problem')
   })
 })

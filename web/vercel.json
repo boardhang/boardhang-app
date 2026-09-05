@@ -3,7 +3,21 @@
   "functions": {
     "api/og-image.ts": { "includeFiles": "public/boards/**" }
   },
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "rewrites": [
+    {
+      "source": "/board/:layoutId/catalog",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|Facebot|Twitterbot|WhatsApp/|TelegramBot|Discordbot|Slackbot-LinkExpanding|LinkedInBot|Bluesky Cardyb|Mastodon/|SkypeUriPreview|GoogleMessages|Google-PageRenderer).*"
+        },
+        { "type": "query", "key": "problem", "value": "(?<problem>.+)" }
+      ],
+      "destination": "/api/og-page?layoutId=:layoutId&problem=:problem"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
