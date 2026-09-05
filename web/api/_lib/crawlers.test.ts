@@ -24,6 +24,8 @@ const crawlers: Record<string, string> = {
   Mastodon: 'Mastodon/4.2.0 (http.rb/5.1.1; +https://mastodon.social/) Bot',
   Teams: 'SkypeUriPreview Preview/0.5 skype-url-preview@microsoft.com',
   GoogleMessages: 'Mozilla/5.0 (Linux; Android 10) GoogleMessages/1.0',
+  GoogleChat:
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko; Google-PageRenderer Google (+https://developers.google.com/+/web/snippet/)) Chrome/128.0.0.0 Safari/537.36',
 }
 
 const humans: Record<string, string> = {

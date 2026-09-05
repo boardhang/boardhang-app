@@ -147,6 +147,9 @@ describe('boardCardElement', () => {
     expect(cardText('Проблема')).toBe('Проблема')
     expect(cardText('日本語の課題 ★')).toBe('')
     expect(cardText('  spaced   out  ')).toBe('spaced out')
+    // An emoji ZWJ sequence leaves no stray joiner behind; zero-width format chars go too.
+    expect(cardText('Dyno \u{1F9D7}\u200D\u2640\uFE0F time')).toBe('Dyno time')
+    expect(cardText('zero\u200Bwidth\u200D')).toBe('zerowidth')
   })
 
   it('renders no name node when the name has no renderable glyphs, and strips the setter too', () => {

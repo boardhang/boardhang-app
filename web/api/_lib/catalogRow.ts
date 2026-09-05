@@ -6,8 +6,8 @@
 // src/catalog/catalogSync.ts, which is not a leaf module (it reaches the Supabase
 // client, import.meta.env and IndexedDB), and even a type-only import would pull it
 // into the API type-check program. api/ may import only the leaf modules
-// src/board/boards.js, src/board/renderGeometry.js, src/types.js and
-// src/catalog/problemPath.js.
+// src/board/boards.js, src/board/renderGeometry.js, src/board/holdMarkerStyle.js,
+// src/types.js and src/catalog/problemPath.js.
 
 import type { HoldType } from '../../src/types.js'
 import { boardByLayoutId } from '../../src/board/boards.js'
@@ -156,8 +156,10 @@ export async function fetchProblemRow(id: string, deps: RowDeps): Promise<RowLoo
   let body: unknown
   try {
     body = await res.json()
-  } catch {
-    return miss('malformed')
+  } catch (err) {
+    // The timeout signal also governs the body read: headers arrived, body stalled.
+    const name = err instanceof Error ? err.name : ''
+    return miss(name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'malformed')
   }
   if (!Array.isArray(body)) return miss('malformed')
   if (body.length === 0) return miss('not-found')

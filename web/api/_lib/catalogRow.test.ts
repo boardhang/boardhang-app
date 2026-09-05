@@ -32,6 +32,18 @@ function fetchThrowing(name?: string) {
   })
 }
 
+/** Headers arrived but the body stalled past the timeout: json() rejects, fetch() did not. */
+function fetchWithStalledBody() {
+  return vi.fn(async () => {
+    const e = new Error('body stalled')
+    e.name = 'TimeoutError'
+    const json = async (): Promise<unknown> => {
+      throw e
+    }
+    return { ok: true, status: 200, json } as unknown as Response
+  })
+}
+
 describe('fetchProblemRow', () => {
   it('resolves the row and round-trips the {c, r, t} hold shape', async () => {
     const got = await fetchProblemRow('abc', { fetch: fetchReturning(200, [row]), env })
@@ -63,6 +75,7 @@ describe('fetchProblemRow', () => {
     ['http-401', fetchReturning(401, '{"message":"bad key"}')],
     ['network', fetchThrowing()],
     ['timeout', fetchThrowing('TimeoutError')],
+    ['timeout', fetchWithStalledBody()],
     ['malformed', fetchReturning(200, '<html>')],
     ['malformed', fetchReturning(200, { not: 'an array' })],
     ['malformed', fetchReturning(200, [{ source_catalog_id: 'abc', layout_id: 7 }])],

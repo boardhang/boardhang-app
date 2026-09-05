@@ -3,14 +3,16 @@
 // the Vercel builder's tsconfig lookup lands on the root solution file, which has no
 // jsx setting) for Satori, which lays out a flexbox subset: every element with more
 // than one child is display:flex, no z-index, no filters, absolute positioning in
-// pixels. Marker geometry mirrors web/src/board/CatalogBoard.tsx (0.9 of a column,
-// translucent role fill, 2px role border) over renderGeometry's center().
+// pixels. Marker style (column ratio, fill alpha, ring width) is the app's own, shared
+// with web/src/board/CatalogBoard.tsx through src/board/holdMarkerStyle.ts; positions
+// come from renderGeometry's center().
 //
 // The label background layer the app draws (black axis labels, CSS-inverted) is
 // omitted: Satori has no filter support and the labels would vanish on the dark card.
 
 import { createElement as h, type ReactElement } from 'react'
 import type { CatalogBoardDef } from '../../src/board/boards.js'
+import { MARKER_BORDER_PX, MARKER_COLUMN_RATIO, MARKER_FILL_ALPHA } from '../../src/board/holdMarkerStyle.js'
 import { center } from '../../src/board/renderGeometry.js'
 import { displayed, holdColor, type HoldType } from '../../src/types.js'
 import type { ProblemHold, ProblemRow } from './catalogRow.js'
@@ -26,9 +28,6 @@ const TEXT = '#ffffff'
 const MUTED = '#a1a1aa'
 const FAINT = '#71717a'
 const BADGE_BG = '#2a2f3a'
-const MARKER_COLUMN_RATIO = 0.9
-const MARKER_FILL_ALPHA = '59'
-const MARKER_BORDER_PX = 2
 
 export interface CardBox {
   left: number
@@ -76,9 +75,12 @@ function nameFontSize(name: string): number {
 
 /** Code points the bundled Geist Regular face covers: Basic Latin, Latin-1, Latin
  *  Extended-A/B, Cyrillic, General Punctuation and the euro sign. Anything else (Greek,
- *  CJK, emoji, variation selectors, ZWJ) renders as a box, so card text drops it; the
- *  og:title/og:description keep the full string, which chat apps render themselves. */
-const UNRENDERABLE = /[^\u0020-\u007E\u00A0-\u024F\u0400-\u04FF\u2000-\u206F\u20AC]/gu
+ *  CJK, emoji, variation selectors) renders as a box, so card text drops it — and so does
+ *  every Unicode format character (\p{Cf}: ZWJ, ZWNJ, ZWSP, bidi controls), which the
+ *  General Punctuation block would otherwise keep as an invisible stray once the emoji
+ *  around it is gone. The og:title/og:description keep the full string, which chat apps
+ *  render themselves. */
+const UNRENDERABLE = /[^\u0020-\u007E\u00A0-\u024F\u0400-\u04FF\u2000-\u206F\u20AC]|\p{Cf}/gu
 
 export function cardText(text: string): string {
   return text.replace(UNRENDERABLE, '').replace(/\s+/g, ' ').trim()

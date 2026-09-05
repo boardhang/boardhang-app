@@ -35,7 +35,8 @@ transpiles each TypeScript file in place. Node's own ESM resolver then loads the
   `types: ["node"]`, no DOM lib) is a root project reference so `npm run build` rejects an
   extensionless import before Vercel does.
 - Only leaf modules are importable from `api/`: `src/board/boards.js`,
-  `src/board/renderGeometry.js`, `src/types.js`, `src/catalog/problemPath.js`. Anything
+  `src/board/renderGeometry.js`, `src/board/holdMarkerStyle.js`, `src/types.js`,
+  `src/catalog/problemPath.js`. Anything
   else reaches the Supabase
   client, `import.meta.env` or DOM globals and fails the API type-check — even via
   `import type`. Declare function-side types locally (`ProblemRow` in

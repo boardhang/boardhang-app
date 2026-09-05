@@ -8,6 +8,7 @@ import type { CatalogHold } from '../catalog/catalogSync'
 import { displayed, holdColor } from '../types'
 import type { CatalogBoardDef } from './boards'
 import { center } from './renderGeometry'
+import { MARKER_BORDER_PX, MARKER_COLUMN_RATIO, MARKER_FILL_ALPHA } from './holdMarkerStyle'
 
 interface CatalogBoardProps {
   board: CatalogBoardDef
@@ -26,18 +27,10 @@ interface CatalogBoardProps {
   children?: ReactNode
 }
 
-/** Marker diameter as a fraction of one column's span on the board art.
-    Matches iOS BoardImageView (0.9), so the colored fill reads even at thumbnail
-    size where a thin outline ring would nearly vanish. */
-const MARKER_COLUMN_RATIO = 0.9
-const MARKER_BORDER_WIDTH = '2px'
 /** Yellow ring for holds-filter highlights; a touch larger than the marker so it
     encircles rather than overlaps it. Matches the picker's selection color. */
 const HIGHLIGHT_COLUMN_RATIO = 1.15
 const HIGHLIGHT_COLOR = '#facc15'
-/** Two-hex-digit alpha (~0.35) appended to a 6-digit hold color for the fill —
-    the translucent center iOS draws under the colored ring. */
-const MARKER_FILL_ALPHA = '59'
 
 const fill: CSSProperties = {
   position: 'absolute',
@@ -133,7 +126,7 @@ export function CatalogBoard({
               transform: 'translate(-50%, -50%)',
               borderRadius: '50%',
               backgroundColor: `${holdColor[role]}${MARKER_FILL_ALPHA}`,
-              border: `${MARKER_BORDER_WIDTH} solid ${holdColor[role]}`,
+              border: `${MARKER_BORDER_PX}px solid ${holdColor[role]}`,
               boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.4)',
               boxSizing: 'border-box',
             }}

@@ -141,10 +141,12 @@ without touching what humans receive:
   (`web/api/_lib/origin.ts`). The image failure redirect is relative.
 - **Module rules** — `api/` runs as ESM under Node's resolver, so it imports `src/` with
   `.js`-suffixed specifiers and only the leaf modules `src/board/boards.js`,
-  `src/board/renderGeometry.js`, `src/types.js` and `src/catalog/problemPath.js` — the
-  last one is the single definition of the canonical problem path, shared with the
-  client's Share button (anything else reaches the Supabase
-  client, `import.meta.env` or DOM globals). `web/tsconfig.api.json` type-checks it as
+  `src/board/renderGeometry.js`, `src/board/holdMarkerStyle.js`, `src/types.js` and
+  `src/catalog/problemPath.js`. Two of those are single definitions shared with the app
+  so the card cannot drift from it: the hold-marker style (`holdMarkerStyle.ts`, also
+  used by `CatalogBoard.tsx`) and the canonical problem path (`problemPath.ts`, also used
+  by the Share button). Anything else reaches the Supabase
+  client, `import.meta.env` or DOM globals. `web/tsconfig.api.json` type-checks it as
   part of `npm run build`. `_lib/` and `_assets/` are not deployed as functions.
 - **Service worker** — `/api/` is on the `navigateFallback` denylist, so an installed PWA
   never answers one of these navigations with the shell.
