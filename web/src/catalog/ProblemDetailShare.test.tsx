@@ -110,7 +110,6 @@ describe('ProblemDetail — Share button', () => {
     expect(share).toHaveBeenCalledTimes(1)
     expect(share).toHaveBeenCalledWith({
       title: 'Chunky Monkey 7A',
-      text: 'Chunky Monkey 7A',
       url: expectedLink,
     })
     await flush()

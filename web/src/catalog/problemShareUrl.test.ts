@@ -63,7 +63,7 @@ describe('problemShareText', () => {
 })
 
 describe('shareProblem', () => {
-  it('calls navigator.share synchronously with title, text and url, no clipboard (AE2)', async () => {
+  it('calls navigator.share synchronously with title and url only (no text bubble), no clipboard (AE2)', async () => {
     const share = vi.fn().mockResolvedValue(undefined)
     const writeText = vi.fn().mockResolvedValue(undefined)
     setNavigator({ share, clipboard: { writeText } })
@@ -73,9 +73,10 @@ describe('shareProblem', () => {
     expect(share).toHaveBeenCalledTimes(1)
     expect(share).toHaveBeenCalledWith({
       title: 'Chunky Monkey 7A',
-      text: 'Chunky Monkey 7A',
       url: problemShareUrl(row),
     })
+    // No `text`: chat apps would post it as a second bubble next to the link card.
+    expect(share.mock.calls[0][0]).not.toHaveProperty('text')
     expect(await outcome).toBe('shared')
     expect(writeText).not.toHaveBeenCalled()
   })

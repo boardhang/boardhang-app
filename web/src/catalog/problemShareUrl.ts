@@ -18,8 +18,10 @@ export function problemShareUrl(problem: ProblemPathFields): string {
   return `${window.location.origin}${problemCatalogPath(problem)}`
 }
 
-/** The text that rides along in the share sheet: "Name Grade". Never contains the URL
- *  (Android apps concatenate text and url, which would duplicate the link). */
+/** The share sheet's `title`: "Name Grade". It is deliberately NOT also sent as `text`:
+ *  chat apps (iMessage, WhatsApp) render the url as the link-preview card and would post
+ *  any `text` as a second, redundant bubble. `title` is invisible in those apps and only
+ *  surfaces where a subject makes sense (mail, notes). Never contains the URL. */
 export function problemShareText(problem: Pick<ShareableProblem, 'name' | 'grade'>): string {
   return `${problem.name} ${problem.grade}`
 }
@@ -55,7 +57,7 @@ export function shareProblem(problem: ShareableProblem): Promise<ShareOutcome> {
   if (nav && typeof nav.share === 'function') {
     let pending: Promise<void>
     try {
-      pending = nav.share({ title: text, text, url })
+      pending = nav.share({ title: text, url })
     } catch {
       // A synchronous throw (e.g. a TypeError on an unsupported payload) — treat as absent.
       return copyLink(url)

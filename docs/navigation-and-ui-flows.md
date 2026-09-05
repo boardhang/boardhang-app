@@ -212,7 +212,8 @@ via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fil
   `source_catalog_id`) with `window.location.origin` — never from the address bar, which
   carries the sharer's filters and, on the logbook/list hosts, isn't a catalog URL at all.
   `shareProblem` calls `navigator.share` synchronously in the tap (Safari revokes the gesture
-  across an `await`) with title/text "Name Grade"; cancel is silent, any other rejection or a
+  across an `await`) with the link as `url` and "Name Grade" as `title` only — no `text`, which
+  chat apps would post as a second bubble beside the link card; cancel is silent, any other rejection or a
   missing share API copies the link and toasts "Link copied", and with no clipboard either an
   error toast carries the link. The button dims while a share is in flight. Because
   `ProblemDetail` is shared, the button exists on the catalog, logbook and list-detail drawers.
