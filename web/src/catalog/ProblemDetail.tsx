@@ -13,7 +13,8 @@
 // and desktop arrow keys.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, ListPlus, Loader2, Repeat, Star } from 'lucide-react'
+import { BadgeCheck, CheckCircle2, ChevronLeft, ChevronRight, Heart, Lightbulb, ListPlus, Loader2, Repeat, Share2, Star } from 'lucide-react'
+import { toast } from 'sonner'
 import { useAuth } from '../auth/AuthProvider'
 import { SignInDialog } from '../auth/SignInDialog'
 import { addAttemptTries, getAscentsSnapshot, settleAscents } from '../logbook/ascents'
@@ -31,6 +32,7 @@ import type { CatalogProblem } from './catalogSync'
 import { recordRecent } from './recentsStore'
 import { recordOpened } from './lastOpenedStore'
 import { useFavorites } from './favoritesStore'
+import { problemShareUrl, shareProblem } from './problemShareUrl'
 import { LogAscentSheet, type LogTarget } from '../logbook/LogAscentSheet'
 import { useAddToList } from '../lists/useAddToList'
 import { BetaVideos } from '../beta/BetaVideos'
@@ -109,6 +111,9 @@ export function ProblemDetail({
   // The pending problem is held as the object so a leave-flush needs no list lookup.
   const [pendingProblem, setPendingProblem] = useState<CatalogProblem | null>(null)
   const [pendingTries, setPendingTries] = useState(0)
+  // Share in flight: a second tap is ignored (a concurrent navigator.share rejects with
+  // InvalidStateError) and the button dims like its Light up / Log ascent siblings.
+  const [sharing, setSharing] = useState(false)
 
   const currentId = current.source_catalog_id
 
@@ -340,6 +345,22 @@ export function ProblemDetail({
     }
   }
 
+  // Share the shown problem: native sheet when available, else copy + toast. The share
+  // API call happens synchronously inside shareProblem (Safari transient activation), so
+  // nothing may await before it here. Cancel and a successful share stay silent.
+  function share() {
+    if (sharing) return
+    setSharing(true)
+    void shareProblem(current)
+      .then((outcome) => {
+        if (outcome === 'copied') toast('Link copied')
+        else if (outcome === 'failed') {
+          toast.error('Couldn’t share the link', { description: problemShareUrl(current) })
+        }
+      })
+      .finally(() => setSharing(false))
+  }
+
   // Side-swipe the board to page prev/next (vertical drags fall through to the
   // drawer's swipe-to-dismiss).
   function onSwipeStart(e: React.PointerEvent) {
@@ -397,6 +418,17 @@ export function ProblemDetail({
             {current.method && <span className="text-foreground/70">{current.method}</span>}
           </div>
         </div>
+        {/* Share: same glyph and size as the catalog's "Share session" button (SessionBar). */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0"
+          aria-label="Share problem"
+          onClick={share}
+          disabled={sharing}
+        >
+          <Share2 className="size-4" />
+        </Button>
       </div>
 
       <div
