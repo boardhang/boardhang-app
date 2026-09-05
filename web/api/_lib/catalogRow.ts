@@ -5,8 +5,9 @@
 // `ProblemRow` is declared here on purpose: the app's `CatalogRow` lives in
 // src/catalog/catalogSync.ts, which is not a leaf module (it reaches the Supabase
 // client, import.meta.env and IndexedDB), and even a type-only import would pull it
-// into the API type-check program. api/ may import only src/board/boards.js,
-// src/board/renderGeometry.js and src/types.js.
+// into the API type-check program. api/ may import only the leaf modules
+// src/board/boards.js, src/board/renderGeometry.js, src/types.js and
+// src/catalog/problemPath.js.
 
 import type { HoldType } from '../../src/types.js'
 import { boardByLayoutId } from '../../src/board/boards.js'

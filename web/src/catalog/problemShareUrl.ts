@@ -9,16 +9,13 @@
 // apex content URLs (docs/content-site.md) changes this one function.
 
 import type { CatalogProblem } from './catalogSync'
+import { problemCatalogPath, type ProblemPathFields } from './problemPath.js'
 
 type ShareableProblem = Pick<CatalogProblem, 'layout_id' | 'angle' | 'source_catalog_id' | 'name' | 'grade'>
 
 /** `{origin}/board/{layout}/catalog?angle={angle}&problem={id}` — angle always explicit. */
-export function problemShareUrl(problem: Pick<ShareableProblem, 'layout_id' | 'angle' | 'source_catalog_id'>): string {
-  const params = new URLSearchParams({
-    angle: String(problem.angle),
-    problem: problem.source_catalog_id,
-  })
-  return `${window.location.origin}/board/${problem.layout_id}/catalog?${params.toString()}`
+export function problemShareUrl(problem: ProblemPathFields): string {
+  return `${window.location.origin}${problemCatalogPath(problem)}`
 }
 
 /** The text that rides along in the share sheet: "Name Grade". Never contains the URL

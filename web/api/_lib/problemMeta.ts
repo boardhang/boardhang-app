@@ -5,6 +5,7 @@
 // user-submitted upstream).
 
 import type { CatalogBoardDef } from '../../src/board/boards.js'
+import { problemCatalogPath } from '../../src/catalog/problemPath.js'
 import type { ProblemRow } from './catalogRow.js'
 import { escapeHtml } from './html.js'
 
@@ -17,10 +18,9 @@ const SITE_NAME = 'Boardhang'
 const GENERIC_DESCRIPTION =
   'The MoonBoard app we wished we had. Fast filters that stick, shareable problems, and sessions with friends.'
 
-/** The catalog deep link — the same shape the app's Share button emits (row-derived). */
+/** The catalog deep link — the same builder the app's Share button uses (row-derived). */
 export function canonicalProblemUrl(origin: string, row: Pick<ProblemRow, 'layout_id' | 'angle' | 'source_catalog_id'>): string {
-  const params = new URLSearchParams({ angle: String(row.angle), problem: row.source_catalog_id })
-  return `${origin}/board/${row.layout_id}/catalog?${params.toString()}`
+  return `${origin}${problemCatalogPath(row)}`
 }
 
 /** The card URL, versioned by the row's updated_at so a re-import yields a new URL. */
