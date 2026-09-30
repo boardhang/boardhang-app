@@ -1,4 +1,7 @@
-// Web Bluetooth client for the DIY MoonBoard LED controller.
+// Web Bluetooth client for the MoonBoard LED controller — both the DIY /
+// second-generation Nordic UART boards (ArduinoMoonBoardLED firmware) and the
+// first-generation official box (RedBearLab BLE module). Same wire format and
+// chunking on both; only the GATT service and the write mode differ.
 // TS port of shared/spec/ble-protocol.md (from
 // ios/MoonBoardLED/BLE/MoonBoardBLEManager.swift). Separate reimplementation,
 // not a shared binary.
@@ -12,14 +15,46 @@ export const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
 export const RX_CHAR = '6e400002-b5a3-f393-e0a9-e50e24dcca9e' // write (app → board)
 
 /**
+ * RedBearLab BLE service family — the first-generation official MoonBoard LED
+ * box. `713d0003` is its write characteristic (app → board). Same
+ * `l#…#` frame and 20-byte chunking as the Nordic boards; only the GATT
+ * addresses differ. UUIDs confirmed against boardsesh's `transport.ts`.
+ */
+export const RBL_SERVICE = '713d0000-503e-4c75-ba94-3148f18d941e'
+export const RBL_WRITE_CHAR = '713d0003-503e-4c75-ba94-3148f18d941e'
+
+/**
+ * Chooser request: Web Bluetooth ORs the filters, and access to a service after
+ * connect is granted by the union of `filters[].services` and
+ * `optionalServices` regardless of which filter matched — so a board found by
+ * its `MoonBoard…` name alone can still open either service. Frozen: it is the
+ * test seam and must not drift between callers.
+ */
+export const REQUEST_DEVICE_OPTIONS = Object.freeze({
+  filters: [{ services: [NUS_SERVICE] }, { services: [RBL_SERVICE] }, { namePrefix: 'MoonBoard' }],
+  optionalServices: [NUS_SERVICE, RBL_SERVICE],
+}) satisfies RequestDeviceOptions
+
+/**
  * The firmware characteristic stores at most 20 bytes per write and silently
  * truncates the rest, so every message MUST be split into ≤20-byte writes. Do
  * NOT size from the MTU — modern stacks report ~180 but the firmware still only
- * keeps 20. See shared/spec/ble-protocol.md.
+ * keeps 20. Both controller generations buffer 20 bytes per write. See
+ * shared/spec/ble-protocol.md.
  */
 const MAX_CHUNK_LENGTH = 20
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected'
+
+/**
+ * Which controller generation a connected board turned out to be. Named
+ * "controller" (not "generation") to avoid colliding with the board layouts in
+ * the board registry.
+ */
+export type ControllerGeneration = 'nordic-uart' | 'redbearlab'
+
+/** How chunks are written on the current link. */
+export type WriteMode = 'with-response' | 'without-response'
 
 export interface MessageOptions {
   rows: number
@@ -77,6 +112,19 @@ export function describeBleError(err: unknown): string {
   return "Couldn't reach the board — make sure it's on and in range, then try again."
 }
 
+/**
+ * True when a probe rejection means "this service/characteristic is not here"
+ * rather than a broken link or a permission problem: Chrome's `NotFoundError`,
+ * or a rejection carrying no name at all (the Bluefy shim rejects with bare
+ * numeric codes). Any *other* name (`NetworkError`, `SecurityError`, …) is a
+ * real failure that must surface as itself.
+ */
+function isAbsentRejection(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null || !('name' in err)) return true
+  const name = (err as { name: unknown }).name
+  return typeof name !== 'string' || name === '' || name === 'NotFoundError'
+}
+
 /** Beat to wait before the single retry below — short enough to be invisible. */
 const RETRY_DELAY_MS = 120
 
@@ -84,23 +132,107 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+type ChunkWriter = (chunk: BufferSource) => Promise<void>
+
+/** Surfaced when the characteristic has none of the three write methods (R7). */
+const NO_WRITE_METHOD =
+  'This browser exposes no way to write to the board over Bluetooth — try Chrome, Edge, or Bluefy.'
+
 /**
- * writeValueWithoutResponse can transiently reject (GATT momentarily busy, a
- * radio hiccup) even on a healthy connection. Retry once after a short beat
- * before giving up; a genuine failure (disconnected, out of range) rejects again
- * and propagates. Log the swallowed first error — otherwise a board that retries
- * on every chunk looks perfectly healthy and its flakiness leaves no trail.
+ * Everything the client knows about the characteristic it is writing to. Built
+ * in one synchronous step when a connection is committed and dropped in
+ * `enterDisconnected`; a `write` loop captures the record it started with and
+ * only mutates `mode`/`proven` while that record is still current, so a
+ * rejection from a stale characteristic after a fast reconnect cannot touch
+ * the new link.
  */
-async function writeWithRetry(
+interface Link {
+  characteristic: BluetoothRemoteGATTCharacteristic
+  controller: ControllerGeneration
+  mode: WriteMode
+  /**
+   * False only on a RedBearLab link whose properties said nothing usable: the
+   * acknowledged default is then a guess, and the first chunk that fails twice
+   * in that mode is retried once without response (see `writeChunk`).
+   */
+  proven: boolean
+  /** Resolved once per link: the split method for each mode, else legacy `writeValue`. */
+  writers: Record<WriteMode, ChunkWriter | null>
+}
+
+/**
+ * Derive the write mode from the controller generation and the characteristic
+ * properties (which a thin shim may omit). The two failure directions are not
+ * symmetric: a wrong acknowledged write is loud (the peripheral answers "write
+ * not permitted" and the browser rejects), a wrong unacknowledged write is
+ * silent at every layer (ATT write commands carry no error response). So:
+ *
+ * - Nordic UART keeps write-without-response — the mode proven in the field,
+ *   including on the one shim that lacks properties — unless the properties
+ *   report *only* plain write.
+ * - RedBearLab writes with response whenever the properties allow it or say
+ *   nothing, and without response only when the properties rule acknowledged
+ *   writes out. Absent or empty properties leave the link *unproven*.
+ */
+function deriveWriteMode(
+  controller: ControllerGeneration,
+  properties: BluetoothCharacteristicProperties | undefined,
+): { mode: WriteMode; proven: boolean } {
+  const write = properties?.write === true
+  const writeWithoutResponse = properties?.writeWithoutResponse === true
+  if (controller === 'nordic-uart') {
+    const onlyPlainWrite = write && properties?.writeWithoutResponse === false
+    return { mode: onlyPlainWrite ? 'with-response' : 'without-response', proven: true }
+  }
+  if (write) return { mode: 'with-response', proven: true }
+  if (writeWithoutResponse) return { mode: 'without-response', proven: true }
+  return { mode: 'with-response', proven: false }
+}
+
+/**
+ * Pick the write method for a mode once per link. The split
+ * `writeValueWithResponse`/`writeValueWithoutResponse` pair dates from Chrome
+ * 85 and may be missing on older shims; the legacy `writeValue` then stands in
+ * (Chrome's legacy method writes with response when the `write` property is
+ * present, so it is an automatic mode, not a degraded one). `null` when no
+ * method exists at all — sends then fail with a readable message.
+ */
+function resolveWriters(characteristic: BluetoothRemoteGATTCharacteristic): Record<WriteMode, ChunkWriter | null> {
+  const c = characteristic as Partial<BluetoothRemoteGATTCharacteristic>
+  const legacy: ChunkWriter | null =
+    typeof c.writeValue === 'function' ? (chunk) => characteristic.writeValue(chunk) : null
+  return {
+    'with-response':
+      typeof c.writeValueWithResponse === 'function'
+        ? (chunk) => characteristic.writeValueWithResponse(chunk)
+        : legacy,
+    'without-response':
+      typeof c.writeValueWithoutResponse === 'function'
+        ? (chunk) => characteristic.writeValueWithoutResponse(chunk)
+        : legacy,
+  }
+}
+
+function buildLink(
   characteristic: BluetoothRemoteGATTCharacteristic,
-  chunk: BufferSource,
-): Promise<void> {
-  try {
-    await characteristic.writeValueWithoutResponse(chunk)
-  } catch (err) {
-    console.warn('[ble] write retry after transient failure:', describeBleError(err))
-    await delay(RETRY_DELAY_MS)
-    await characteristic.writeValueWithoutResponse(chunk)
+  controller: ControllerGeneration,
+): Link {
+  // `properties` is non-optional in the typings but a thin shim may omit it.
+  const properties = characteristic.properties as BluetoothCharacteristicProperties | undefined
+  const writers = resolveWriters(characteristic)
+  const derived = deriveWriteMode(controller, properties)
+  // The unproven flip retries without response through the *split* method; if
+  // that method is missing the flip would re-run the same legacy call, so
+  // treat the link as proven and keep the single same-mode retry.
+  const flipPossible =
+    typeof (characteristic as Partial<BluetoothRemoteGATTCharacteristic>).writeValueWithoutResponse ===
+    'function'
+  return {
+    characteristic,
+    controller,
+    mode: derived.mode,
+    proven: derived.proven || !flipPossible,
+    writers,
   }
 }
 
@@ -152,7 +284,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => void):
  */
 export class MoonBoardClient {
   private device: BluetoothDevice | null = null
-  private characteristic: BluetoothRemoteGATTCharacteristic | null = null
+  private link: Link | null = null
   private onDisconnected = () => this.handleDisconnected()
   private onVisibilityChange = () => this.handleVisibilityChange()
   private userDisconnect = false
@@ -163,6 +295,16 @@ export class MoonBoardClient {
   state: ConnectionState = 'disconnected'
   deviceName: string | null = null
   onStateChange: (() => void) | null = null
+
+  /** Controller generation of the connected board; null while disconnected. Not shown in the UI. */
+  get controller(): ControllerGeneration | null {
+    return this.link?.controller ?? null
+  }
+
+  /** Write mode in use on the current link; null while disconnected. Not shown in the UI. */
+  get writeMode(): WriteMode | null {
+    return this.link?.mode ?? null
+  }
 
   constructor() {
     // Android Chrome throttles, freezes, and eventually discards a backgrounded
@@ -226,9 +368,7 @@ export class MoonBoardClient {
     const bluetooth = getBluetooth()
     this.setState('connecting', null)
     try {
-      const device = await bluetooth.requestDevice({
-        filters: [{ services: [NUS_SERVICE] }],
-      })
+      const device = await bluetooth.requestDevice(REQUEST_DEVICE_OPTIONS)
       this.device = device
       device.addEventListener('gattserverdisconnected', this.onDisconnected)
       await this.establish(device)
@@ -238,13 +378,54 @@ export class MoonBoardClient {
     }
   }
 
-  /** GATT connect + service/characteristic resolution, deduped across callers. */
+  /**
+   * GATT connect + service/characteristic resolution, deduped across callers.
+   *
+   * The probe tries the Nordic UART pair first (the common case; a missing
+   * service rejects fast), then the RedBearLab pair. It falls through on *any*
+   * Nordic rejection — including the nameless numeric ones the Bluefy shim
+   * produces — because gating on an error name would break the original box on
+   * iOS. Reconnects re-run `establish`, so the probe is repeated on every
+   * connect; nothing is remembered per board.
+   */
   private establish(device: BluetoothDevice): Promise<void> {
     this.inflight ??= withTimeout(
       (async () => {
         const server = await device.gatt!.connect()
-        const service = await server.getPrimaryService(NUS_SERVICE)
-        const characteristic = await service.getCharacteristic(RX_CHAR)
+        let characteristic: BluetoothRemoteGATTCharacteristic
+        let controller: ControllerGeneration
+        try {
+          const service = await server.getPrimaryService(NUS_SERVICE)
+          characteristic = await service.getCharacteristic(RX_CHAR)
+          controller = 'nordic-uart'
+        } catch (nordicErr) {
+          // Reduced guard before the second GATT call: a user disconnect that
+          // landed mid-probe must not trigger another lookup or surface an
+          // error. Deliberately NOT `gatt.connected` — Chrome drops that flag
+          // before a lookup rejects with NetworkError, and checking it here
+          // would swallow a real link drop as a silent bail instead of
+          // surfacing it below.
+          if (this.userDisconnect || this.device !== device) {
+            device.gatt?.disconnect()
+            return
+          }
+          try {
+            const service = await server.getPrimaryService(RBL_SERVICE)
+            characteristic = await service.getCharacteristic(RBL_WRITE_CHAR)
+            controller = 'redbearlab'
+          } catch (rblErr) {
+            // Don't leave a GATT link open to a device we cannot drive.
+            device.gatt?.disconnect()
+            if (isAbsentRejection(nordicErr) && isAbsentRejection(rblErr)) {
+              throw new Error(
+                'This device exposes no known MoonBoard LED service — pick a MoonBoard LED ' +
+                  'controller (a Nordic UART board or the original RedBearLab box).',
+              )
+            }
+            // A named failure (link drop, permission) surfaces as itself.
+            throw isAbsentRejection(nordicErr) ? rblErr : nordicErr
+          }
+        }
         // A disconnect — user or link — may have landed while the awaits above
         // were pending; committing now would resurrect a severed connection
         // (state 'connected' with no device). Bail out instead. `=== false`
@@ -253,9 +434,14 @@ export class MoonBoardClient {
           device.gatt?.disconnect()
           return
         }
-        this.characteristic = characteristic
+        const link = buildLink(characteristic, controller)
+        this.link = link
         this.reconnectAttempt = 0
         this.setState('connected', device.name ?? 'MoonBoard')
+        console.log(
+          `[ble] connected: controller=${link.controller} write=${link.mode}` +
+            (link.proven ? '' : ' (unproven)'),
+        )
       })(),
       CONNECT_TIMEOUT_MS,
       () => device.gatt?.disconnect(),
@@ -330,7 +516,7 @@ export class MoonBoardClient {
 
   /** Known-disconnected, keeping the device for chooser-free reconnect. */
   private enterDisconnected() {
-    this.characteristic = null
+    this.link = null
     this.setState('disconnected', null)
   }
 
@@ -352,21 +538,74 @@ export class MoonBoardClient {
   }
 
   /**
-   * ASCII-encode, split into ≤20-byte chunks, and send each via
-   * writeValueWithoutResponse awaited sequentially. Awaiting each write is the
-   * web equivalent of CoreBluetooth's flow-controlled queue (back-pressure).
+   * ASCII-encode, split into ≤20-byte chunks, and send each with the link's
+   * write mode, awaited sequentially. Awaiting each write is the web
+   * equivalent of CoreBluetooth's flow-controlled queue (back-pressure); with
+   * acknowledged writes it is a true ATT-level acknowledgement.
    */
   private async write(message: string): Promise<void> {
-    const characteristic = this.characteristic
-    if (!characteristic || this.state !== 'connected') {
+    const link = this.link
+    if (!link || this.state !== 'connected') {
       throw new Error('Not connected')
     }
+    if (!link.writers[link.mode]) throw new Error(NO_WRITE_METHOD)
     const bytes = asciiEncode(message)
     for (let offset = 0; offset < bytes.length; offset += MAX_CHUNK_LENGTH) {
       // slice() copies into a fresh ArrayBuffer, satisfying BufferSource.
       const chunk = bytes.slice(offset, offset + MAX_CHUNK_LENGTH)
-      await writeWithRetry(characteristic, chunk)
+      await this.writeChunk(link, chunk)
     }
+  }
+
+  /**
+   * Write one chunk in the link's mode. A write can transiently reject (GATT
+   * momentarily busy, a radio hiccup) even on a healthy connection, so retry
+   * once in the same mode after a short beat; a genuine failure (disconnected,
+   * out of range) rejects again and propagates. Log the swallowed first error —
+   * otherwise a board that retries on every chunk looks perfectly healthy and
+   * its flakiness leaves no trail.
+   *
+   * On an *unproven* link (RedBearLab with no usable properties) a second
+   * acknowledged rejection triggers one retry without response. Whichever
+   * attempt succeeds locks its mode for the link — one-way, and only after the
+   * same-mode retry, so a single transient error can never lock the silent
+   * mode. "Proven" means the browser accepted the write, not that the board
+   * rendered it; only the hardware check can confirm the LEDs light.
+   */
+  private async writeChunk(link: Link, chunk: BufferSource): Promise<void> {
+    const mode = link.mode
+    try {
+      await this.writeOnce(link, mode, chunk)
+    } catch (err) {
+      console.warn('[ble] write retry after transient failure:', describeBleError(err))
+      await delay(RETRY_DELAY_MS)
+      try {
+        await this.writeOnce(link, mode, chunk)
+      } catch (retryErr) {
+        if (link.proven) throw retryErr
+        console.warn(
+          '[ble] acknowledged write rejected twice on an unproven link; retrying without response:',
+          describeBleError(retryErr),
+        )
+        await this.writeOnce(link, 'without-response', chunk)
+        this.lockMode(link, 'without-response')
+        return
+      }
+    }
+    this.lockMode(link, mode)
+  }
+
+  private writeOnce(link: Link, mode: WriteMode, chunk: BufferSource): Promise<void> {
+    const writer = link.writers[mode]
+    if (!writer) return Promise.reject(new Error(NO_WRITE_METHOD))
+    return writer(chunk)
+  }
+
+  /** Lock a mode as proven — only while `link` is still the current link. */
+  private lockMode(link: Link, mode: WriteMode) {
+    if (link.proven || this.link !== link) return
+    link.mode = mode
+    link.proven = true
   }
 }
 
