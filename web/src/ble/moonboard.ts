@@ -416,6 +416,9 @@ export class MoonBoardClient {
           } catch (rblErr) {
             // Don't leave a GATT link open to a device we cannot drive.
             device.gatt?.disconnect()
+            // A user disconnect that landed during the fallback lookup is not
+            // an error to surface; same reduced guard as above.
+            if (this.userDisconnect || this.device !== device) return
             if (isAbsentRejection(nordicErr) && isAbsentRejection(rblErr)) {
               throw new Error(
                 'This device exposes no known MoonBoard LED service — pick a MoonBoard LED ' +
@@ -461,8 +464,16 @@ export class MoonBoardClient {
   private handleDisconnected() {
     // Unexpected drop (out of range, board power-cycled, Android reclaimed the
     // link from a backgrounded PWA). Keep the device for chooser-free reconnect.
+    //
+    // Chrome also echoes the client's *own* gatt.disconnect() (a failed probe,
+    // the connect timeout, a race-guard bail) back through this event — while
+    // state is still 'connecting', or already 'disconnected'. The attempt that
+    // issued it owns the retry, so only a drop from 'connected' restarts the
+    // backoff; otherwise every failed attempt would reset the counter and a
+    // retained box that connects but fails the probe would loop forever.
+    const freshDrop = this.state === 'connected'
     this.enterDisconnected()
-    this.reconnectAttempt = 0
+    if (freshDrop) this.reconnectAttempt = 0
     this.scheduleReconnect()
   }
 
@@ -524,6 +535,7 @@ export class MoonBoardClient {
   private cleanup() {
     this.device?.removeEventListener('gattserverdisconnected', this.onDisconnected)
     this.device = null
+    this.clearReconnectTimer()
     this.enterDisconnected()
   }
 
@@ -582,7 +594,10 @@ export class MoonBoardClient {
       try {
         await this.writeOnce(link, mode, chunk)
       } catch (retryErr) {
-        if (link.proven) throw retryErr
+        // Proven in the mode we just tried: nothing left to try. (An
+        // interleaved send may have flipped and locked the link meanwhile —
+        // then `link.mode` differs and this chunk follows the locked mode.)
+        if (link.proven && link.mode === mode) throw retryErr
         console.warn(
           '[ble] acknowledged write rejected twice on an unproven link; retrying without response:',
           describeBleError(retryErr),

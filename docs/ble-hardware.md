@@ -102,36 +102,38 @@ message-replacement queue** (invariant 4 is iOS-only): interleaved sends — two
 `useLightUp` instances, or a clear during a send — share the one link and its
 write mode, as they share one characteristic.
 
-### Two controller generations: the probe and the write mode
+### Two controller generations
 
 The web client drives both the Nordic UART boards and the first-generation
-official box (RedBearLab BLE module; UUIDs and the full rules live in
-[`shared/spec/ble-protocol.md`](../shared/spec/ble-protocol.md)):
+official box (RedBearLab BLE module). The chooser filters, the
+Nordic-then-RedBearLab probe order, the per-link write-mode rule, and the one-way
+unproven flip are protocol rules and live in
+[`shared/spec/ble-protocol.md`](../shared/spec/ble-protocol.md). The client-side
+facts:
 
-- **Chooser:** one `requestDevice()` call with three OR'd filters (NUS service,
-  RedBearLab service, name prefix `MoonBoard`) and both services in
-  `optionalServices` — `REQUEST_DEVICE_OPTIONS`, a frozen constant. The chooser can
-  therefore list devices the client cannot drive (anything named `MoonBoard…`);
-  picking one fails with a readable "no known MoonBoard LED service" error rather
-  than a raw GATT error.
-- **Probe, inside `establish()`:** Nordic UART service + RX characteristic first;
-  on *any* rejection (Chrome's `NotFoundError` or a bare numeric code from the
-  Bluefy shim) the RedBearLab service + write characteristic. Both absent → the
-  readable error above; a named failure (`NetworkError`, `SecurityError`) surfaces
-  as itself. The result is recorded on the client as `controller`
-  (`'nordic-uart' | 'redbearlab'`) and logged with the `[ble]` prefix; it is not
-  shown in the UI, and the shared `useBle` state shape is unchanged.
-- **Write mode per link:** Nordic writes without response (unless the properties
-  say only plain write); RedBearLab writes **with response** whenever the
-  properties allow it or say nothing, and without response only when they rule
-  acknowledged writes out. A RedBearLab link with absent/empty properties starts
-  *unproven*: a chunk rejected twice in the acknowledged mode is retried once
-  without response, and whichever succeeds locks the mode — one-way, and only after
-  the normal same-mode retry. Older shims without the split write methods fall back
-  to legacy `writeValue`. Readable on the client as `writeMode`.
-- **Nothing is remembered per board.** Every connect, including the silent
-  reconnect, re-runs the probe and re-derives the mode; an original box pays one
-  rejected service lookup per connect and at most one rejected chunk per reconnect.
+- `REQUEST_DEVICE_OPTIONS` is a frozen constant and the test seam. Because it
+  includes the `MoonBoard` name prefix, the chooser can list devices the client
+  cannot drive; picking one fails with the spec's readable "no known MoonBoard LED
+  service" error, not a raw GATT error, and the client severs the GATT link it
+  cannot use.
+- The probe runs inside `establish()` under the same 10 s timeout, and again on
+  every silent reconnect. Nothing is remembered per board, so an original box pays
+  one rejected service lookup per connect and an unproven link at most one
+  rejected chunk per reconnect.
+- The resolved generation and write mode are readable on the client as
+  `controller` and `writeMode` and logged as `[ble] connected: controller=…
+  write=…`. They are not shown in the UI and the `useBle` state shape is unchanged.
+- One link record (characteristic, controller, mode, proven flag, resolved write
+  methods) is built when the connection is committed and nulled in
+  `enterDisconnected`. A `write` loop captures the record it started with and locks
+  a mode only while that record is still current, so a stale characteristic
+  settling after a fast reconnect cannot touch the new link. Interleaved sends
+  share the record: once one of them flips and locks the mode, the others follow it.
+- Chrome echoes the client's own `gatt.disconnect()` (failed probe, timeout,
+  race-guard bail) back as `gattserverdisconnected`. Only a drop from the
+  `'connected'` state restarts the reconnect backoff; an echo during an attempt
+  leaves the counter alone, so a retained box that connects but fails the probe
+  gives up after the normal four attempts instead of looping.
 
 **Observed on hardware (first-generation box):** _pending capture._ Record here the
 advertised name, the 128-bit service UUIDs in the advertisement (if any), the full
