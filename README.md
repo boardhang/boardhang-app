@@ -9,8 +9,10 @@ Moon Climbing Ltd.
 - **Guides and project site:** [boardhang.app](https://boardhang.app)
 - **Hardware:** DIY LED MoonBoards running the open-source
   [ArduinoMoonBoardLED](https://github.com/FabianRig/ArduinoMoonBoardLED) firmware. The
-  firmware is treated as fixed — Boardhang speaks its Nordic-UART protocol correctly and
-  does not modify it.
+  firmware is treated as fixed — Boardhang speaks its protocol correctly and does not
+  modify it. The web app drives both official controller generations: Nordic UART boards
+  and the first-generation LED box (RedBearLab BLE module), which uses the same protocol
+  over a different Bluetooth service.
 
 > **Contributing / picking this up?** Read [`CONTEXT.md`](CONTEXT.md) first — it's the
 > orientation doc (repo map, build, gotchas, and links into [`docs/`](docs/README.md)). This

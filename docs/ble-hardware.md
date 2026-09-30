@@ -21,9 +21,11 @@ CoreBluetooth lifecycle and implements both `CBCentralManagerDelegate` and `CBPe
 `poweredOff | unauthorized | disconnected | scanning | connecting | connected`.
 Other published state: `discovered` (found devices), `connectedName`.
 
-Transport uses the **Nordic UART Service**; the app writes to the RX characteristic
+Transport uses the **Nordic UART Service**; the iOS app writes to the RX characteristic
 (`writeChar`) with **write-without-response** only. The board advertises as `"MoonBoard A"`
-(name is user-configurable on the hardware).
+(name is user-configurable on the hardware). The iOS manager speaks only this controller
+generation; the web client (below) also drives the first-generation official LED box over
+its RedBearLab service — same protocol, different GATT addresses and write mode.
 
 ### Invariants you must not break
 
@@ -90,12 +92,55 @@ message building, build from the real type, not the displayed one.
 
 ## Web client (`web/src/ble/`)
 
-The PWA reimplements the same NUS protocol over Web Bluetooth — `moonboard.ts`
+The PWA reimplements the same protocol over Web Bluetooth — `moonboard.ts`
 (`MoonBoardClient`, a module-level singleton exposed reactively via `useBle.ts`),
 with the "connect if needed, then send" interaction in `useLightUp.ts`. Same wire
-format, same 20-byte chunking rule; chunks are drained by awaiting each
-`writeValueWithoutResponse` sequentially (the web equivalent of the flow-controlled
-queue), with a single short retry per chunk for transient GATT hiccups.
+format, same 20-byte chunking rule; chunks are drained by awaiting each write
+sequentially (the web equivalent of the flow-controlled queue), with a single short
+retry per chunk for transient GATT hiccups. Unlike iOS there is **no
+message-replacement queue** (invariant 4 is iOS-only): interleaved sends — two
+`useLightUp` instances, or a clear during a send — share the one link and its
+write mode, as they share one characteristic.
+
+### Two controller generations
+
+The web client drives both the Nordic UART boards and the first-generation
+official box (RedBearLab BLE module). The chooser filters, the
+Nordic-then-RedBearLab probe order, the per-link write-mode rule, and the one-way
+unproven flip are protocol rules and live in
+[`shared/spec/ble-protocol.md`](../shared/spec/ble-protocol.md). The client-side
+facts:
+
+- `REQUEST_DEVICE_OPTIONS` is a frozen constant and the test seam. Because it
+  includes the `MoonBoard` name prefix, the chooser can list devices the client
+  cannot drive; picking one fails with the spec's readable "no known MoonBoard LED
+  service" error, not a raw GATT error, and the client severs the GATT link it
+  cannot use.
+- The probe runs inside `establish()` under the same 10 s timeout, and again on
+  every silent reconnect. Nothing is remembered per board, so an original box pays
+  one rejected service lookup per connect and an unproven link at most one
+  rejected chunk per reconnect.
+- The resolved generation and write mode are readable on the client as
+  `controller` and `writeMode` and logged as `[ble] connected: controller=…
+  write=…`. They are not shown in the UI and the `useBle` state shape is unchanged.
+- One link record (characteristic, controller, mode, proven flag, resolved write
+  methods) is built when the connection is committed and nulled in
+  `enterDisconnected`. A `write` loop captures the record it started with and locks
+  a mode only while that record is still current, so a stale characteristic
+  settling after a fast reconnect cannot touch the new link. Interleaved sends
+  share the record: once one of them flips and locks the mode, the others follow it.
+- Chrome echoes the client's own `gatt.disconnect()` (failed probe, timeout,
+  race-guard bail) back as `gattserverdisconnected`. Only a drop from the
+  `'connected'` state restarts the reconnect backoff; an echo during an attempt
+  leaves the counter alone, so a retained box that connects but fails the probe
+  gives up after the normal four attempts instead of looping.
+
+**Observed on hardware (first-generation box):** _pending capture._ Record here the
+advertised name, the 128-bit service UUIDs in the advertisement (if any), the full
+service list, and the `713d0003` characteristic's `write` /
+`writeWithoutResponse` properties from nRF Connect, then the write mode the client
+logged during a full light-up. Until then the RedBearLab path is **unverified on
+hardware**; the client is unit-tested against both possible property shapes.
 
 ### Reconnect model
 
@@ -123,10 +168,15 @@ delivered. The client therefore designs for disconnection instead of fighting it
 - **`establish()` re-checks before it commits.** Its GATT awaits can settle
   *after* a disconnect (user tap or a second link drop) has already landed —
   Web Bluetooth's `gatt.disconnect()` does not reliably reject an in-flight
-  `gatt.connect()`. Before setting the characteristic and `'connected'` state it
+  `gatt.connect()`. Before setting the link and `'connected'` state it
   re-checks `userDisconnect`, device identity, and `gatt.connected`; on any
   mismatch it disconnects the freshly-opened link and bails, so a late
-  resolution can't resurrect a severed connection.
+  resolution can't resurrect a severed connection. A *reduced* guard
+  (`userDisconnect` and device identity only) also runs before the fallback
+  RedBearLab lookup, so a user disconnect mid-probe never triggers a second GATT
+  call. That guard deliberately skips `gatt.connected`: Chrome clears the flag
+  before a lookup rejects with `NetworkError`, and checking it would swallow a
+  real link drop as a silent bail instead of surfacing it.
 - **`gatt.connect()` is bounded by a 10 s timeout.** It has no built-in timeout
   and can hang on a flaky link; a forever-pending attempt would wedge the shared
   `inflight` promise and freeze every later `connect()` (including user taps) at
@@ -146,6 +196,10 @@ Chrome) and Bluefy on iOS — see `web/src/shell/BleBrowserBanner.tsx`.
 - `flipped` reverses the *entire* LED strip (`total - 1 - led`) — see [board-geometry.md](board-geometry.md).
 - Message format must be byte-exact `l#…#`.
 - Auto-reconnect stays off after a user disconnect until the next explicit `connect()`.
+- The first-generation (RedBearLab) box is written **with response** unless its
+  characteristic properties rule that out: a wrong acknowledged write fails loudly and
+  recovers, a wrong unacknowledged write fails silently and can never be detected.
+  The RedBearLab path is unverified on hardware until the capture above is filled in.
 - BLE does **not** work in the iOS Simulator — only on a real device.
 - Manager is `@MainActor`; CoreBluetooth callbacks already run on the main queue. Moving to
   Swift 6 language mode will surface concurrency warnings here that are benign under Swift 5.
