@@ -13,8 +13,7 @@ map) for authoring and lighting boulder problems on a **DIY LED-wired MoonBoard*
 problem by tapping holds (auto-cycling taps or per-role brushes, Font grade); the app drives an
 **Arduino** running the fixed
 [FabianRig/ArduinoMoonBoardLED](https://github.com/FabianRig/ArduinoMoonBoardLED) firmware over
-Bluetooth (Nordic UART; the web app also drives the first-generation official LED box over
-its RedBearLab service) to live-preview, light, clear, and calibrate the LEDs.
+Bluetooth (Nordic UART) to live-preview, light, clear, and calibrate the LEDs.
 
 The reference/physical hardware is a **Mini MoonBoard 2025** (11 cols A–K × 12 rows = 132
 holds). LED geometry is row-parameterized (12-row Mini / 18-row full boards) and the lighting

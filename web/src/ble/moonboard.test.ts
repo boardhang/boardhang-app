@@ -1,15 +1,66 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildMessage, describeBleError } from './moonboard'
-import { bleHarness, fakeStack, setVisibility } from '../test/fakeBleStack'
+import { buildMessage, describeBleError, MoonBoardClient } from './moonboard'
 
-// Connection lifecycle, reconnect, and error-description suites. The
-// dual-generation probe lives in moonboard.discovery.test.ts and the per-link
-// write mode in moonboard.writeMode.test.ts; the fake stack they all share is
-// src/test/fakeBleStack.ts.
+// Fake Web Bluetooth stack: a device whose gatt tracks `connected`, dispatches
+// gattserverdisconnected to registered listeners, and resolves a characteristic
+// whose write is `write` — so connect/reconnect/send can run without hardware.
+function fakeStack(write: (chunk: BufferSource) => Promise<void> = async () => {}) {
+  const characteristic = { writeValueWithoutResponse: vi.fn(write) }
+  const service = { getCharacteristic: vi.fn().mockResolvedValue(characteristic) }
+  const server = { getPrimaryService: vi.fn().mockResolvedValue(service) }
+  const listeners = new Set<() => void>()
+  const gatt = {
+    connected: false,
+    connect: vi.fn(async () => {
+      gatt.connected = true
+      return server
+    }),
+    disconnect: vi.fn(() => {
+      gatt.connected = false
+    }),
+  }
+  const device = {
+    name: 'MB',
+    gatt,
+    addEventListener: vi.fn((_type: string, fn: () => void) => listeners.add(fn)),
+    removeEventListener: vi.fn((_type: string, fn: () => void) => listeners.delete(fn)),
+    // Simulate an unexpected link drop (out of range, OS reclaimed it).
+    dropConnection() {
+      gatt.connected = false
+      for (const fn of [...listeners]) fn()
+    },
+  }
+  const requestDevice = vi.fn().mockResolvedValue(device)
+  ;(navigator as unknown as { bluetooth: unknown }).bluetooth = { requestDevice }
+  return { device, gatt, characteristic, requestDevice }
+}
 
-const { newClient, connectedClient, cleanupBleEnv } = bleHarness()
+const clients: MoonBoardClient[] = []
 
-afterEach(cleanupBleEnv)
+function newClient(): MoonBoardClient {
+  const client = new MoonBoardClient()
+  clients.push(client)
+  return client
+}
+
+async function connectedClient(write?: (chunk: BufferSource) => Promise<void>) {
+  const stack = fakeStack(write)
+  const client = newClient()
+  await client.connect()
+  return { client, ...stack }
+}
+
+function setVisibility(state: 'visible' | 'hidden') {
+  Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
+afterEach(() => {
+  for (const client of clients.splice(0)) client.dispose()
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+  delete (navigator as unknown as { bluetooth?: unknown }).bluetooth
+  vi.restoreAllMocks()
+})
 
 describe('MoonBoardClient.send retry', () => {
   const opts = { rows: 12, flipped: false, showBeta: true }
@@ -100,23 +151,6 @@ describe('MoonBoardClient auto-reconnect', () => {
     expect(client.state).toBe('connected')
     expect(gatt.connect).toHaveBeenCalledTimes(2)
   })
-
-  it.each(['sync', 'async'] as const)(
-    'keeps the backoff bounded when its own gatt.disconnect() echoes a %s disconnect event',
-    async (disconnectEvent) => {
-      // Chrome fires gattserverdisconnected for the client's *own* disconnect()
-      // too. A retained box that connects but then fails the probe makes the
-      // client sever the link on every attempt; if that echo restarted the
-      // backoff, the reconnect loop would never end.
-      const { client, device, gatt, server } = await connectedClient(undefined, { disconnectEvent })
-      server.getPrimaryService.mockRejectedValue(new DOMException('gone', 'NotFoundError'))
-      device.dropConnection()
-
-      await vi.advanceTimersByTimeAsync(60_000)
-      expect(client.state).toBe('disconnected')
-      expect(gatt.connect).toHaveBeenCalledTimes(5)
-    },
-  )
 })
 
 describe('MoonBoardClient in-flight races', () => {
