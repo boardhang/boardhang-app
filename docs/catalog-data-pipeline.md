@@ -10,7 +10,8 @@ in sync instead of drifting on divergent bundles. See migration `supabase/migrat
 
 **Key files:** `scripts/fetch_boardsesh*.py` (fetch) + `scripts/enrich_catalog_methods.py`
 (backfill the `method` field onto existing staging JSON without re-fetching) +
-`scripts/import_catalog.py` (upload to Supabase) + `scripts/{backup,restore}_catalog_problems.py`
+`scripts/reconcile_catalog_renames.py` (re-key renamed problems to the uuid Supabase already
+has, before import) + `scripts/import_catalog.py` (upload to Supabase) + `scripts/{backup,restore}_catalog_problems.py`
 (dump / roll back the table) + `scripts/prune_catalog_orphans.py` (soft-delete removed rows),
 `MoonBoardLED/Catalog/Catalog.swift` (synced disk cache + loading),
 `MoonBoardLED/Services/Supabase/CatalogSyncManager.swift` (iOS pull),
@@ -24,6 +25,7 @@ boardsesh GraphQL API  (https://ws.boardsesh.com/graphql, public, no auth)
     ├─ scripts/fetch_boardsesh_mini2025.py ─┐
     └─ scripts/fetch_boardsesh.py ──────────┴─► catalog-data/<slug>_<angle>.json   (staging)
                                                      │
+                 scripts/reconcile_catalog_renames.py │  (renamed problems keep their live uuid)
                           scripts/import_catalog.py  │  (service-role key; upsert on source_catalog_id)
                                                      ▼
                                     Supabase  public.catalog_problems   (source of truth)
@@ -116,6 +118,12 @@ python3 scripts/fetch_boardsesh.py --layout 5 --angle 40 --benchmarks-only --min
 
 # 1b. (Optional) instead of re-fetching, ADD `method` to existing snapshots by uuid without
 #     reshaping them: python3 scripts/enrich_catalog_methods.py
+
+# 1c. REQUIRED after any re-fetch of a slab that is already in Supabase: re-key renamed
+#     problems to the uuid prod already has (see the rename gotcha below). Read-only; the
+#     public anon key is enough. Rewrites the staged file in place; --dry-run to preview.
+SUPABASE_URL=https://<ref>.supabase.co SUPABASE_ANON_KEY=<anon-key> \
+  python3 scripts/reconcile_catalog_renames.py --layout 5 --angle 40
 
 # 2. BACK UP the current table first — the import upserts in place with no row history.
 SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=<service-role-key> \
@@ -212,6 +220,18 @@ the confirm dialog.
   `scripts/enrich_catalog_methods.py` — it pages boardsesh and adds `method` to existing problems
   **by uuid** (additive, idempotent), then re-import with `import_catalog.py`. The web/iOS filter
   offers a **fixed** label list (not slab-derived), so it shows regardless of the loaded data.
+- **boardsesh uuids change when a problem is renamed** — they're derived from the name, so a
+  re-cased (`'BINGO'` → `'Bingo'`) or retitled problem comes back from a re-fetch under a new
+  uuid with the same holds. `import_catalog.py` upserts on uuid, so without
+  `reconcile_catalog_renames.py` every rename lands as a *second* row: the problem shows twice
+  and only the old copy carries users' ascents/lists (user data references `source_catalog_id`
+  with no FK). The reconcile matches a not-yet-live staged uuid to the one live row with the
+  identical hold set that the fetch no longer returns, and rewrites the staged id to it; a
+  staged row whose holds match a row that is *still* staged is a distinct problem and is left
+  alone. The 2026-10 refresh of 2024@40° hit 97 of these (93 case changes, 4 retitles). Same
+  reason a live-vs-snapshot diff must compare by name/geometry, not uuid, before calling
+  anything "new" or "deleted" — and why `prune_catalog_orphans.py` must never run on a slab
+  that was re-fetched without this step.
 - **Mini 2025 (layout 7) spans setIds `28,29,30,31` on boardsesh, not just `28`.** boardsesh
   re-partitioned it; `setIds="28"` alone now returns only a ~181-problem slice of the full ~4,870.
   Both fetch scripts use the full `28,29,30,31`. If a board's live count ever collapses, probe
