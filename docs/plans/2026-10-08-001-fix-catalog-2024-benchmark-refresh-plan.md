@@ -35,12 +35,17 @@ staging data; no migration, no client code).
 ## Units
 
 1. **`scripts/reconcile_catalog_renames.py`** — rewrite a staged slab so renamed problems keep
-   prod's uuid. For each staged problem whose id is not live, find live (non-deleted) rows with
-   the same `(c, r, t)` hold set that are *not* in the staged set; exactly one candidate → remap
-   the staged id to it (keep boardsesh's new name and counts). Several candidates → prefer the
-   casefolded-name match, else leave the row alone and report it. Pure core, unit-tested
+   prod's uuid. For each staged problem whose id is not live, find live rows with the same
+   `(c, r, t)` hold set that are *not* in the staged set. Identical holds alone aren't proof
+   (a deleted problem can be re-set by someone else — and the uuid is a function of name *and*
+   setter, so a setter edit re-keys too), so a match also needs evidence it's the same record,
+   strongest first: same name (case/whitespace-insensitive), same setter, or — only with
+   `--trust-repeats` — a carried-over ascent count. Claims are settled per hold set strongest
+   evidence first so a rename beats a new copy of the same holds; ties, no-evidence matches and
+   tombstoned counterparts are reported, never merged. `import_catalog.py` refuses a slab with
+   anything outstanding (`--skip-rename-check` for a brand-new slab). Pure core, unit-tested
    (`scripts/tests/test_reconcile_catalog_renames.py`); PostgREST reads paged past the 1000-row
-   clamp like `prune_catalog_orphans.py`.
+   clamp like `prune_catalog_orphans.py`; setters are stripped at fetch and import.
 2. **Staging data** — re-fetch `catalog-data/moonboard2024_40.json` under the usual curation rule
    and run the reconcile against prod before committing it. 25° is **not** re-fetched (all 41
    benchmarks were re-cased; nothing new there).

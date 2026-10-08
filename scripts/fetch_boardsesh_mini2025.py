@@ -132,7 +132,7 @@ def normalize(climb):
         "name": climb.get("name") or "Untitled",
         "grade": font_grade(climb),
         "userGrade": None,
-        "setter": climb.get("setter_username") or "",
+        "setter": (climb.get("setter_username") or "").strip(),
         "stars": int(round(float(climb.get("stars") or 0))),
         "repeats": climb.get("ascensionist_count") or 0,
         "isBenchmark": bool(bench),

@@ -122,6 +122,8 @@ python3 scripts/fetch_boardsesh.py --layout 5 --angle 40 --benchmarks-only --min
 # 1c. REQUIRED after any re-fetch of a slab that is already in Supabase: re-key renamed
 #     problems to the uuid prod already has (see the rename gotcha below). Read-only; the
 #     public anon key is enough. Rewrites the staged file in place; --dry-run to preview.
+#     Matches whose only evidence is a carried-over ascent count are reported, not remapped,
+#     unless you pass --trust-repeats. import_catalog.py refuses to run while any remain.
 SUPABASE_URL=https://<ref>.supabase.co SUPABASE_ANON_KEY=<anon-key> \
   python3 scripts/reconcile_catalog_renames.py --layout 5 --angle 40
 
@@ -130,7 +132,8 @@ SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=<service-role-k
   python3 scripts/backup_catalog_problems.py                # -> catalog_problems_backup_<ts>.json
 
 # 3. Upload the staged JSON to Supabase (idempotent upsert on source_catalog_id).
-#    Needs the SERVICE-ROLE key (bypasses RLS) — never ship it in a client.
+#    Needs the SERVICE-ROLE key (bypasses RLS) — never ship it in a client. Refuses a slab
+#    with unreconciled renames (step 1c); --skip-rename-check only for a slab not yet in Supabase.
 SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
   python3 scripts/import_catalog.py --all                   # or --layout 5 --angle 40
 
@@ -220,18 +223,23 @@ the confirm dialog.
   `scripts/enrich_catalog_methods.py` — it pages boardsesh and adds `method` to existing problems
   **by uuid** (additive, idempotent), then re-import with `import_catalog.py`. The web/iOS filter
   offers a **fixed** label list (not slab-derived), so it shows regardless of the loaded data.
-- **boardsesh uuids change when a problem is renamed** — they're derived from the name, so a
-  re-cased (`'BINGO'` → `'Bingo'`) or retitled problem comes back from a re-fetch under a new
-  uuid with the same holds. `import_catalog.py` upserts on uuid, so without
-  `reconcile_catalog_renames.py` every rename lands as a *second* row: the problem shows twice
-  and only the old copy carries users' ascents/lists (user data references `source_catalog_id`
-  with no FK). The reconcile matches a not-yet-live staged uuid to the one live row with the
-  identical hold set that the fetch no longer returns, and rewrites the staged id to it; a
-  staged row whose holds match a row that is *still* staged is a distinct problem and is left
-  alone. The 2026-10 refresh of 2024@40° hit 97 of these (93 case changes, 4 retitles). Same
-  reason a live-vs-snapshot diff must compare by name/geometry, not uuid, before calling
-  anything "new" or "deleted" — and why `prune_catalog_orphans.py` must never run on a slab
-  that was re-fetched without this step.
+- **boardsesh uuids change when a problem is renamed or re-attributed** — they're derived
+  from the name *and* the setter (a trailing space added to a setter re-keyed `'FM 1'` with
+  its name untouched), so a re-cased (`'BINGO'` → `'Bingo'`), retitled or re-attributed problem
+  comes back from a re-fetch under a new uuid with the same holds. `import_catalog.py` upserts
+  on uuid, so without `reconcile_catalog_renames.py` every such change lands as a *second* row:
+  the problem shows twice and only the old copy carries users' ascents/lists (user data
+  references `source_catalog_id` with no FK). **Hold geometry is the only reliable key** for a
+  live-vs-snapshot diff — not uuid, not name. The reconcile matches a not-yet-live staged uuid
+  to a live row with the identical hold set that the fetch no longer returns, but identical
+  holds alone aren't proof (a deleted problem can be re-set by someone else), so it also wants
+  the same name, or the same setter, or — only with `--trust-repeats` — a carried-over ascent
+  count; anything weaker, a tie, or a tombstoned counterpart is reported and left as a new
+  row. A staged row whose holds match a row that is *still* staged is a distinct problem and
+  is left alone. The 2026-10 refresh of 2024@40° hit 97 of these (91 case changes, 2
+  whitespace-only setter edits, 4 where both name and setter changed but the ascent count
+  carried over). `import_catalog.py` refuses a slab with outstanding renames, and
+  `prune_catalog_orphans.py` must never run on a slab that was re-fetched without this step.
 - **Mini 2025 (layout 7) spans setIds `28,29,30,31` on boardsesh, not just `28`.** boardsesh
   re-partitioned it; `setIds="28"` alone now returns only a ~181-problem slice of the full ~4,870.
   Both fetch scripts use the full `28,29,30,31`. If a board's live count ever collapses, probe

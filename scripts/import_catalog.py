@@ -34,6 +34,12 @@ Examples
 Note: this upsert only adds/updates — it never tombstones problems that dropped out of
 the source set. Reconcile removals separately with prune_catalog_orphans.py (soft-delete),
 and roll a bad import back with backup_catalog_problems.py / restore_catalog_problems.py.
+
+Rename guard: before touching a slab, the import checks the staged file for problems that
+boardsesh has renamed since the last import (new uuid, same holds as a live row the fetch
+no longer returns — see reconcile_catalog_renames.py). Upserting those would duplicate the
+problem, so the import REFUSES until reconcile_catalog_renames.py has been run on the file.
+--skip-rename-check bypasses it (first import of a brand-new slab has nothing to check).
 """
 
 import argparse
@@ -43,6 +49,9 @@ import os
 import sys
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import reconcile_catalog_renames as renames  # noqa: E402
 
 BATCH_SIZE = 500  # rows per PostgREST upsert request
 
@@ -56,7 +65,7 @@ def _row(problem, layout_id, angle):
         "name": problem.get("name") or "",
         "grade": problem.get("grade") or "",
         "user_grade": problem.get("userGrade"),
-        "setter": problem.get("setter") or "",
+        "setter": (problem.get("setter") or "").strip(),
         "stars": int(problem.get("stars") or 0),
         "repeats": int(problem.get("repeats") or 0),
         "is_benchmark": bool(problem.get("isBenchmark")),
@@ -107,6 +116,8 @@ def main():
     ap.add_argument("--angle", type=int, choices=(25, 40), help="single angle; default all")
     ap.add_argument("--all", action="store_true", help="every staged catalog-data file")
     ap.add_argument("--dir", default=os.path.join(os.path.dirname(__file__), "..", "catalog-data"))
+    ap.add_argument("--skip-rename-check", action="store_true",
+                    help="don't refuse on unreconciled renames (safe only for a slab not yet in Supabase)")
     args = ap.parse_args()
 
     if not args.all and args.layout is None:
@@ -129,6 +140,18 @@ def main():
         problems = catalog.get("problems") or []
         rows = [_row(p, layout_id, angle) for p in problems if p.get("id")]
         print(f"{os.path.basename(path)}: layout {layout_id} @ {angle}° — {len(rows)} problems")
+
+        if not args.skip_rename_check:
+            # Detect with the broadest evidence rule; an operator decides what to trust, the
+            # import only refuses to make duplicates. Runs on a copy — nothing is remapped here.
+            live = renames.live_rows(base_url, service_key, layout_id, angle)
+            remapped, unresolved = renames.reconcile(
+                [dict(p) for p in problems], live, trust_repeats=True)
+            if remapped or unresolved:
+                sys.exit(f"Refusing to import {os.path.basename(path)}: {len(remapped)} renamed and "
+                         f"{len(unresolved)} unresolved problem(s) would be duplicated. Run\n"
+                         f"  python3 scripts/reconcile_catalog_renames.py --layout {layout_id} --angle {angle}\n"
+                         f"first (see docs/catalog-data-pipeline.md), or --skip-rename-check for a new slab.")
 
         for i in range(0, len(rows), BATCH_SIZE):
             batch = rows[i:i + BATCH_SIZE]

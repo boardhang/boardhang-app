@@ -140,7 +140,9 @@ def _fetch_filtered(layout, angle, set_ids, server_filter, delay):
             out.append({
                 "id": c.get("uuid"), "name": c.get("name") or "Untitled",
                 "grade": font_grade(c.get("difficulty")), "userGrade": None,
-                "setter": c.get("setter_username") or "",
+                # boardsesh setters sometimes carry a trailing space ('Avien ' vs 'Avien');
+                # strip so one setter can't show up as two.
+                "setter": (c.get("setter_username") or "").strip(),
                 "stars": int(round(float(c.get("stars") or 0))),
                 "repeats": c.get("ascensionist_count") or 0, "isBenchmark": bench,
                 # MoonBoard foot-rule method (e.g. "Footless"); null for standard problems.
