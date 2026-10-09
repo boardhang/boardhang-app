@@ -45,9 +45,10 @@ only once the table is big enough — long after the code was written and tested
 ## Guidance
 
 Never read "everything" in one request. Page, in a stable order, and stop on the server's exact
-count. `scripts/prune_catalog_orphans.py` (`live_ids`) and `scripts/backup_catalog_problems.py`
-already page this way, advancing by the rows returned (they stop on an empty page rather than
-asking for the count); `seed_beta_videos.py` now has `sb_get_all`:
+count. The catalog scripts share `catalog_lib.live_rows`, which pages by keyset
+(`source_catalog_id=gt.<last>`) and asks for the exact count on its first request;
+`scripts/backup_catalog_problems.py` pages by `Range`, advancing by the rows returned;
+`seed_beta_videos.py` has `sb_get_all`:
 
 ```python
 PAGE = 1000  # hosted PostgREST's `db-max-rows` — the server clamps EVERY response to this
@@ -122,6 +123,7 @@ Request(url, headers={..., "Range-Unit": "items", "Range": "0-99999"})
 
 - `docs/catalog-data-pipeline.md` — Gotchas bullet pointing here; the same doc covers how the
   PWA pages the catalog on the client side.
-- `scripts/prune_catalog_orphans.py` (`live_ids`) and `scripts/backup_catalog_problems.py` —
-  the paging pattern this fix mirrors.
+- `scripts/catalog_lib.py` (`live_rows`, keyset paging with the exact count; tested against a
+  clamping fake server in `scripts/tests/catalog_fakes.py`) and `scripts/backup_catalog_problems.py`
+  — the paging pattern this fix mirrors.
 - `docs/plans/2026-07-10-001-feat-web-beta-videos-plan.md` — the top-up seed this bit.

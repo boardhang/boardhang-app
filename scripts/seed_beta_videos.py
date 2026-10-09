@@ -5,10 +5,10 @@ so a stuck climber sees how a problem is done. This is the server-side seed half
 Beta Videos feature (see docs/plans/2026-07-10-001-feat-web-beta-videos-plan.md); user
 submissions are the Phase 2 half (`--enrich-pending` below).
 
-Pipeline (mirrors import_catalog.py's shape):
+Pipeline (reads the canonical catalog snapshot, see docs/catalog-data-pipeline.md):
 
-    catalog-data/*.json  ->  seed_beta_videos.py  ->  Supabase problem_beta_videos
-       (benchmarks)          (YouTube Data API)        (clients read approved rows)
+    catalog-data/<slug>_<angle>.json  ->  seed_beta_videos.py  ->  Supabase problem_beta_videos
+       (problems[].id/name/isBenchmark/repeats)  (YouTube Data API)   (clients read approved rows)
 
 The seed is a TOP-UP: each problem carries up to PER_PROBLEM_CAP live seed videos (a cap,
 not a target — matching strictness never loosens to fill it). For each benchmark below the
@@ -290,7 +290,7 @@ def sb_get_all(base_url, key, query, order="id.asc"):
 def _sb_get_page(url, key, headers, retries=4):
     """One paged GET → (rows, Content-Range). A paged read is several requests where there used
     to be one, so a transient blip (429/502/503) is retried with a short backoff — the same
-    shape as prune_catalog_orphans.py's `_req`. Anything else exits with the status and body,
+    shape as catalog_lib.sb_request. Anything else exits with the status and body,
     this script's convention for a Supabase error that won't clear by itself (see insert_rows)."""
     for attempt in range(retries):
         try:

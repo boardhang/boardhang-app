@@ -1,30 +1,62 @@
 #!/usr/bin/env python3
 """
-Fetch MoonBoard problem catalogs from boardsesh's public GraphQL API for ANY of
-the 7 MoonBoard setups, and write per-(setup, angle) catalog JSON.
+Fetch a MoonBoard problem feed from boardsesh's public GraphQL API — the FIRST step of the
+catalog pipeline (see docs/catalog-data-pipeline.md and scripts/catalog_lib.py):
 
-This is the generalized version of fetch_boardsesh_mini2025.py — same endpoint,
-decoding, and output schema, but parameterized over every board. Use it to
-pre-stage data for boards you intend to add to the app later.
+    boardsesh ──fetch──► catalog-data/.upstream/<slug>_<angle>.json   (scratch, gitignored)
+                               │
+                             merge  ──► catalog-data/<slug>_<angle>.json   (canonical, committed)
+                               │
+                             import ──► Supabase
 
-Output goes to ../catalog-data/ by default (a NON-bundled dir, so these files
-don't bloat the app). When you add a board to the app, copy the file you want
-into MoonBoardLED/Resources/ and point the loader at it.
+The fetch is UNFILTERED: it pulls every problem boardsesh has for a (board, angle), because
+the merge needs to know which rows boardsesh did NOT return to tell a rename from a drop.
+Curation ("benchmark or >= 10 repeats" for new problems) happens in the merge, not here.
+The output is scratch — never commit it; the merged snapshot beside it is the canonical copy.
+
+Scratch file shape (one line; the merge reads it, nobody diffs it):
+
+    {"fetched_at": "2026-10-09T20:15:03Z", "layoutId": 7, "angle": 40, "setIds": "28,29,30,31",
+     "total_count": 5213,          # totalCount boardsesh reported on the FIRST page
+     "count": 5201,                # problems written (hold-less climbs are dropped)
+     "problems": [{"uuid", "name", "grade", "userGrade", "setter", "stars", "repeats",
+                   "isBenchmark", "method", "holds": [{"c","r","t"}…]}, …]}   # sorted by uuid
+
+`uuid` is boardsesh's key, NOT our id — the merge decides identity. `fetched_at` is the
+clock the merge stamps `upstream_last_seen` from.
+
+WHY BOARDSESH
+-------------
+MoonBoard's own data is no longer reachable by a script: the iOS app's backend
+(rest-v1.moonclimbing.com) is cert-pinned + device-attested, and the moonboard.com website
+(and its problem API) has been retired (returns 404). boardsesh is a live service that
+mirrored the full MoonBoard catalog into its own database before the shutdown and exposes
+it via a public GraphQL endpoint.
+
+  Endpoint:  https://ws.boardsesh.com/graphql   (public, no auth for reads)
+  Query:     searchClimbs(input: ClimbSearchInput!)
+  Input:     boardName="moonboard", layoutId, sizeId=1, setIds, angle, page, pageSize (max 100)
+
+The board table (layoutId -> slug, setIds, angles) lives in catalog_lib.BOARDS. Mini 2025
+is split across setIds 28,29,30,31 on boardsesh — "28" alone returns a ~181-problem slice.
+
+HOLD ENCODING
+-------------
+boardsesh stores each climb's holds as a `frames` string: concatenated `p{holdId}r{roleCode}`
+tokens, where (mirroring boardsesh's moonboard-helpers):
+    holdId   = (row-1)*11 + colIndex + 1     # colIndex 0..10 = A..K, row 1 = bottom
+    roleCode = 42 start, 43 hand/move, 44 finish
+We invert holdId -> (col, row), matching the app's model exactly. boardsesh collapses
+MoonBoard's left/right/match into a single "hand", so holds are start / right / end only
+(the app lights "right" blue, same as beta-off). MoonBoard grid is 11 cols (A-K); rows go to
+18 on the full boards, 12 on the Minis. A climb with no decodable holds is dropped.
 
 Examples
 --------
-  # everything, both angles (big + slow — hits boardsesh hard):
-  python3 scripts/fetch_boardsesh.py --all
-
-  # one board / angle:
-  python3 scripts/fetch_boardsesh.py --layout 3 --angle 40
-
-  # only the good stuff (benchmarks, or a popularity floor) — recommended for
-  # the huge boards like 2016:
-  python3 scripts/fetch_boardsesh.py --all --angle 40 --min-ascents 50
-
-Data source & hold encoding: see fetch_boardsesh_mini2025.py's docstring.
-MoonBoard grid is 11 cols (A-K); rows go to 18 on the full boards, 12 on the Minis.
+  python3 scripts/fetch_boardsesh.py --layout 7 --angle 40     # one slab (~53 pages)
+  python3 scripts/fetch_boardsesh.py --layout 3                # both angles of one board
+  python3 scripts/fetch_boardsesh.py --all                     # every board, both angles
+                                                               # (2016 is ~943 pages, ~8 min)
 """
 
 import argparse
@@ -33,27 +65,20 @@ import os
 import re
 import sys
 import time
+from datetime import datetime, timezone
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from urllib.error import HTTPError
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import catalog_lib as lib  # noqa: E402
 
 ENDPOINT = "https://ws.boardsesh.com/graphql"
 SIZE_ID = 1
 PAGE_SIZE = 100  # boardsesh caps page size at 100
+DEFAULT_OUT_DIR = lib.DATA_DIR
+HEADERS = {"Content-Type": "application/json", "User-Agent": "moonboard-led-catalog/1.0"}
 
-# layoutId -> (slug, display name, "setIds" string, [supported angles]).
-# setIds verified against the live API; counts (per angle) are rough guides.
-BOARDS = {
-    1: ("moonboard2010",        "MoonBoard 2010",        "1",                    [40, 25]),
-    2: ("moonboard2016",        "MoonBoard 2016",        "2,3,4",                [40, 25]),
-    3: ("moonboard2024",        "MoonBoard 2024",        "5,6,7,8,9,10",         [40, 25]),
-    4: ("moonboardmasters2017", "MoonBoard Masters 2017","11,12,13,14,15,16",    [40, 25]),
-    5: ("moonboardmasters2019", "MoonBoard Masters 2019","17,18,19,20,21,22,23", [40, 25]),
-    6: ("minimoonboard2020",    "Mini MoonBoard 2020",   "24,25,26,27",          [40, 25]),
-    # Mini 2025 was re-partitioned by boardsesh into setIds 28,29,30,31 (setId "28"
-    # alone now returns only a ~181-problem slice of the full ~4,870).
-    7: ("minimoonboard2025",    "Mini MoonBoard 2025",   "28,29,30,31",          [40, 25]),
-}
-
+# boardsesh difficulty label ("6a+/V3") -> MoonBoard Font grade ("6A+").
 LABEL_TO_FONT = {
     "5a/V1": "5+", "5b/V1": "5B", "5c/V2": "5C",
     "6a/V3": "6A", "6a+/V3": "6A+", "6b/V4": "6B", "6b+/V4": "6B+",
@@ -62,19 +87,12 @@ LABEL_TO_FONT = {
     "7c/V9": "7C", "7c+/V10": "7C+",
     "8a/V11": "8A", "8a+/V12": "8A+", "8b/V13": "8B", "8b+/V14": "8B+",
 }
-# benchmark flag misses genuine benchmarks; force-flag these by uuid.
-# (uuid is stable per problem across angles, so one entry covers 25° and 40°.)
-BENCHMARK_OVERRIDES = {
-    "ac7d98a1-51b6-5048-8e97-7651c5024a2d",  # THE WARM UP PROBLEM (6A+)
-    "8fe54ddb-c8c1-51fe-8418-45e3da379a07",  # FULL SWINGS (7A)
-}
 
-ROLE_TO_TYPE = {42: "start", 44: "end", 43: "right"}
+ROLE_TO_TYPE = {42: "start", 44: "end", 43: "right"}  # boardsesh has no l/r split
 FRAME_TOKEN = re.compile(r"p(\d+)r(\d+)")
-HEADERS = {"Content-Type": "application/json", "User-Agent": "moonboard-led-catalog/1.0"}
 
-# MoonBoard "method" (foot rules), from boardsesh's `characteristics`. Standard
-# problems have no method characteristic. Mirrors fetch_boardsesh_mini2025.py.
+# MoonBoard "method" (foot rules), from boardsesh's `characteristics`. Standard problems
+# have no method characteristic.
 METHOD_LABELS = {
     "method_no_kickboard": "No kickboard",
     "method_footless": "Footless",
@@ -91,6 +109,9 @@ query Search($i: ClimbSearchInput!) {
 """
 
 
+RETRYABLE_HTTP = (429, 500, 502, 503, 504)
+
+
 def gql(variables, retries=4):
     body = json.dumps({"query": SEARCH_QUERY, "variables": variables}).encode()
     for attempt in range(retries):
@@ -101,11 +122,23 @@ def gql(variables, retries=4):
                 sys.exit("GraphQL error: " + json.dumps(payload["errors"][:2]))
             return payload["data"]
         except HTTPError as e:
-            if e.code in (429, 502, 503) and attempt < retries - 1:
-                time.sleep(2 * (attempt + 1))
-                continue
-            raise
+            if e.code not in RETRYABLE_HTTP:
+                raise
+            err = e
+        except (URLError, TimeoutError, ConnectionError, json.JSONDecodeError) as e:
+            err = e
+        if attempt < retries - 1:
+            print(f"  request failed ({err}); retrying", file=sys.stderr)
+            time.sleep(2 * (attempt + 1))
+    sys.exit(f"boardsesh request failed after {retries} attempts: {err}")
 
+
+def utc_now_iso():
+    """UTC ISO 8601 to the second with a trailing Z, e.g. "2026-10-09T20:15:03Z"."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ── per-climb normalization (pure) ──────────────────────────────────────────────────
 
 def decode_frames(frames):
     holds = []
@@ -117,111 +150,98 @@ def decode_frames(frames):
 
 def font_grade(label):
     label = (label or "").strip()
+    # Fallback: the part before "/", upper-cased ("9a/V17" -> "9A").
     return LABEL_TO_FONT.get(label, label.split("/")[0].upper() if label else "")
 
 
-def _fetch_filtered(layout, angle, set_ids, server_filter, delay):
-    """Page through every problem matching one server-side filter dict."""
-    out, page = [], 0
+def normalize(climb):
+    """One boardsesh climb -> a scratch problem dict, or None when it has no holds."""
+    holds = decode_frames(climb.get("frames"))
+    if not holds:
+        return None
+    characteristics = climb.get("characteristics") or []
+    method = next((METHOD_LABELS[x] for x in characteristics if x in METHOD_LABELS), None)
+    return {
+        "uuid": climb.get("uuid"),
+        "name": climb.get("name") or "Untitled",
+        "grade": font_grade(climb.get("difficulty")),
+        "userGrade": None,
+        # boardsesh setters sometimes carry a trailing space ('Avien ' vs 'Avien'); strip so
+        # one setter can't show up as two.
+        "setter": (climb.get("setter_username") or "").strip(),
+        "stars": int(round(float(climb.get("stars") or 0))),
+        "repeats": climb.get("ascensionist_count") or 0,
+        "isBenchmark": bool((climb.get("benchmark_difficulty") or "").strip()),
+        # MoonBoard foot-rule method (e.g. "Footless"); null for standard problems.
+        "method": method,
+        "holds": holds,
+    }
+
+
+# ── paging shell ────────────────────────────────────────────────────────────────────
+
+def fetch_slab(layout, angle, set_ids, delay):
+    """Page through the whole feed for one (board, angle). Returns (total_count, problems),
+    with total_count the first page's totalCount and problems deduped by uuid (boardsesh
+    paging can repeat a row) and sorted by uuid."""
+    by_uuid, total, page = {}, None, 0
     while True:
         inp = {"boardName": "moonboard", "layoutId": layout, "sizeId": SIZE_ID,
                "setIds": set_ids, "angle": angle, "page": page, "pageSize": PAGE_SIZE}
-        inp.update(server_filter)
         res = gql({"i": inp})["searchClimbs"]
+        if total is None:
+            total = res.get("totalCount")
         climbs = res["climbs"] or []
         for c in climbs:
-            bench = bool((c.get("benchmark_difficulty") or "").strip()) or \
-                c.get("uuid") in BENCHMARK_OVERRIDES
-            holds = decode_frames(c.get("frames"))
-            if not holds:
-                continue
-            characteristics = c.get("characteristics") or []
-            method = next((METHOD_LABELS[x] for x in characteristics if x in METHOD_LABELS), None)
-            out.append({
-                "id": c.get("uuid"), "name": c.get("name") or "Untitled",
-                "grade": font_grade(c.get("difficulty")), "userGrade": None,
-                # boardsesh setters sometimes carry a trailing space ('Avien ' vs 'Avien');
-                # strip so one setter can't show up as two.
-                "setter": (c.get("setter_username") or "").strip(),
-                "stars": int(round(float(c.get("stars") or 0))),
-                "repeats": c.get("ascensionist_count") or 0, "isBenchmark": bench,
-                # MoonBoard foot-rule method (e.g. "Footless"); null for standard problems.
-                "method": method,
-                "holds": holds,
-            })
+            p = normalize(c)
+            if p is not None and p["uuid"] not in by_uuid:
+                by_uuid[p["uuid"]] = p
         if page % 10 == 0:
-            print(f"    page {page}: kept {len(out)} (scanned ~{(page+1)*PAGE_SIZE}/{res.get('totalCount')})")
+            print(f"    page {page}: kept {len(by_uuid)} (scanned ~{(page + 1) * PAGE_SIZE}/{total})")
         if not res.get("hasMore") or not climbs:
             break
         page += 1
         time.sleep(delay)
-    return out
+    return total, [by_uuid[u] for u in sorted(by_uuid)]
 
 
-def fetch_board(layout, angle, set_ids, min_ascents, benchmarks_only, delay):
-    """Fetch matching problems as the UNION of the requested filters, deduped by uuid.
-
-    Many of the most-repeated problems
-    (e.g. 'THE WARM UP PROBLEM', 16k ascents) aren't flagged. So when both
-    --benchmarks-only and --min-ascents are given we union the two result sets
-    rather than intersect: keep every flagged benchmark AND every popular problem.
-    """
-    filters = []
-    if benchmarks_only:
-        filters.append({"onlyBenchmarks": True})
-    if min_ascents:
-        filters.append({"minAscents": min_ascents})
-    if not filters:
-        filters.append({})  # no filter -> everything
-
-    by_id, out = set(), []
-    for i, f in enumerate(filters):
-        if len(filters) > 1:
-            print(f"  filter {i+1}/{len(filters)}: {f}")
-        for p in _fetch_filtered(layout, angle, set_ids, f, delay):
-            if p["id"] in by_id:
-                continue
-            by_id.add(p["id"])
-            out.append(p)
-    return out
+def fetch_and_write(layout, angle, out_dir, delay):
+    """Fetch one slab and write it to lib.fetch_path(out_dir, layout, angle). Returns the path."""
+    board = lib.BOARDS[layout]
+    print(f"\n{board.name} @ {angle}° (layout {layout}, sets {board.set_ids})…")
+    total, problems = fetch_slab(layout, angle, board.set_ids, delay)
+    out = {"fetched_at": utc_now_iso(), "layoutId": layout, "angle": angle, "setIds": board.set_ids,
+           "total_count": total, "count": len(problems), "problems": problems}
+    path = lib.fetch_path(out_dir, layout, angle)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    lib.write_json_atomic(path, json.dumps(out, ensure_ascii=False))
+    mb = os.path.getsize(path) / 1e6
+    benches = sum(1 for p in problems if p["isBenchmark"])
+    print(f"  -> {path}  ({len(problems)} problems of {total} upstream, {benches} benchmarks, {mb:.1f} MB)")
+    return path
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--layout", type=int, help="single layout id 1-7 (see BOARDS)")
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Fetch the unfiltered boardsesh feed into catalog-data/.upstream/")
+    ap.add_argument("--layout", type=int, choices=sorted(lib.BOARDS), help="single layout id (see catalog_lib.BOARDS)")
     ap.add_argument("--angle", type=int, choices=(25, 40), help="single angle; default both")
     ap.add_argument("--all", action="store_true", help="every board")
-    ap.add_argument("--min-ascents", type=int, default=0, help="skip problems below this ascent count")
-    ap.add_argument("--benchmarks-only", action="store_true")
     ap.add_argument("--delay", type=float, default=0.25, help="seconds between page requests")
-    ap.add_argument("--out-dir", default=os.path.join(os.path.dirname(__file__), "..", "catalog-data"))
-    args = ap.parse_args()
+    ap.add_argument("--out-dir", default=DEFAULT_OUT_DIR,
+                    help="catalog-data dir; the file lands in its .upstream/ subdir (default: %(default)s)")
+    args = ap.parse_args(argv)
 
     if args.all:
-        layouts = list(BOARDS)
+        layouts = list(lib.BOARDS)
     elif args.layout:
         layouts = [args.layout]
     else:
         ap.error("pass --all or --layout N")
 
     out_dir = os.path.abspath(args.out_dir)
-    os.makedirs(out_dir, exist_ok=True)
-
     for lid in layouts:
-        slug, name, set_ids, angles = BOARDS[lid]
-        for angle in ([args.angle] if args.angle else angles):
-            print(f"\n{name} @ {angle}° (layout {lid}, sets {set_ids})…")
-            problems = fetch_board(lid, angle, set_ids, args.min_ascents, args.benchmarks_only, args.delay)
-            problems.sort(key=lambda p: (p["grade"], p["name"]))
-            catalog = {"setup": name, "layoutId": lid, "angle": angle,
-                       "source": "boardsesh (ws.boardsesh.com/graphql)",
-                       "count": len(problems), "problems": problems}
-            path = os.path.join(out_dir, f"{slug}_{angle}.json")
-            with open(path, "w") as f:
-                json.dump(catalog, f, ensure_ascii=False)
-            mb = os.path.getsize(path) / 1e6
-            benches = sum(1 for p in problems if p["isBenchmark"])
-            print(f"  -> {path}  ({len(problems)} problems, {benches} benchmarks, {mb:.1f} MB)")
+        for angle in ([args.angle] if args.angle else lib.BOARDS[lid].angles):
+            fetch_and_write(lid, angle, out_dir, args.delay)
 
 
 if __name__ == "__main__":
