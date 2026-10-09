@@ -29,6 +29,7 @@ const VALID: ReadonlySet<string> = new Set<PinnableFacetId>([
   'status',
   'methods',
   'lists',
+  'setters',
 ])
 
 function read(layoutId: number): PinnableFacetId[] {

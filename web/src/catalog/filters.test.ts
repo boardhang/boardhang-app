@@ -6,6 +6,8 @@ import {
   applyFilters,
   hasActiveFilters,
   resetFilters,
+  setterKey,
+  setterOptions,
   type FilterContext,
   type FilterState,
   type SessionStatusContext,
@@ -51,6 +53,68 @@ describe('applyFilters — search', () => {
     expect(ids(applyFilters(list, state({ search: 'crimp' }), ctx))).toEqual(['a'])
     expect(ids(applyFilters(list, state({ search: 'BOB' }), ctx))).toEqual(['b'])
     expect(ids(applyFilters(list, state({ search: '' }), ctx))).toHaveLength(2)
+  })
+})
+
+describe('applyFilters — setter filter', () => {
+  const list = [
+    p({ source_catalog_id: 'a', setter: 'Kyle Knapp' }),
+    p({ source_catalog_id: 'b', setter: 'kyle knapp' }),
+    p({ source_catalog_id: 'c', setter: 'Ben Moon ' }),
+    p({ source_catalog_id: 'd', setter: '' }),
+  ]
+  it('keeps only problems by a selected setter, OR across the selection', () => {
+    expect(ids(applyFilters(list, state({ setterFilter: ['Kyle Knapp'] }), ctx))).toEqual(['a'])
+    expect(ids(applyFilters(list, state({ setterFilter: ['Kyle Knapp', 'Ben Moon'] }), ctx))).toEqual(['a', 'c'])
+  })
+  it('matches case exactly (two spellings are two setters) but ignores surrounding whitespace', () => {
+    expect(ids(applyFilters(list, state({ setterFilter: ['kyle knapp'] }), ctx))).toEqual(['b'])
+    expect(ids(applyFilters(list, state({ setterFilter: ['Ben Moon'] }), ctx))).toEqual(['c'])
+    expect(setterKey('  Ben Moon ')).toBe('Ben Moon')
+  })
+  it('empty setterFilter is a no-op and does not count as an active filter', () => {
+    expect(ids(applyFilters(list, state({ setterFilter: [] }), ctx))).toHaveLength(4)
+    expect(activeFilterCount(state({ setterFilter: [] }))).toBe(0)
+    expect(activeFilterCount(state({ setterFilter: ['Kyle Knapp'] }))).toBe(1)
+  })
+  it('ANDs with the other filters', () => {
+    const favCtx = mkCtx({ favoriteIds: new Set(['c']) })
+    expect(ids(applyFilters(list, state({ setterFilter: ['Kyle Knapp', 'Ben Moon'], favoritesOnly: true }), favCtx))).toEqual(['c'])
+  })
+})
+
+describe('setterOptions — faceted setter counts', () => {
+  const list = [
+    p({ source_catalog_id: 'a', setter: 'Kyle Knapp', is_benchmark: true }),
+    p({ source_catalog_id: 'b', setter: 'Kyle Knapp' }),
+    p({ source_catalog_id: 'c', setter: 'Ben Moon ', is_benchmark: true }),
+    p({ source_catalog_id: 'd', setter: 'Zed' }),
+    p({ source_catalog_id: 'e', setter: '' }),
+  ]
+  it('lists every trimmed setter with their problem count, most first then by name', () => {
+    expect(setterOptions(list, state(), ctx)).toEqual([
+      { name: 'Kyle Knapp', count: 2 },
+      { name: 'Ben Moon', count: 1 },
+      { name: 'Zed', count: 1 },
+    ])
+  })
+  it('counts under the OTHER active filters, keeping zero-count setters in the list at the bottom', () => {
+    expect(setterOptions(list, state({ benchmarkOnly: true }), ctx)).toEqual([
+      { name: 'Ben Moon', count: 1 },
+      { name: 'Kyle Knapp', count: 1 },
+      { name: 'Zed', count: 0 },
+    ])
+  })
+  it('ignores the setter filter itself, so picking one setter never zeroes the others', () => {
+    expect(setterOptions(list, state({ setterFilter: ['Zed'] }), ctx)).toEqual([
+      { name: 'Kyle Knapp', count: 2 },
+      { name: 'Ben Moon', count: 1 },
+      { name: 'Zed', count: 1 },
+    ])
+  })
+  it('respects the climbable context like the list does', () => {
+    const noneClimbable = mkCtx({ isClimbable: () => false })
+    expect(setterOptions(list, state(), noneClimbable).every((o) => o.count === 0)).toBe(true)
   })
 })
 

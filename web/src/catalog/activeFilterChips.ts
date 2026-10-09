@@ -14,7 +14,7 @@
 //     the chip collapses to a single grade label (e.g. "6B+", not "6B+–6B+").
 
 import { FONT_GRADES } from '../board/grades'
-import { isStatusPaused, type SessionStatusFacet } from './pinnableFacets'
+import { isStatusPaused, settersLabel, type SessionStatusFacet } from './pinnableFacets'
 import {
   BENCHMARK_LABEL,
   FAVORITES_LABEL,
@@ -72,7 +72,7 @@ export type ChipContext =
 
 /**
  * Removable-pill descriptors for the given filter state, in fixed category order:
- * Grade → Min-stars → Methods → Status → Holds. (Benchmark and Favorites are the pinned
+ * Grade → Min-stars → Methods → Status → Holds → Lists → Setters. (Benchmark and Favorites are the pinned
  * always-on toggles, produced by the component, not here; the saved-list selection is edited
  * via the "Lists" control, also not a removable chip.)
  */
@@ -160,6 +160,16 @@ export function describeActiveFilters(state: FilterState, ctx: ChipContext): Fil
       id: 'lists',
       label: `Lists (${state.listFilter.length})`,
       patch: { listFilter: [] },
+    })
+  }
+
+  // Setter selection → one collapsed chip (the single name when one is picked); removing clears
+  // the whole setter filter. Suppressed when Setter is pinned (shown as the control).
+  if (state.setterFilter.length > 0) {
+    chips.push({
+      id: 'setters',
+      label: settersLabel(state.setterFilter),
+      patch: { setterFilter: [] },
     })
   }
 

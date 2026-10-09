@@ -10,7 +10,13 @@ import type { SavedList } from '../lists/listsTypes'
 import { FilterControls } from './FilterControls'
 import { sessionStatusFacet, useSessionFilterRows } from './useSessionFilterRows'
 import { FabTrigger } from './FabTrigger'
-import { activeFilterCount, hasActiveFilters, resetFilters, type FilterState } from './filters'
+import {
+  activeFilterCount,
+  hasActiveFilters,
+  resetFilters,
+  type FilterState,
+  type SetterOption,
+} from './filters'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 
@@ -25,6 +31,8 @@ interface FilterSheetProps {
   signedOut: boolean
   /** This board's live lists — the "Saved lists" pills inside the sheet. */
   boardLists: SavedList[]
+  /** The slab's setters with faceted counts — for the Setter row's sheet (lazy thunk). */
+  getSetterOptions: () => SetterOption[]
 }
 
 export function FilterSheet({
@@ -35,6 +43,7 @@ export function FilterSheet({
   statusReady,
   signedOut,
   boardLists,
+  getSetterOptions,
 }: FilterSheetProps) {
   // In a session the single-user statusFilters dimension is inert (self is a member row),
   // so count it only when solo; add 1 when per-member status is actually narrowing the list.
@@ -85,6 +94,7 @@ export function FilterSheet({
             statusReady={statusReady}
             signedOut={signedOut}
             boardLists={boardLists}
+            getSetterOptions={getSetterOptions}
           />
         </div>
       </DrawerContent>

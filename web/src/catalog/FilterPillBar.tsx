@@ -12,13 +12,14 @@
 // `setFilters`.
 
 import { useState } from 'react'
-import { ListFilter, X } from 'lucide-react'
+import { ListFilter, UserRound, X } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import { describeActiveFilters } from './activeFilterChips'
 import { FacetControlPopover } from './FacetControlPopover'
 import { ListFilterSheet } from './ListFilterSheet'
-import { BENCHMARK_LABEL, FAVORITES_LABEL, type FilterState } from './filters'
-import { CANONICAL_ORDER, chipFacetId, type FacetContext } from './pinnableFacets'
+import { SetterFilterSheet } from './SetterFilterSheet'
+import { BENCHMARK_LABEL, FAVORITES_LABEL, type FilterState, type SetterOption } from './filters'
+import { CANONICAL_ORDER, chipFacetId, settersLabel, type FacetContext } from './pinnableFacets'
 import { usePinnedFacets } from './pinnedFiltersStore'
 import { sessionStatusFacet, useSessionFilterRows } from './useSessionFilterRows'
 import type { SavedList } from '../lists/listsTypes'
@@ -37,6 +38,8 @@ interface FilterPillBarProps {
   signedOut: boolean
   /** This board's live lists — drives the "Lists" control (hidden when empty, R4). */
   boardLists: SavedList[]
+  /** The slab's setters with faceted counts — the pinned "Setter" control's sheet (lazy thunk). */
+  getSetterOptions: () => SetterOption[]
   /** Which board's pinned set to read/write. */
   layoutId: number
   /** The slab's grade span (ordinal [min, max]) for a pinned Grade control. */
@@ -52,6 +55,7 @@ export function FilterPillBar({
   statusReady,
   signedOut,
   boardLists,
+  getSetterOptions,
   layoutId,
   gradeSpan,
   board,
@@ -70,6 +74,7 @@ export function FilterPillBar({
     ? { inSession: true, statusReady, sessionStatus: statusFacet }
     : { inSession: false, statusReady }
   const [listSheetOpen, setListSheetOpen] = useState(false)
+  const [setterSheetOpen, setSetterSheetOpen] = useState(false)
 
   // Chips only for active facets that are NOT pinned (a pinned facet shows as its control).
   const chips = describeActiveFilters(
@@ -151,6 +156,23 @@ export function FilterPillBar({
                 Lists
               </Toggle>
             )
+          case 'setters':
+            // Like Lists: a sheet opener, not a popover — the slab has thousands of setters and
+            // the picker needs a search box. Reads the one name / "Setters (n)" the chip shows.
+            return (
+              <Toggle
+                key={facet.id}
+                variant="outline"
+                size="sm"
+                pressed={filters.setterFilter.length > 0}
+                onPressedChange={() => setSetterSheetOpen(true)}
+                aria-label="Filter by setter"
+                className="h-6 shrink-0 gap-1 px-2 text-xs"
+              >
+                <UserRound aria-hidden className="size-3.5" />
+                <span className="max-w-[9rem] truncate">{settersLabel(filters.setterFilter)}</span>
+              </Toggle>
+            )
           case 'status':
             // Suppressed only when signed out (status can't filter, and it can't be pinned
             // there). In a session the control stays — it just edits per-member status instead
@@ -225,6 +247,14 @@ export function FilterPillBar({
           onChange={(listFilter) => onChange({ ...filters, listFilter })}
         />
       )}
+
+      <SetterFilterSheet
+        open={setterSheetOpen}
+        onOpenChange={setSetterSheetOpen}
+        getOptions={getSetterOptions}
+        selected={filters.setterFilter}
+        onChange={(setterFilter) => onChange({ ...filters, setterFilter })}
+      />
     </div>
   )
 }

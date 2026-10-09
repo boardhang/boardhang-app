@@ -8,8 +8,9 @@
 // collab session it edits PER-MEMBER status in the sessions store (the sheet's U5 rows) — so the
 // popover swaps in SessionStatusRows and clears via the store, not a FilterState patch.
 //
-// Lists is handled by FilterPillBar directly (it opens ListFilterSheet and is board-gated), so
-// it is not a case here. The control markup mirrors FilterControls so the two surfaces match.
+// Lists and Setter are handled by FilterPillBar directly (each opens its own sheet; Lists is
+// board-gated), so they are not cases here. The control markup mirrors FilterControls so the two
+// surfaces match.
 
 import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'
@@ -65,7 +66,7 @@ const RATING_LABELS: Record<string, string> = {
 }
 
 interface FacetControlPopoverProps {
-  facetId: Exclude<PinnableFacetId, 'benchmarks' | 'favorites' | 'lists'>
+  facetId: Exclude<PinnableFacetId, 'benchmarks' | 'favorites' | 'lists' | 'setters'>
   filters: FilterState
   onChange: (next: FilterState) => void
   ctx: FacetContext

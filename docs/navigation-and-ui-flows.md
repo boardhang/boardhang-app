@@ -160,8 +160,14 @@ a registry-valid but **un-added** board renders a read-only preview with an "Add
 `q` (search), `grade` (ordinal `min-max` into `FONT_GRADES`, both bounds floored at 6A+ —
 `GRADE_FILTER_FLOOR` — so stray sub-6A+ catalog grades never surface in the filter; the range
 predicate treats them as 6A+), `bench`/`fav` (`1`), `stars`,
-`method`/`holds`/`status`/`list` (comma-joined), `sort`, `angle`, `problem` (open problem id),
-`newSince` (ISO timestamp — see below).
+`method`/`holds`/`status`/`list` (comma-joined), `setter` (comma-joined, each name
+percent-encoded because setter names contain commas), `sort`, `angle`, `problem` (open problem
+id), `newSince` (ISO timestamp — see below).
+`setter` is the setter facet: an OR over exact (whitespace-trimmed, case-kept) setter names, picked
+in a searchable sheet whose per-setter counts are *faceted* — each is the number of that setter's
+problems that pass every other active filter, so zero-count setters stay listed but dimmed. The
+sheet shows the top 100 by count until you type (`web/src/catalog/SetterFilterSheet.tsx`,
+`setterOptions` in `filters.ts`).
 `list` is a CSV of saved-list ids the catalog is filtered by (OR'd — a problem passes if it's in
 any); its membership is resolved from the offline lists store and the ids are pruned against the
 board's live lists once loaded (a stale/foreign id self-heals out of the URL, but only after the

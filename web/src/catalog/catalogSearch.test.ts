@@ -4,7 +4,9 @@ import { DEFAULT_FILTERS, type FilterState } from './filters'
 import {
   CATALOG_SEARCH_DEFAULTS,
   decodeGrade,
+  decodeSetters,
   encodeGrade,
+  encodeSetters,
   filtersToSearch,
   searchToFilters,
   validateCatalogSearch,
@@ -51,6 +53,7 @@ describe('catalogSearch round-trip', () => {
       holdsFilter: ['3-4', '5-6'],
       statusFilters: ['sent', 'unlogged'],
       listFilter: ['list-1', 'list-2'],
+      setterFilter: ['Kyle Knapp', 'Sev-Ron 10,000'],
     }
     expect(roundTrip(f)).toEqual(f)
   })
@@ -192,5 +195,36 @@ describe('validateCatalogSearch', () => {
     expect(s.stars).toBe(5) // clamped
     expect(s.bench).toBe(0)
     expect(s.angle).toBe(0)
+  })
+})
+
+describe('setter param', () => {
+  it('encodes each selected name percent-encoded and comma-joins, omitted when empty', () => {
+    expect(filtersToSearch({ ...DEFAULT_FILTERS, setterFilter: ['Kyle Knapp', 'Sev-Ron 10,000'] }).setter).toBe(
+      'Kyle%20Knapp,Sev-Ron%2010%2C000',
+    )
+    expect(stripDefaults(filtersToSearch(DEFAULT_FILTERS)).setter).toBeUndefined()
+  })
+
+  it('round-trips names with commas, pipes, ampersands and unicode', () => {
+    const names = ['Sev-Ron 10,000', '(_|_)', 'ForFun&PersonalBest', 'WUČKO', 'KB/TC']
+    expect(roundTrip({ ...DEFAULT_FILTERS, setterFilter: names }).setterFilter).toEqual(names)
+  })
+
+  it('decodes trimmed, deduplicated names in order, dropping empty tokens', () => {
+    expect(decodeSetters('a,,b,')).toEqual(['a', 'b'])
+    expect(decodeSetters('Ben%20Moon%20,Ben%20Moon')).toEqual(['Ben Moon'])
+    expect(decodeSetters('')).toEqual([])
+    expect(searchToFilters(validateCatalogSearch({})).setterFilter).toEqual([])
+  })
+
+  it('keeps a malformed percent-sequence verbatim instead of throwing', () => {
+    expect(decodeSetters('100%,ok')).toEqual(['100%', 'ok'])
+  })
+
+  it('defaults setter to an empty string', () => {
+    expect(CATALOG_SEARCH_DEFAULTS.setter).toBe('')
+    expect(validateCatalogSearch({}).setter).toBe('')
+    expect(encodeSetters([])).toBe('')
   })
 })

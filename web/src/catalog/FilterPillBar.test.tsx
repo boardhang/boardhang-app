@@ -45,12 +45,37 @@ function renderBar(over: Partial<Parameters<typeof FilterPillBar>[0]> = {}) {
       statusReady={over.statusReady ?? false}
       signedOut={over.signedOut ?? false}
       boardLists={over.boardLists ?? []}
+      getSetterOptions={over.getSetterOptions ?? (() => [{ name: 'Kyle Knapp', count: 2 }])}
       layoutId={over.layoutId ?? 7}
       gradeSpan={[3, 15]}
       board={board}
     />,
   )
 }
+
+// Each pinned case uses its own layoutId: the pinned store caches a layout's snapshot for the
+// module's lifetime, so a localStorage write for a layout another test already read is invisible.
+describe('FilterPillBar — Setter control', () => {
+  it('renders an unpinned active setter selection as a removable chip that clears the facet', () => {
+    const onChange = vi.fn()
+    renderBar({ filters: state({ setterFilter: ['Kyle Knapp'] }), onChange })
+    expect(screen.queryByRole('button', { name: 'Filter by setter' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Kyle Knapp filter' }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ setterFilter: [] }))
+  })
+
+  it('renders a pinned Setter control (no chip) that opens the setter sheet', () => {
+    localStorage.setItem('catalogPinnedFilters_106', JSON.stringify(['setters']))
+    const onChange = vi.fn()
+    renderBar({ filters: state({ setterFilter: ['Kyle Knapp'] }), onChange, layoutId: 106 })
+    expect(screen.queryByRole('button', { name: 'Remove Kyle Knapp filter' })).toBeNull()
+    const control = screen.getByRole('button', { name: 'Filter by setter' })
+    expect(control).toHaveTextContent('Kyle Knapp')
+    fireEvent.click(control)
+    fireEvent.click(screen.getByRole('button', { name: /Remove Kyle Knapp from the filter/ }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ setterFilter: [] }))
+  })
+})
 
 describe('FilterPillBar — Lists control (R4)', () => {
   it('hides the "Lists" opener when the board has no lists', () => {

@@ -1,6 +1,6 @@
 // Pure filter + sort logic for the catalog, ported from iOS CatalogListView's
 // computeDisplayed/filter + SortKey. Search, grade range, benchmark, min rating,
-// method, favorites, and a drawn holds filter narrow the slab; the installed
+// method, favorites, setter, and a drawn holds filter narrow the slab; the installed
 // hold-set filter (climbable) is applied on top via context. Two-level sort keys
 // off the canonical grade ordinal, never string compare.
 
@@ -55,6 +55,17 @@ export const STATUS_SHORT_LABELS: Record<StatusKey, string> = {
  *  min-stars and holds are deliberately worded differently between the two surfaces.) */
 export const BENCHMARK_LABEL = 'Benchmarks'
 export const FAVORITES_LABEL = 'Favorites'
+export const SETTER_LABEL = 'Setter'
+
+/**
+ * The setter identity the facet groups and matches on: the stored name with surrounding
+ * whitespace dropped. Case is deliberately KEPT ("Kyle Knapp" and "kyle knapp" may be two
+ * accounts, and the rows show the stored spelling), but thousands of catalog rows carry a stray
+ * trailing space, and a trailing space is never a different person.
+ */
+export function setterKey(setter: string): string {
+  return setter.trim()
+}
 
 /**
  * The MoonBoard foot-rule "method" labels, as a FIXED list — the foot-rule subset of
@@ -89,6 +100,8 @@ export interface FilterState {
   statusFilters: StatusKey[]
   /** Selected saved-list ids (OR'd — a problem passes if it's in ANY); empty = no list filter. */
   listFilter: string[]
+  /** Selected setters as `setterKey`s (OR'd — a problem passes if ANY set it); empty = any setter. */
+  setterFilter: string[]
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -105,6 +118,7 @@ export const DEFAULT_FILTERS: FilterState = {
   holdsFilter: [],
   statusFilters: [],
   listFilter: [],
+  setterFilter: [],
 }
 
 /** Whether any filter (not sort/search) is narrowing the list — drives "Reset". */
@@ -126,7 +140,8 @@ export function activeFilterCount(s: FilterState, statusReady = true): number {
     (s.favoritesOnly ? 1 : 0) +
     (s.holdsFilter.length > 0 ? 1 : 0) +
     (statusReady && s.statusFilters.length > 0 ? 1 : 0) +
-    (s.listFilter.length > 0 ? 1 : 0)
+    (s.listFilter.length > 0 ? 1 : 0) +
+    (s.setterFilter.length > 0 ? 1 : 0)
   )
 }
 
@@ -231,17 +246,20 @@ function compare(key: SortKey, a: CatalogProblem, b: CatalogProblem): number {
   }
 }
 
-/** Filter then sort the slab's problems for display. */
-export function applyFilters(
+/** The filter pass alone (no sort) — what `applyFilters` runs before sorting, exposed so the
+ *  setter facet can count problems under every filter but its own (`setterOptions`). */
+export function filterProblems(
   problems: CatalogProblem[],
   s: FilterState,
   ctx: FilterContext,
 ): CatalogProblem[] {
   const q = s.search.trim().toLowerCase()
   const holdsNeeded = s.holdsFilter
+  const setters = s.setterFilter.length > 0 ? new Set(s.setterFilter) : null
 
-  const filtered = problems.filter((p) => {
+  return problems.filter((p) => {
     if (q && !(p.name.toLowerCase().includes(q) || p.setter.toLowerCase().includes(q))) return false
+    if (setters && !setters.has(setterKey(p.setter))) return false
     if (s.gradeRange) {
       const raw = gradeIndex(p.grade)
       // Sub-floor grades (stray 5+/6A catalog data) act as 6A+ (issue #96): the slider
@@ -275,8 +293,50 @@ export function applyFilters(
     }
     return ctx.isClimbable(p.holds)
   })
+}
 
-  return filtered.sort((a, b) => {
+/** One row of the setter picker: a setter on this slab and how many of their problems pass
+ *  every OTHER active filter (see `setterOptions`). */
+export interface SetterOption {
+  /** The `setterKey` — what `setterFilter` stores and the row displays. */
+  name: string
+  count: number
+}
+
+/**
+ * Every distinct setter on the slab with a faceted count: the problems of theirs that pass every
+ * filter EXCEPT the setter filter itself, so ticking one setter never zeroes the others. Setters
+ * whose count is 0 under the current filters stay in the list (the sheet dims them) — the list is
+ * "who set on this board", the number is "how many of theirs you'd see". Sorted by count
+ * descending, then name, so the zero rows sink to the bottom. Problems with a blank setter are
+ * not a row (there is nobody to pick).
+ */
+export function setterOptions(
+  problems: CatalogProblem[],
+  s: FilterState,
+  ctx: FilterContext,
+): SetterOption[] {
+  const counts = new Map<string, number>()
+  for (const p of problems) {
+    const key = setterKey(p.setter)
+    if (key && !counts.has(key)) counts.set(key, 0)
+  }
+  for (const p of filterProblems(problems, { ...s, setterFilter: [] }, ctx)) {
+    const key = setterKey(p.setter)
+    if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return [...counts]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+}
+
+/** Filter then sort the slab's problems for display. */
+export function applyFilters(
+  problems: CatalogProblem[],
+  s: FilterState,
+  ctx: FilterContext,
+): CatalogProblem[] {
+  return filterProblems(problems, s, ctx).sort((a, b) => {
     const primary = compare(s.sortPrimary, a, b)
     if (primary !== 0) return primary
     if (s.sortSecondary && sortDimension(s.sortSecondary) !== sortDimension(s.sortPrimary)) {

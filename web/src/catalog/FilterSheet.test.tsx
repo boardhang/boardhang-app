@@ -32,7 +32,7 @@ async function open(
       gradeSpan={[3, 15]}
       statusReady={auth.statusReady ?? true}
       signedOut={auth.signedOut ?? false}
-      boardLists={[]}
+      boardLists={[]} getSetterOptions={() => []}
     />,
   )
   fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
@@ -89,7 +89,7 @@ describe('FilterSheet — Clear filters in a session', () => {
         gradeSpan={[3, 15]}
         statusReady
         signedOut={false}
-        boardLists={[]}
+        boardLists={[]} getSetterOptions={() => []}
       />,
     )
     // Assert the badge BEFORE opening — the drawer is modal, so the FAB leaves the a11y tree.

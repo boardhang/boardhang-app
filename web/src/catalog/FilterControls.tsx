@@ -4,7 +4,7 @@
 //
 // The "Holds" row opens HoldFilterPicker — a full-board picker that writes the
 // tapped positions into state.holdsFilter (applyFilters matches problems that
-// use all selected holds).
+// use all selected holds). The "Setter" row opens SetterFilterSheet the same way.
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronRight, Pin } from 'lucide-react'
@@ -13,6 +13,7 @@ import type { SavedList } from '../lists/listsTypes'
 import { FONT_GRADES } from '../board/grades'
 import { HoldFilterPicker } from './HoldFilterPicker'
 import { MemberStatusRow } from './MemberStatusRow'
+import { SetterFilterSheet } from './SetterFilterSheet'
 import { SessionStatusRows } from './SessionStatusRows'
 import { useSessionFilterRows } from './useSessionFilterRows'
 import { SortSection } from './SortSection'
@@ -20,10 +21,12 @@ import {
   BENCHMARK_LABEL,
   FAVORITES_LABEL,
   METHOD_LABELS,
+  SETTER_LABEL,
   SORT_KEYS,
   SORT_LABELS,
   sortDimension,
   type FilterState,
+  type SetterOption,
   type SortKey,
   type StatusKey,
 } from './filters'
@@ -69,6 +72,14 @@ interface FilterControlsProps {
   signedOut: boolean
   /** This board's live lists — the "Saved lists" pills (section hidden when empty). */
   boardLists: SavedList[]
+  /** The slab's setters with faceted counts — a thunk the Setter sheet calls only while open. */
+  getSetterOptions: () => SetterOption[]
+}
+
+/** The Setter opener's collapsed value: the one name when one is picked, else a count. */
+function setterOpenerLabel(selected: string[]): string {
+  if (selected.length === 0) return 'Any'
+  return selected.length === 1 ? selected[0] : `${selected.length} selected`
 }
 
 function Field({
@@ -130,6 +141,7 @@ export function FilterControls({
   statusReady,
   signedOut,
   boardLists,
+  getSetterOptions,
 }: FilterControlsProps) {
   // Session rows come from the store hook directly (no prop drilling), matching how
   // SessionBar/SessionPill read session state.
@@ -141,6 +153,7 @@ export function FilterControls({
     <PinToggle layoutId={board.layoutId} facetId={facetId} pinned={pinned.includes(facetId)} />
   )
   const [holdPickerOpen, setHoldPickerOpen] = useState(false)
+  const [setterSheetOpen, setSetterSheetOpen] = useState(false)
   const statusHintId = useId()
   const toggleStatus = (k: StatusKey, active: boolean) =>
     set({ statusFilters: active ? [...state.statusFilters, k] : state.statusFilters.filter((x) => x !== k) })
@@ -329,6 +342,22 @@ export function FilterControls({
         </div>
       </Field>
 
+      {/* Setter — an opener row (like Holds) into the searchable setter sheet: the slab has
+          hundreds to thousands of setters, far too many for inline pills. */}
+      <Field label={SETTER_LABEL} pin={pin('setters')}>
+        <button
+          type="button"
+          onClick={() => setSetterSheetOpen(true)}
+          aria-label="Filter by setter"
+          className="flex w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm transition hover:bg-accent"
+        >
+          <span className={cn('truncate', state.setterFilter.length === 0 && 'text-muted-foreground')}>
+            {setterOpenerLabel(state.setterFilter)}
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </button>
+      </Field>
+
       {/* Saved lists — one multi-select pill per list on this board (OR / union), the same
           `listFilter` the header pill bar drives. Hidden when the board has no lists (R4). */}
       {boardLists.length > 0 && (
@@ -363,6 +392,13 @@ export function FilterControls({
         onOpenChange={setHoldPickerOpen}
         value={state.holdsFilter}
         onChange={(holdsFilter) => set({ holdsFilter })}
+      />
+      <SetterFilterSheet
+        open={setterSheetOpen}
+        onOpenChange={setSetterSheetOpen}
+        getOptions={getSetterOptions}
+        selected={state.setterFilter}
+        onChange={(setterFilter) => set({ setterFilter })}
       />
     </div>
   )

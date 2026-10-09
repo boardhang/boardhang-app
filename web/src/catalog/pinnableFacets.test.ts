@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { FONT_GRADES } from '../board/grades'
 import { DEFAULT_FILTERS, type FilterState } from './filters'
 import {
+  CANONICAL_ORDER,
   facetActiveLabel,
+  facetClearPatch,
   facetPaused,
   isFacetActive,
+  settersLabel,
   type FacetContext,
   type SessionStatusFacet,
 } from './pinnableFacets'
@@ -84,9 +87,28 @@ describe('pinnableFacets — status facet, paused projection', () => {
   })
 
   it('never reports another facet as paused', () => {
-    for (const id of ['grade', 'holds', 'sort', 'stars', 'methods', 'lists'] as const) {
+    for (const id of ['grade', 'holds', 'sort', 'stars', 'methods', 'lists', 'setters'] as const) {
       expect(facetPaused(id, inSession({ members: 2, applied: false }))).toBe(false)
     }
+  })
+})
+
+describe('pinnableFacets — setter facet', () => {
+  it('is active only with a selection, and clears to an empty selection', () => {
+    expect(isFacetActive('setters', state({ setterFilter: ['Kyle Knapp'] }), solo())).toBe(true)
+    expect(isFacetActive('setters', state(), solo())).toBe(false)
+    expect(facetClearPatch('setters')).toEqual({ setterFilter: [] })
+  })
+
+  it('labels one selection by name and several by count, and the bare facet when off', () => {
+    expect(facetActiveLabel('setters', state({ setterFilter: ['Kyle Knapp'] }))).toBe('Kyle Knapp')
+    expect(facetActiveLabel('setters', state({ setterFilter: ['Kyle Knapp', 'Ben Moon'] }))).toBe('Setters (2)')
+    expect(facetActiveLabel('setters', state())).toBe('Setter')
+    expect(settersLabel([])).toBe('Setter')
+  })
+
+  it('sits last in the canonical order so no existing pin moved', () => {
+    expect(CANONICAL_ORDER[CANONICAL_ORDER.length - 1].id).toBe('setters')
   })
 })
 
