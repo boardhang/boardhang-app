@@ -57,7 +57,8 @@ import sys
 import time
 import uuid
 from collections import namedtuple
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 # ── constants ─────────────────────────────────────────────────────────────────────────
@@ -73,7 +74,7 @@ CURATION = f"benchmark or repeats >= {MIN_REPEATS}"  # admission rule for NEW pr
 PAGE = 1000  # hosted PostgREST clamps every response to 1000 rows (see catalog-data-pipeline.md)
 # source_catalog_id is interpolated into PostgREST filters (keyset paging, in.() lists); refuse
 # anything that could break or broaden a filter.
-ID_RE = re.compile(r"^[A-Za-z0-9-]+$")
+ID_RE = re.compile(r"\A[A-Za-z0-9-]+\Z")  # \Z, not $: a trailing newline must not slip through
 
 SNAPSHOT_KEYS = ("setup", "layoutId", "angle", "source", "curation", "upstream_total", "count", "problems")
 PROBLEM_KEYS = ("id", "boardsesh_uuid", "name", "grade", "userGrade", "setter", "stars", "repeats",
@@ -151,41 +152,40 @@ def nullable_text(value):
     return value if value != "" else None
 
 
+def upstream_fields(problem):
+    """The eight boardsesh-owned fields of a snapshot- or fetch-shaped problem, normalized the
+    one way every path uses: '' collapses to null on the two nullable text fields, setters are
+    stripped, stars and repeats are ints, the flag is a bool. The merge overwrites exactly these
+    from the feed (R9); the import diff and the seed export compare and store exactly these."""
+    return {
+        "name": problem.get("name") or "",
+        "grade": problem.get("grade") or "",
+        "userGrade": nullable_text(problem.get("userGrade")),
+        "setter": (problem.get("setter") or "").strip(),
+        "stars": int(problem.get("stars") or 0),
+        "repeats": int(problem.get("repeats") or 0),
+        "isBenchmark": bool(problem.get("isBenchmark")),
+        "method": nullable_text(problem.get("method")),
+    }
+
+
 def row_from_problem(problem, layout_id, angle, deleted=False):
     """A snapshot problem as the `catalog_problems` row the import would write (ROW_COLUMNS)."""
+    f = upstream_fields(problem)
     return {
         "source_catalog_id": problem["id"],
         "layout_id": layout_id,
         "angle": angle,
-        "name": problem.get("name") or "",
-        "grade": problem.get("grade") or "",
-        "user_grade": nullable_text(problem.get("userGrade")),
-        "setter": (problem.get("setter") or "").strip(),
-        "stars": int(problem.get("stars") or 0),
-        "repeats": int(problem.get("repeats") or 0),
-        "is_benchmark": bool(problem.get("isBenchmark")),
-        "method": nullable_text(problem.get("method")),
+        "name": f["name"],
+        "grade": f["grade"],
+        "user_grade": f["userGrade"],
+        "setter": f["setter"],
+        "stars": f["stars"],
+        "repeats": f["repeats"],
+        "is_benchmark": f["isBenchmark"],
+        "method": f["method"],
         "holds": problem.get("holds") or [],
         "deleted": bool(deleted),
-    }
-
-
-def row_from_live(row):
-    """A PostgREST `catalog_problems` row normalized exactly like `row_from_problem`."""
-    return {
-        "source_catalog_id": row["source_catalog_id"],
-        "layout_id": row["layout_id"],
-        "angle": row["angle"],
-        "name": row.get("name") or "",
-        "grade": row.get("grade") or "",
-        "user_grade": nullable_text(row.get("user_grade")),
-        "setter": (row.get("setter") or "").strip(),
-        "stars": int(row.get("stars") or 0),
-        "repeats": int(row.get("repeats") or 0),
-        "is_benchmark": bool(row.get("is_benchmark")),
-        "method": nullable_text(row.get("method")),
-        "holds": row.get("holds") or [],
-        "deleted": bool(row.get("deleted")),
     }
 
 
@@ -193,21 +193,18 @@ def problem_from_live(row):
     """A snapshot problem built from a live row — the seed export (boardsesh_uuid = id,
     upstream_last_seen unknown until a fetch returns it)."""
     holds = row.get("holds") or []
-    return {
-        "id": row["source_catalog_id"],
-        "boardsesh_uuid": row["source_catalog_id"],
-        "name": row.get("name") or "",
-        "grade": row.get("grade") or "",
-        "userGrade": nullable_text(row.get("user_grade")),
-        "setter": (row.get("setter") or "").strip(),
-        "stars": int(row.get("stars") or 0),
-        "repeats": int(row.get("repeats") or 0),
-        "isBenchmark": bool(row.get("is_benchmark")),
-        "method": nullable_text(row.get("method")),
-        "holds": holds,
-        "hold_key": hold_key(holds),
-        "upstream_last_seen": None,
-    }
+    fields = upstream_fields({"name": row.get("name"), "grade": row.get("grade"), "userGrade": row.get("user_grade"),
+                              "setter": row.get("setter"), "stars": row.get("stars"), "repeats": row.get("repeats"),
+                              "isBenchmark": row.get("is_benchmark"), "method": row.get("method")})
+    problem = {"id": row["source_catalog_id"], "boardsesh_uuid": row["source_catalog_id"]}
+    problem.update(fields)
+    problem.update({"holds": holds, "hold_key": hold_key(holds), "upstream_last_seen": None})
+    return problem
+
+
+def row_from_live(row):
+    """A PostgREST `catalog_problems` row normalized exactly like `row_from_problem`."""
+    return row_from_problem(problem_from_live(row), row["layout_id"], row["angle"], row.get("deleted"))
 
 
 # ── snapshot files ────────────────────────────────────────────────────────────────────
@@ -353,8 +350,9 @@ def read_credentials(require_service_role=False):
 
 
 def sb_request(url, key, method="GET", body=None, prefer=None, retries=4, timeout=120):
-    """One REST request → (parsed JSON or None, Content-Range). Retries 429/502/503 with a
-    short backoff; any other HTTP error exits with the status and body."""
+    """One REST request → (parsed JSON or None, Content-Range). Retries 429/500/502/503/504 and
+    network failures (URLError, timeout, connection reset) with a short backoff; any other HTTP
+    error exits with the status and body."""
     headers = {"apikey": key, "Authorization": f"Bearer {key}"}
     if prefer:
         headers["Prefer"] = prefer
@@ -369,11 +367,18 @@ def sb_request(url, key, method="GET", body=None, prefer=None, retries=4, timeou
                 payload = json.loads(raw.decode()) if raw else None
                 return payload, r.headers.get("Content-Range")
         except HTTPError as e:
-            if e.code in (429, 502, 503) and attempt < retries - 1:
+            if e.code in (429, 500, 502, 503, 504) and attempt < retries - 1:
                 time.sleep(2 * (attempt + 1))
                 continue
             detail = e.read().decode(errors="replace") if e.fp else ""
             sys.exit(f"{method} failed ({e.code}): {detail[:300]}")
+        except (URLError, TimeoutError, ConnectionError) as err:
+            if attempt < retries - 1:
+                time.sleep(2 * (attempt + 1))
+                continue
+            sys.exit(f"{method} {urlsplit(url).path} failed after {retries} attempts ({err}); "
+                     "a write may or may not have been applied — re-running the same command is "
+                     "safe, written rows diff as unchanged")
 
 
 def live_rows(base_url, key, layout=None, angle=None, columns=ROW_COLUMNS):

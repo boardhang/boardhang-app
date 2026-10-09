@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from unittest import mock
+from urllib.error import HTTPError, URLError
 
 _SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location("fetch_boardsesh", _SCRIPTS / "fetch_boardsesh.py")
@@ -136,6 +137,76 @@ class FetchSlabTest(unittest.TestCase):
         with mock.patch.object(mod, "gql", side_effect=pages), redirect_stdout(io.StringIO()):
             total, problems = mod.fetch_slab(7, 40, "28", delay=0)
         self.assertEqual((total, problems), (0, []))
+
+
+class FakeResponse:
+    def __init__(self, payload):
+        self._body = json.dumps(payload).encode()
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class GqlRetryTest(unittest.TestCase):
+    OK = {"data": {"searchClimbs": {"totalCount": 0, "hasMore": False, "climbs": []}}}
+
+    def setUp(self):
+        self.sleep = mock.patch.object(mod.time, "sleep").start()
+        self.addCleanup(mock.patch.stopall)
+
+    def run_gql(self, outcomes, retries=4):
+        """Each outcome is an exception to raise or a payload to return."""
+        self.calls = 0
+
+        def fake_urlopen(*args, **kwargs):
+            outcome = outcomes[self.calls]
+            self.calls += 1
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return FakeResponse(outcome)
+
+        with mock.patch.object(mod, "urlopen", side_effect=fake_urlopen), \
+                redirect_stdout(io.StringIO()):
+            return mod.gql({}, retries=retries)
+
+    def test_url_error_is_retried_once_then_succeeds(self):
+        data = self.run_gql([URLError("boom"), self.OK])
+        self.assertEqual(data, self.OK["data"])
+        self.assertEqual(self.calls, 2)
+        self.sleep.assert_called_once_with(2)
+
+    def test_http_500_is_retried_then_succeeds(self):
+        err = HTTPError("http://x", 500, "boom", {}, None)
+        data = self.run_gql([err, self.OK])
+        self.assertEqual(data, self.OK["data"])
+        self.assertEqual(self.calls, 2)
+        self.sleep.assert_called_once_with(2)
+
+    def test_timeout_reset_and_bad_json_are_retried(self):
+        bad = json.JSONDecodeError("bad", "", 0)
+        data = self.run_gql([TimeoutError(), ConnectionResetError(), bad, self.OK])
+        self.assertEqual(data, self.OK["data"])
+        self.assertEqual(self.calls, 4)
+
+    def test_non_retryable_http_error_is_raised_immediately(self):
+        err = HTTPError("http://x", 404, "nope", {}, None)
+        with self.assertRaises(HTTPError):
+            self.run_gql([err, self.OK])
+        self.assertEqual(self.calls, 1)
+        self.sleep.assert_not_called()
+
+    def test_exhaustion_exits_cleanly_after_all_attempts(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_gql([URLError("boom")] * 3, retries=3)
+        self.assertEqual(self.calls, 3)
+        self.assertIn("failed after 3 attempts", str(ctx.exception))
+        self.assertIn("boom", str(ctx.exception))
 
 
 class WriteFetchTest(unittest.TestCase):

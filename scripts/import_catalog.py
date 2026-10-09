@@ -157,7 +157,8 @@ def cross_slab_hits(base_url, key, ids, layout, angle):
 
 
 def _label(row):
-    return f"{row['source_catalog_id']}  {row.get('name') or ''}".rstrip()
+    # repr-quoted: names come from boardsesh and must not be able to hide report lines
+    return f"{row['source_catalog_id']}  {row.get('name') or ''!r}"
 
 
 def _print_class(title, rows):

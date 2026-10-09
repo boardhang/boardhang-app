@@ -101,7 +101,7 @@ needs a secure context — desktop Chrome/Edge, Android Chrome, or iPhone via Bl
 | Bluetooth, LED lighting, connection, calibration | [docs/ble-hardware.md](docs/ble-hardware.md) |
 | Hold coords, LED index math, board rendering | [docs/board-geometry.md](docs/board-geometry.md) |
 | Board registry, adding a board, active/added boards, hold-set filtering | [docs/multi-board-model.md](docs/multi-board-model.md) |
-| Catalog data, JSON schemas, the Python fetch scripts | [docs/catalog-data-pipeline.md](docs/catalog-data-pipeline.md) |
+| The catalog pipeline (fetch, merge, import), canonical snapshots, JSON schemas | [docs/catalog-data-pipeline.md](docs/catalog-data-pipeline.md) |
 | SwiftData models, logging ascents, logbook & pyramid | [docs/data-model-and-logging.md](docs/data-model-and-logging.md) |
 | Tabs, navigation, Home board management, Settings | [docs/navigation-and-ui-flows.md](docs/navigation-and-ui-flows.md) |
 | Accounts, Supabase setup, Google/email auth, profiles | [docs/social-accounts-login-SETUP.md](docs/social-accounts-login-SETUP.md) |

@@ -66,7 +66,7 @@ import re
 import sys
 import time
 from datetime import datetime, timezone
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -109,6 +109,9 @@ query Search($i: ClimbSearchInput!) {
 """
 
 
+RETRYABLE_HTTP = (429, 500, 502, 503, 504)
+
+
 def gql(variables, retries=4):
     body = json.dumps({"query": SEARCH_QUERY, "variables": variables}).encode()
     for attempt in range(retries):
@@ -119,10 +122,15 @@ def gql(variables, retries=4):
                 sys.exit("GraphQL error: " + json.dumps(payload["errors"][:2]))
             return payload["data"]
         except HTTPError as e:
-            if e.code in (429, 502, 503) and attempt < retries - 1:
-                time.sleep(2 * (attempt + 1))
-                continue
-            raise
+            if e.code not in RETRYABLE_HTTP:
+                raise
+            err = e
+        except (URLError, TimeoutError, ConnectionError, json.JSONDecodeError) as e:
+            err = e
+        if attempt < retries - 1:
+            print(f"  request failed ({err}); retrying", file=sys.stderr)
+            time.sleep(2 * (attempt + 1))
+    sys.exit(f"boardsesh request failed after {retries} attempts: {err}")
 
 
 def utc_now_iso():

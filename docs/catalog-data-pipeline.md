@@ -244,6 +244,9 @@ SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… python3 scripts/backup_catalog_pr
 # 5. Dry run (the default; the anon key is enough to read). Check: the un-delete list (every id is
 #    printed), the orphan count (live rows prod has that the snapshot lacks — refused by default),
 #    retired-id hits, cross-slab hits, and the predicted benchmark banner events (an upper bound).
+#    Credentials: the prod URL and anon key are the PWA's public config (the Vercel project's env;
+#    also commented in web/.env); the service-role key is in the Supabase dashboard only, is never
+#    committed, and is what makes steps 4, 6 and the rollback operator-only.
 SUPABASE_URL=… SUPABASE_ANON_KEY=… python3 scripts/import_catalog.py --layout 3 --angle 40
 
 # 6. Apply. Writes inserts, then updates, then un-deletes, in batches of 500, every row with
@@ -259,6 +262,14 @@ SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… python3 scripts/restore_catalog_p
 #   Banner events fired by inserted benchmarks (benchmark_events) have no drain: retract one by
 #   setting its discarded_at in SQL (migration 0018's retraction contract).
 ```
+
+Exit codes, so a script or agent can tell a refusal from a crash:
+
+| Script | 0 | 1 | 2 |
+| --- | --- | --- | --- |
+| `fetch_boardsesh.py` | slab(s) written | boardsesh or GraphQL error after retries | — |
+| `merge_catalog.py` | merged (or dry run clean) | bad arguments, missing or mismatched fetch file, duplicate id across snapshots | refused: quarantine, guard or invariant (report printed, nothing written) |
+| `import_catalog.py` | dry run clean, or apply done | refused by a guard (orphans, retired ids, cross-slab hits), missing credentials, or an HTTP error mid-apply (re-run) | — |
 
 ### Adding a board
 

@@ -115,7 +115,7 @@ class MergeCase(unittest.TestCase):
 
 # ── ported from the retired rename reconciler's tests (the evidence-ladder spec) ───────
 
-class EvidenceTest(unittest.TestCase):
+class EvidenceTest(MergeCase):
     def test_name_beats_setter_and_repeats_are_not_evidence(self):
         ev = merge_mod.evidence
         self.assertEqual(ev(incoming("a", " bingo ", H1, "x", 5), snap_problem("b", "BINGO", H1, "y", 9)), "name")
@@ -126,6 +126,15 @@ class EvidenceTest(unittest.TestCase):
 
     def test_blank_name_or_setter_is_not_evidence(self):
         self.assertIsNone(merge_mod.evidence(incoming("a", "", H1, "", 8), snap_problem("b", "", H1, "", 9)))
+
+    def test_untitled_placeholder_is_not_name_evidence(self):
+        # fetch_boardsesh.py maps a nameless climb to the literal "Untitled"; two nameless
+        # problems on the same holds by different setters are not one renamed problem.
+        snap = snapshot([snap_problem("old", "Untitled", H1, setter="A")])
+        exc = self.refuse(snap, fetch([incoming("new", "Untitled", H1, setter="B")]))
+        self.assertEqual(self.kinds(exc), ["no evidence"])
+        _, report = run(snap, fetch([incoming("new", "untitled", H1, setter="A")]))
+        self.assertEqual([(r.id, r.evidence) for r in report.renamed], [("old", "setter")])
 
 
 class PortedReconcileTest(MergeCase):
@@ -522,6 +531,27 @@ class OverrideTest(MergeCase):
         self.assertEqual([(m.id, m.uuid, m.derived) for m in report.minted], [("given", "theirs", False)])
         self.assertEqual(by_id(out)["given"]["boardsesh_uuid"], "theirs")
 
+    def test_new_override_is_idempotent_on_the_next_run(self):
+        # The verdict stays in overrides.json; once the row exists under that uuid, later runs
+        # must update it, not mint it again (which the invariants would refuse).
+        f = fetch([incoming("U", "Fresh", H1)])
+        ov = overrides([new("U", "X")])
+        out1, report1 = run(snapshot([]), f, ov)
+        self.assertEqual([(m.id, m.uuid) for m in report1.minted], [("X", "U")])
+        out2, report2 = run(out1, f, ov, all_ids=merge_mod.index_ids([out1]))
+        self.assertEqual((report2.minted, report2.cases, report2.refusals), ([], [], []))
+        self.assertEqual(report2.updated, 1)
+        self.assertEqual(by_id(out2)["X"]["upstream_last_seen"], DATE)
+        with tempfile.TemporaryDirectory() as d:
+            first_path, second_path = os.path.join(d, "a.json"), os.path.join(d, "b.json")
+            lib.write_snapshot(first_path, out1)
+            lib.write_snapshot(second_path, out2)
+            self.assertEqual(pathlib.Path(first_path).read_bytes(), pathlib.Path(second_path).read_bytes())
+        # The id existing under ANOTHER uuid is still a forced mint the invariants refuse.
+        taken = snapshot([snap_problem("X", "Taken", H2, uuid="V")])
+        exc = self.refuse(taken, fetch([incoming("U", "Fresh", H1), incoming("V", "Taken", H2)]), ov)
+        self.assertTrue(any("id X appears twice" in r for r in exc.refusals), exc.refusals)
+
     def test_override_that_matched_nothing_warns(self):
         snap = snapshot([snap_problem("p1", "P1", H1)])
         ov = overrides([match("nope", "p1"), new("nope2", "x"), accept_holds("ghost", "a" * 64),
@@ -585,6 +615,16 @@ class DeterminismTest(MergeCase):
         before = json.dumps(snap, sort_keys=True), json.dumps(f, sort_keys=True)
         run(snap, f)
         self.assertEqual((json.dumps(snap, sort_keys=True), json.dumps(f, sort_keys=True)), before)
+
+
+class IndexIdsTest(unittest.TestCase):
+    def test_one_id_in_two_slabs_is_refused_naming_both(self):
+        forty = snapshot([snap_problem("p1", "A", H1)], angle=40)
+        twenty5 = snapshot([snap_problem("p1", "B", H2)], angle=25)
+        with self.assertRaises(ValueError) as cm:
+            merge_mod.index_ids([forty, twenty5])
+        self.assertIn("3@40", str(cm.exception))
+        self.assertIn("3@25", str(cm.exception))
 
 
 class InvariantTest(MergeCase):
@@ -680,6 +720,13 @@ class ShellTest(unittest.TestCase):
         with open(lib.fetch_path(self.data, layout, angle), "w") as fh:
             json.dump(f, fh)
 
+    def write_overrides(self, entries=(), retired=()):
+        with open(lib.overrides_path(self.data), "w") as fh:
+            json.dump({"retired_ids": list(retired), "entries": list(entries)}, fh)
+
+    def snapshot_bytes(self, angle):
+        return pathlib.Path(lib.snapshot_path(self.data, 3, angle)).read_bytes()
+
     def main(self, *argv):
         out = io.StringIO()
         with mock.patch.object(sys, "argv", ["merge_catalog.py", "--dir", self.data, *argv]), redirect_stdout(out):
@@ -735,6 +782,51 @@ class ShellTest(unittest.TestCase):
         code, text = self.main("--layout", "3", "--angle", "40", "--fetch", alt, "--dry-run")
         self.assertEqual(code, 0, text)
         self.assertIn("0 renamed", text)
+
+    def test_missing_fetch_file_exits_without_writing(self):
+        os.remove(lib.fetch_path(self.data, 3, 40))
+        before = self.snapshot_bytes(40)
+        code, _ = self.main("--layout", "3", "--angle", "40")
+        self.assertNotEqual(code, 0)
+        self.assertIn("no fetch file", str(code))
+        self.assertEqual(self.snapshot_bytes(40), before)
+
+    def test_fetch_of_another_slab_exits_without_writing(self):
+        alt = os.path.join(self.data, "alt.json")
+        with open(alt, "w") as fh:
+            json.dump(fetch([incoming("twenty5", "T", H2)], angle=25), fh)
+        before = self.snapshot_bytes(40)
+        code, _ = self.main("--layout", "3", "--angle", "40", "--fetch", alt)
+        self.assertNotEqual(code, 0)
+        self.assertIn("is a fetch of layout", str(code))
+        self.assertEqual(self.snapshot_bytes(40), before)
+
+    def test_one_id_in_two_snapshots_on_disk_exits_before_any_write(self):
+        lib.write_snapshot(lib.snapshot_path(self.data, 3, 25), snapshot([snap_problem("old", "Elsewhere", H2)], angle=25))
+        before = self.snapshot_bytes(40), self.snapshot_bytes(25)
+        code, _ = self.main("--layout", "3", "--angle", "40")
+        self.assertNotEqual(code, 0)
+        self.assertIn("refusing to merge", str(code))
+        self.assertIn("old", str(code))
+        self.assertEqual((self.snapshot_bytes(40), self.snapshot_bytes(25)), before)
+
+    def test_two_angle_run_sees_accepted_holds_of_the_earlier_angle(self):
+        # 25° runs first and accepts a geometry change on X; the 40° twin under the same uuid
+        # with the NEW holds must be minted with a derived id, not refused as a collision
+        # against the hold_key indexed from disk.
+        lib.write_snapshot(lib.snapshot_path(self.data, 3, 25), snapshot([snap_problem("X", "Ex", H1)], angle=25))
+        self.write_overrides([accept_holds("X", lib.hold_key(H3), angle=25)])
+        self.write_fetch(fetch([incoming("X", "Ex", H3)], angle=25), 3, 25)
+        self.write_fetch(fetch([incoming("old", "BINGO", H1, setter="orig"), incoming("X", "Ex", H3, repeats=10)]), 3, 40)
+        code, text = self.main("--layout", "3")
+        self.assertEqual(code, 0, text)
+        self.assertNotIn("QUARANTINE", text)
+        twenty5 = lib.read_snapshot(lib.snapshot_path(self.data, 3, 25))
+        self.assertEqual(by_id(twenty5)["X"]["holds"], H3)
+        forty = lib.read_snapshot(lib.snapshot_path(self.data, 3, 40))
+        derived = lib.derived_id("X", 40)
+        self.assertEqual(sorted(by_id(forty)), sorted(["old", derived]))
+        self.assertEqual(by_id(forty)[derived]["boardsesh_uuid"], "X")
 
 
 if __name__ == "__main__":

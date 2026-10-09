@@ -72,9 +72,13 @@ def build_snapshot(layout, angle, rows):
 
 
 def write_retired_ids(path, retired_ids):
-    """Record the tombstones in the overrides file, keeping any entries already there."""
+    """Record the tombstones in the overrides file, keeping any entries already there.
+
+    Retirement is permanent, so the list only ever grows: a slab-filtered export must not
+    drop the retired ids of the slabs it did not read (that would let a later merge mint a
+    tombstone's id and the import un-delete it beside its live twin)."""
     existing = lib.load_overrides(path)
-    data = {"retired_ids": sorted(retired_ids), "entries": existing.entries}
+    data = {"retired_ids": sorted(existing.retired_ids | set(retired_ids)), "entries": existing.entries}
     lib.write_json_atomic(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
 
 

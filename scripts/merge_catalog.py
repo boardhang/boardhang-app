@@ -72,6 +72,7 @@ except ImportError:  # loaded by path (tests) without scripts/ on sys.path
 
 SHORT_FETCH_RATIO = 0.8          # R16
 EVIDENCE = ("name", "setter")    # strongest first; repeats are NOT evidence (R5)
+PLACEHOLDER_NAMES = frozenset({"untitled"})   # fetch_boardsesh.py's name for a nameless climb (norm_text form)
 KINDS = ("holds differ", "no evidence", "contention", "retired id", "uuid collision", "override conflict")
 
 IdRef = namedtuple("IdRef", "layout angle hold_key")
@@ -160,27 +161,16 @@ def index_ids(snapshots):
 
 def evidence(incoming, row):
     """Strongest reason to believe a geometry match is the same boardsesh record, or None.
-    Same name (case/whitespace-insensitive) beats same setter; a blank field is no evidence."""
+    Same name (case/whitespace-insensitive) beats same setter; a blank field is no evidence,
+    and neither is the fetch's "Untitled" placeholder (PLACEHOLDER_NAMES) — two nameless
+    climbs on the same holds are only the same problem when the setter also matches."""
     for kind in EVIDENCE:
         ours, theirs = lib.norm_text(row.get(kind)), lib.norm_text(incoming.get(kind))
+        if kind == "name" and theirs in PLACEHOLDER_NAMES:
+            continue
         if theirs and theirs == ours:
             return kind
     return None
-
-
-def upstream_fields(incoming):
-    """The upstream-owned fields of a fetch row, normalized like `lib.problem_from_live` so
-    a re-run and the seed agree byte for byte (R9)."""
-    return {
-        "name": incoming.get("name") or "",
-        "grade": incoming.get("grade") or "",
-        "userGrade": lib.nullable_text(incoming.get("userGrade")),
-        "setter": (incoming.get("setter") or "").strip(),
-        "stars": int(incoming.get("stars") or 0),
-        "repeats": int(incoming.get("repeats") or 0),
-        "isBenchmark": bool(incoming.get("isBenchmark")),
-        "method": lib.nullable_text(incoming.get("method")),
-    }
 
 
 def _validate_fetch(fetch):
@@ -338,8 +328,15 @@ class _Merge:
             self.case("override conflict", inc, [e["id"]], f"{label}: another override already claimed this uuid", None)
             return
         self.consumed_uuids.add(e["uuid"])
+        row = self.by_id.get(e["id"])
+        if row is not None and row["boardsesh_uuid"] == e["uuid"]:
+            # The verdict was applied on an earlier run: the row already exists under this
+            # uuid, so this is an ordinary update, not a second mint.
+            self.consumed_ids.add(e["id"])
+            self._update_returned(row, inc)
+            return
         # The human said it is new: minted as given, curation and all (the invariants still
-        # refuse an id that exists, is retired or is unsafe).
+        # refuse an id that exists under another uuid, is retired or is unsafe).
         self.forced_mints.append((inc, e["id"]))
 
     def _override_accept_holds(self, e, label):
@@ -409,7 +406,7 @@ class _Merge:
                           self.entry("accept_holds", f"accept the {self.date} geometry change on {row['name']!r}",
                                      id=row["id"], hold_key=new_key))
                 return
-        fields = upstream_fields(inc)
+        fields = lib.upstream_fields(inc)
         if any(row[f] != fields[f] for f in lib.UPSTREAM_FIELDS):
             self.report.changed += 1
         row.update(fields)
@@ -540,7 +537,7 @@ class _Merge:
 
     def _mint(self, inc, pid, derived):
         row = {"id": pid, "boardsesh_uuid": inc["uuid"]}
-        row.update(upstream_fields(inc))
+        row.update(lib.upstream_fields(inc))
         row["holds"] = copy.deepcopy(inc["holds"])
         row["hold_key"] = lib.hold_key(inc["holds"])
         row["upstream_last_seen"] = self.date
@@ -691,7 +688,10 @@ def main():
 
     data_dir = os.path.abspath(args.dir)
     snapshots = {(s["layoutId"], s["angle"]): s for _, s in lib.snapshot_files(data_dir)}
-    all_ids = index_ids(snapshots.values())
+    try:
+        all_ids = index_ids(snapshots.values())
+    except ValueError as err:
+        sys.exit(f"refusing to merge: {err}")
     if args.angle is not None:
         angles = [args.angle]
     else:
@@ -723,8 +723,8 @@ def main():
             refused = True
             continue
         print(format_report(report, label))
-        for p in new_snapshot["problems"]:   # the next angle must see this run's mints
-            all_ids.setdefault(p["id"], IdRef(args.layout, angle, p["hold_key"]))
+        for p in new_snapshot["problems"]:   # the next angle must see this run's mints and accepted holds
+            all_ids[p["id"]] = IdRef(args.layout, angle, p["hold_key"])   # ids are unique across slabs (index_ids)
         if args.dry_run:
             print(f"    dry run: {path} not written")
         else:

@@ -293,6 +293,21 @@ class RefusalTest(ShellCase):
         self.assertNotIn(code, (None, 0))
         self.assertEqual(server.writes, [])
 
+    def test_duplicate_ids_in_a_snapshot_refuse_before_any_request(self):
+        self.write([problem("a"), problem("a", name="Twin")])
+        server = ClampingServer([live("a")])
+        code, out = self.run_import(server, "--layout", "3")
+        self.assertIn("duplicate ids", str(code))
+        self.assertEqual(server.requests, [])
+        self.assertEqual(server.writes, [])
+
+    def test_selection_matching_no_snapshot_file_refuses(self):
+        self.write([problem("a")])
+        server = ClampingServer([live("a")])
+        code, out = self.run_import(server, "--layout", "99")
+        self.assertIn("No matching snapshot files", str(code))
+        self.assertEqual(server.writes, [])
+
     def test_unsafe_id_refuses_before_any_filter(self):
         self.write([problem("a"), problem("bad)id,or=1")])
         server = ClampingServer([live("a")])
@@ -340,7 +355,7 @@ class ApplyTest(ShellCase):
         inserts = [problem(f"i{i:04d}") for i in range(600)]
         self.write(inserts + [problem("u1", repeats=99)])
         server = ClampingServer([live("u1")])
-        failing = FailSecondPost(server, http_error(500))
+        failing = FailSecondPost(server, http_error(400))  # non-retryable: a hard failure, not a blip
         code, out = self.run_import(failing, "--layout", "3", "--apply")
         self.assertNotIn(code, (None, 0))
         self.assertEqual(len(posts(server)), 1)

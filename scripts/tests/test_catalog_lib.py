@@ -247,6 +247,53 @@ class LiveRowsTest(unittest.TestCase):
         sleep.assert_called_once()
 
 
+class SbRequestRetryTest(unittest.TestCase):
+    URL = "https://x.supabase.co/rest/v1/catalog_problems?select=source_catalog_id&limit=1000"
+
+    def call(self, failures, rows=1, **kw):
+        server = ClampingServer([live_row(f"{i:05d}") for i in range(rows)], failures=failures)
+        with mock.patch.object(lib, "urlopen", server), mock.patch.object(lib.time, "sleep") as sleep:
+            try:
+                result = lib.sb_request(self.URL, "k", **kw)
+            finally:
+                self.sleep, self.server = sleep, server
+        return result
+
+    def test_urlerror_once_then_success(self):
+        payload, _ = self.call([lib.URLError("reset")])
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(self.sleep.call_count, 1)
+
+    def test_timeout_once_then_success(self):
+        payload, _ = self.call([TimeoutError()])
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(self.sleep.call_count, 1)
+
+    def test_connection_reset_once_then_success(self):
+        payload, _ = self.call([ConnectionResetError()])
+        self.assertEqual(len(payload), 1)
+
+    def test_exhaustion_exits_saying_rerun_is_safe(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self.call([lib.URLError("reset")] * 4, retries=4)
+        message = str(ctx.exception)
+        self.assertIn("re-running", message)
+        self.assertIn("/rest/v1/catalog_problems", message)
+        self.assertNotIn("select=", message)
+        self.assertEqual(len(self.server.requests), 4)
+
+    def test_http_500_and_504_are_retried(self):
+        payload, _ = self.call([http_error(500), http_error(504)])
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(self.sleep.call_count, 2)
+
+    def test_http_400_exits_without_retry(self):
+        with self.assertRaises(SystemExit):
+            self.call([http_error(400)])
+        self.assertEqual(len(self.server.requests), 1)
+        self.sleep.assert_not_called()
+
+
 class OverridesTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
@@ -312,6 +359,11 @@ class IdsAndCurationTest(unittest.TestCase):
         self.assertNotEqual(a, "ac7d98a1-51b6-5048-8e97-7651c5024a2d")
         self.assertTrue(lib.ID_RE.match(a))
         self.assertEqual(len(a), 36)
+
+    def test_id_guard_rejects_a_trailing_newline_and_filter_characters(self):
+        self.assertTrue(lib.ID_RE.match("ac7d98a1-51b6-5048-8e97-7651c5024a2d"))
+        for bad in ("abc\n", "a,b", 'a"b', "a)b", "", "a b"):
+            self.assertIsNone(lib.ID_RE.match(bad), bad)
 
     def test_admitted(self):
         self.assertTrue(lib.admitted({"isBenchmark": True, "repeats": 0}))

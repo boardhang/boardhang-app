@@ -98,14 +98,24 @@ class ShellTest(unittest.TestCase):
         ov = lib.load_overrides(os.path.join(self.dir.name, "overrides.json"))
         self.assertEqual(ov.retired_ids, {"dead"})
 
-    def test_keeps_existing_override_entries(self):
+    def test_keeps_existing_override_entries_and_retired_ids(self):
+        # Retirement is permanent: a re-export only ever adds retired ids, never drops one.
         pin = {"action": "pin", "layout_id": 5, "angle": 40, "id": "p", "field": "isBenchmark", "value": True}
         with open(os.path.join(self.dir.name, "overrides.json"), "w") as f:
-            json.dump({"retired_ids": ["stale"], "entries": [pin]}, f)
+            json.dump({"retired_ids": ["other-slab-tombstone"], "entries": [pin]}, f)
         self.run_export([live_row("a", layout_id=3, angle=40), live_row("d", layout_id=3, angle=40, deleted=True)])
         ov = lib.load_overrides(os.path.join(self.dir.name, "overrides.json"))
-        self.assertEqual(ov.retired_ids, {"d"})
+        self.assertEqual(ov.retired_ids, {"d", "other-slab-tombstone"})
         self.assertEqual(ov.entries, [pin])
+
+    def test_slab_filtered_export_keeps_other_slabs_retired_ids(self):
+        with open(os.path.join(self.dir.name, "overrides.json"), "w") as f:
+            json.dump({"retired_ids": ["x-in-25"], "entries": []}, f)
+        self.run_export([live_row("a", layout_id=3, angle=40), live_row("d", layout_id=3, angle=40, deleted=True),
+                         live_row("x-in-25", layout_id=3, angle=25, deleted=True)],
+                        argv=["--layout", "3", "--angle", "40"])
+        ov = lib.load_overrides(os.path.join(self.dir.name, "overrides.json"))
+        self.assertEqual(ov.retired_ids, {"d", "x-in-25"})
 
     def test_slab_filter(self):
         self.run_export([live_row("a", layout_id=3, angle=40), live_row("b", layout_id=5, angle=25)],
