@@ -39,9 +39,16 @@ describe('visibleSetters', () => {
   })
 
   it('filters the unselected rows by a case-insensitive, trimmed substring of the name', () => {
-    const { rows, hidden } = visibleSetters(options, [], '  KNAPP ')
+    const { rows, hidden, matched } = visibleSetters(options, [], '  KNAPP ')
     expect(rows.map((r) => r.name)).toEqual(['Kyle Knapp', 'kyle knapp'])
     expect(hidden).toBe(0)
+    expect(matched).toBe(2)
+  })
+
+  it('reports zero matches for a query even when selected setters are pinned as rows', () => {
+    const { rows, matched } = visibleSetters(options, ['Ben Moon'], 'zzz')
+    expect(rows.map((r) => r.name)).toEqual(['Ben Moon'])
+    expect(matched).toBe(0)
   })
 
   it('defaults the cap to SETTER_LIST_CAP', () => {
@@ -103,6 +110,22 @@ describe('SetterFilterSheet', () => {
     expect(screen.queryByRole('button', { name: /Filter by Kyle Knapp/ })).toBeNull()
     fireEvent.change(search, { target: { value: 'zzz' } })
     expect(screen.getByText('No setters match “zzz”')).toBeInTheDocument()
+  })
+
+  it('still reports "no matches" for a query when a setter is already selected', () => {
+    renderSheet({ selected: ['Ben Moon'] })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search setters' }), { target: { value: 'zzz' } })
+    // The selected row stays (always removable) AND the empty-search message shows.
+    expect(screen.getByRole('button', { name: 'Remove Ben Moon from the filter' })).toBeInTheDocument()
+    expect(screen.getByText('No setters match “zzz”')).toBeInTheDocument()
+  })
+
+  it('words the cap hint for a narrowed query and for a single hidden setter', () => {
+    const many = Array.from({ length: SETTER_LIST_CAP + 1 }, (_, i) => ({ name: `Setter ${i}`, count: 1 }))
+    renderSheet({ getOptions: () => many })
+    expect(screen.getByText('1 more setter — type to search')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search setters' }), { target: { value: 'setter' } })
+    expect(screen.getByText('1 more match — keep typing to narrow')).toBeInTheDocument()
   })
 
   it('caps the list and says how many more the search reaches', () => {

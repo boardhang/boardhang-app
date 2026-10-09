@@ -36,7 +36,9 @@ export function SetterFilterSheet({ open, onOpenChange, getOptions, selected, on
   const selectedSet = new Set(selected)
   // Compute nothing while closed: the Drawer renders no content, and the thunk is the whole
   // point of keeping the slab pass off the hot path.
-  const { rows, hidden } = open ? visibleSetters(getOptions(), selected, query) : { rows: [], hidden: 0 }
+  const { rows, hidden, matched } = open
+    ? visibleSetters(getOptions(), selected, query)
+    : { rows: [], hidden: 0, matched: 0 }
 
   const toggle = (name: string) => {
     // Live: recompute the set and hand it back immediately (no batched Apply).
@@ -108,9 +110,15 @@ export function SetterFilterSheet({ open, onOpenChange, getOptions, selected, on
             )
           })}
 
-          {rows.length === 0 && (
+          {/* Keyed on `matched`, not `rows`: selected setters are always rows, so with a selection
+              an empty search would otherwise show nothing at all (review finding, 2026-10-09). */}
+          {matched === 0 && (
             <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-              {query.trim() ? `No setters match “${query.trim()}”` : 'No setters on this board yet'}
+              {query.trim()
+                ? `No setters match “${query.trim()}”`
+                : rows.length === 0
+                  ? 'No setters on this board yet'
+                  : null}
             </div>
           )}
 

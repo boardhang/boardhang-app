@@ -15,6 +15,10 @@ export interface VisibleSetters {
   rows: SetterOption[]
   /** Matching unselected setters the cap cut off (0 when everything fits). */
   hidden: number
+  /** How many UNSELECTED setters matched the query at all (before the cap) — the sheet's
+   *  "No setters match" state keys on this, not on `rows`, because selected setters are always
+   *  rows and would otherwise mask an empty search result. */
+  matched: number
 }
 
 /**
@@ -34,7 +38,7 @@ export function visibleSetters(
   const selectedSet = new Set(selected)
   const pinned = selected.map((name) => byName.get(name) ?? { name, count: 0 })
   const rest = options.filter((o) => !selectedSet.has(o.name) && (!q || o.name.toLowerCase().includes(q)))
-  return { rows: [...pinned, ...rest.slice(0, cap)], hidden: Math.max(0, rest.length - cap) }
+  return { rows: [...pinned, ...rest.slice(0, cap)], hidden: Math.max(0, rest.length - cap), matched: rest.length }
 }
 
 /** The row caption under a setter's name — the app's own word is "problems" (the catalog header
