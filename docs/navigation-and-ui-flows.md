@@ -160,12 +160,22 @@ a registry-valid but **un-added** board renders a read-only preview with an "Add
 `q` (search), `grade` (ordinal `min-max` into `FONT_GRADES`, both bounds floored at 6A+ —
 `GRADE_FILTER_FLOOR` — so stray sub-6A+ catalog grades never surface in the filter; the range
 predicate treats them as 6A+), `bench`/`fav` (`1`), `stars`,
-`method`/`holds`/`status`/`list` (comma-joined), `sort`, `angle`, `problem` (open problem id),
-`newSince` (ISO timestamp — see below).
+`method`/`holds`/`status`/`list` (comma-joined), `setter` (comma-joined, each name
+percent-encoded because setter names contain commas), `sort`, `angle`, `problem` (open problem
+id), `newSince` (ISO timestamp — see below).
 `list` is a CSV of saved-list ids the catalog is filtered by (OR'd — a problem passes if it's in
 any); its membership is resolved from the offline lists store and the ids are pruned against the
 board's live lists once loaded (a stale/foreign id self-heals out of the URL, but only after the
-lists load so a valid deep-link survives a cold launch). Every param is **omitted at its default**
+lists load so a valid deep-link survives a cold launch).
+`setter` is the setter facet: an OR over exact (whitespace-trimmed, case-kept) setter names, picked
+in a searchable sheet whose per-setter counts are *faceted* — each is the number of that setter's
+problems that pass every other active filter, so zero-count setters stay listed but dimmed. The
+sheet shows the top 100 by count until you type (`web/src/catalog/SetterFilterSheet.tsx`,
+`setterOptions` in `filters.ts`). Each name is percent-encoded before the comma join, so a
+hand-written link must encode it too: `?setter=Sev-Ron%2010%2C000` (the address bar shows it
+encoded once more by the router). A name that sets nothing on the slab stays selected — captioned
+"No problems match" and removable — rather than self-healing out of the URL like `list`.
+Every param is **omitted at its default**
 via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fills defaults on read.
 `sortSecondary` is deliberately *not* in the URL (fixed tie-breaker).
 

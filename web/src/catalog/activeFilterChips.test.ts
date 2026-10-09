@@ -140,3 +140,22 @@ describe('describeActiveFilters', () => {
     expect(byId['status:sent']).toEqual({ statusFilters: ['unlogged'] })
   })
 })
+
+describe('describeActiveFilters — setters', () => {
+  it('collapses a setter selection to one chip whose removal clears the whole facet', () => {
+    expect(describeActiveFilters(state({ setterFilter: ['Kyle Knapp', 'Ben Moon'] }), READY)).toEqual([
+      { id: 'setters', label: 'Setters (2)', patch: { setterFilter: [] } },
+    ])
+  })
+
+  it('names the setter when exactly one is selected', () => {
+    expect(describeActiveFilters(state({ setterFilter: ['Kyle Knapp'] }), READY)).toEqual([
+      { id: 'setters', label: 'Kyle Knapp', patch: { setterFilter: [] } },
+    ])
+  })
+
+  it('emits the setter chip after the lists chip', () => {
+    const chips = describeActiveFilters(state({ setterFilter: ['x'], listFilter: ['l'] }), READY)
+    expect(chips.map((c) => c.id)).toEqual(['lists', 'setters'])
+  })
+})

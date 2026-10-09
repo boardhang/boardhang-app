@@ -10,7 +10,8 @@
 // URL (the failure mode `validateSearch`-alone has).
 //
 // Encodings (plan §4): booleans as `1` (present) / omitted; grade as ordinal
-// `min-max` into FONT_GRADES; methods/holds comma-joined; angle `0` = "use the
+// `min-max` into FONT_GRADES; methods/holds comma-joined; setters comma-joined with
+// each name percent-encoded (setter names contain commas); angle `0` = "use the
 // board's default". The secondary sort rides `sortThenBy` (a SortKey or `none` for
 // no tiebreak), stripped at its default; a secondary that shares the primary's
 // dimension is dropped on read so URL state matches the "Then by" control.
@@ -19,6 +20,7 @@ import { FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
 import {
   DEFAULT_FILTERS,
   STATUS_KEYS,
+  setterKey,
   sortDimension,
   type FilterState,
   type SortKey,
@@ -53,6 +55,8 @@ export interface CatalogSearch {
   status: string
   /** Comma-joined saved-list ids to filter by (OR'd); `''` = no list filter. */
   list: string
+  /** Comma-joined, percent-encoded setter names to filter by (OR'd); `''` = any setter. */
+  setter: string
   /** Open problem's `source_catalog_id`; `''` = drawer closed. */
   problem: string
   /** New-benchmarks deep link: ISO timestamp; when non-empty, the catalog resolves the events
@@ -75,6 +79,7 @@ export const CATALOG_SEARCH_DEFAULTS: CatalogSearch = {
   holds: '',
   status: '',
   list: '',
+  setter: '',
   problem: '',
   newSince: '',
 }
@@ -108,6 +113,7 @@ export function validateCatalogSearch(raw: Record<string, unknown>): CatalogSear
     holds: str(raw.holds),
     status: str(raw.status),
     list: str(raw.list),
+    setter: str(raw.setter),
     problem: str(raw.problem),
     // Silently drop a malformed timestamp — a hand-edited `?newSince=garbage` renders as the
     // ordinary catalog (KTD6). Date.parse handles the ISO strings the app produces.
@@ -133,6 +139,32 @@ export function decodeStatus(s: string): StatusKey[] {
   if (!s) return []
   const tokens = new Set(s.split(','))
   return STATUS_KEYS.filter((k) => tokens.has(k))
+}
+
+// ─── Setter names <-> comma-joined string ───────────────────────────────────
+
+/** Encode selected setters to a comma-joined string of percent-encoded names, `''` when none.
+ *  Each name is encoded on its own because setter names contain commas ("Sev-Ron 10,000"),
+ *  so a plain join could not be split back. */
+export function encodeSetters(names: string[]): string {
+  return names.map((n) => encodeURIComponent(n)).join(',')
+}
+
+/** Decode a comma-joined setter string into trimmed, deduplicated names in the order given —
+ *  empty tokens dropped, a malformed percent-sequence kept verbatim rather than thrown. */
+export function decodeSetters(s: string): string[] {
+  if (!s) return []
+  const out: string[] = []
+  for (const token of s.split(',')) {
+    let name: string
+    try {
+      name = setterKey(decodeURIComponent(token))
+    } catch {
+      name = setterKey(token)
+    }
+    if (name && !out.includes(name)) out.push(name)
+  }
+  return out
 }
 
 // ─── Grade ordinal <-> "min-max" ────────────────────────────────────────────
@@ -180,6 +212,7 @@ export function filtersToSearch(f: FilterState): Omit<CatalogSearch, 'angle' | '
     holds: f.holdsFilter.join(','),
     status: encodeStatus(f.statusFilters),
     list: f.listFilter.join(','),
+    setter: encodeSetters(f.setterFilter),
   }
 }
 
@@ -204,5 +237,6 @@ export function searchToFilters(s: CatalogSearch): FilterState {
     holdsFilter: s.holds ? s.holds.split(',').filter(Boolean) : [],
     statusFilters: decodeStatus(s.status),
     listFilter: s.list ? s.list.split(',').filter(Boolean) : [],
+    setterFilter: decodeSetters(s.setter),
   }
 }

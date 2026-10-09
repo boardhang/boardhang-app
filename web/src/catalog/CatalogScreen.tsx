@@ -29,7 +29,14 @@ import { ProblemDetail } from './ProblemDetail'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { applyFilters, DEFAULT_FILTERS, type FilterContext, type FilterState } from './filters'
+import {
+  applyFilters,
+  DEFAULT_FILTERS,
+  setterOptions,
+  type FilterContext,
+  type FilterState,
+  type SetterOption,
+} from './filters'
 import { filtersToSearch, searchToFilters } from './catalogSearch'
 import { saveSeed } from './filterSeed'
 import { useFavorites } from './favoritesStore'
@@ -351,6 +358,24 @@ export function CatalogScreen() {
   )
   const displayed = useMemo(() => transform(problems), [transform, problems])
 
+  // The setter picker's rows: every setter on the slab (within a ?newSince view, on those
+  // problems) with the count of theirs that pass every OTHER filter. A lazily-evaluated thunk,
+  // cached per (slab, filters, context): the extra slab pass and the sort of up to ~7k setters
+  // run only while a setter sheet is actually open, never for a filter change nobody is looking
+  // at. Keyed off the same inputs as `transform`, so a count can never lag the list.
+  const getSetterOptions = useMemo(() => {
+    let cache: SetterOption[] | null = null
+    return () => {
+      if (!cache) {
+        const scope = newSinceReadyIds
+          ? problems.filter((p) => newSinceReadyIds.has(p.source_catalog_id))
+          : problems
+        cache = setterOptions(scope, effectiveFilters, context)
+      }
+      return cache
+    }
+  }, [problems, effectiveFilters, context, newSinceReadyIds])
+
   // Banner action: capture the current watermark (defines the URL's slab-scoped view), reset
   // other filters, then advance the watermark so the banner + dot clear in the same frame.
   const openNewBenchmarks = useCallback(() => {
@@ -459,6 +484,7 @@ export function CatalogScreen() {
             statusReady={statusReady}
             signedOut={signedOut}
             boardLists={boardLists}
+            getSetterOptions={getSetterOptions}
             layoutId={board.layoutId}
             gradeSpan={gradeSpan}
             board={board}
@@ -537,7 +563,16 @@ export function CatalogScreen() {
       <div className="pointer-events-none sticky bottom-4 z-30 mt-auto h-0">
         <div className="absolute bottom-0 right-0 flex flex-col items-end gap-3">
           <RecentsSheet board={board} angle={angle} problems={problems} favoriteIds={favoriteIds} sentIds={sentIds} onSelect={openRecent} />
-          <FilterSheet state={filters} onChange={setFilters} board={board} gradeSpan={gradeSpan} statusReady={statusReady} signedOut={signedOut} boardLists={boardLists} />
+          <FilterSheet
+            state={filters}
+            onChange={setFilters}
+            board={board}
+            gradeSpan={gradeSpan}
+            statusReady={statusReady}
+            signedOut={signedOut}
+            boardLists={boardLists}
+            getSetterOptions={getSetterOptions}
+          />
         </div>
       </div>
 

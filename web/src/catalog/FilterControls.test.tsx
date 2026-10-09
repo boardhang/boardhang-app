@@ -45,6 +45,10 @@ function setup(
       statusReady={auth.statusReady ?? true}
       signedOut={auth.signedOut ?? false}
       boardLists={boardLists}
+      getSetterOptions={() => [
+        { name: 'Kyle Knapp', count: 3 },
+        { name: 'Ben Moon', count: 1 },
+      ]}
     />,
   )
   return { onChange }
@@ -140,10 +144,32 @@ function sessionSetup(over: Partial<SessionFilterUI> = {}) {
       statusReady
       signedOut={false}
       boardLists={[]}
+      getSetterOptions={() => []}
     />,
   )
   return { rows, onRefresh }
 }
+
+describe('FilterControls — Setter row', () => {
+  it('reads "Any" with no selection', () => {
+    setup()
+    expect(screen.getByRole('button', { name: 'Filter by setter' })).toHaveTextContent('Any')
+  })
+
+  it('shows the single selected name, or "n selected"', () => {
+    setup({ setterFilter: ['Kyle Knapp'] })
+    expect(screen.getByRole('button', { name: 'Filter by setter' })).toHaveTextContent('Kyle Knapp')
+  })
+
+  it('opens the setter sheet, and a tap in it writes setterFilter through onChange', () => {
+    const { onChange } = setup({ setterFilter: ['Kyle Knapp', 'Ben Moon'] })
+    const opener = screen.getByRole('button', { name: 'Filter by setter' })
+    expect(opener).toHaveTextContent('2 selected')
+    fireEvent.click(opener)
+    fireEvent.click(screen.getByRole('button', { name: /Remove Ben Moon/ }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ setterFilter: ['Kyle Knapp'] }))
+  })
+})
 
 describe('FilterControls — per-member session status (U5)', () => {
   it('renders one row per member, self labeled "You" and first, each an accessible group', () => {

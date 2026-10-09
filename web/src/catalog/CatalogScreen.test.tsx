@@ -524,3 +524,39 @@ describe('CatalogScreen — sticky session bar (#98)', () => {
     expect(start.closest('.app-header')).toBeNull()
   })
 })
+
+describe('CatalogScreen — setter filter over routing', () => {
+  // 'a' is Bob's; Alice set the other two (one with the stray trailing space real catalog
+  // rows carry, which must fold into the same setter).
+  const slab = [
+    { ...problem('a', 'Visible', 5, [H(0, 1), H(2, 3)]), setter: 'Bob' },
+    { ...problem('b', 'HiddenB', 0, [H(0, 1)]), setter: 'Alice ' },
+    { ...problem('c', 'HiddenC', 0, [H(4, 5)]), setter: 'Alice' },
+  ]
+  const useSetterSlab = () =>
+    vi.mocked(useSlab).mockReturnValue({ problems: slab, loading: false, degraded: false, resync: vi.fn().mockResolvedValue(true) })
+
+  it('narrows the list to the selected setter from a ?setter= deep link', async () => {
+    addBoard(LAYOUT)
+    useSetterSlab()
+    renderWithRouter(`/board/${LAYOUT}/catalog?setter=Bob`)
+    expect(await screen.findByText('Visible')).toBeInTheDocument()
+    expect(screen.queryByText('HiddenB')).toBeNull()
+    expect(screen.queryByText('HiddenC')).toBeNull()
+  })
+
+  it('captions the setter sheet with counts under the OTHER active filters, ignoring its own', async () => {
+    addBoard(LAYOUT)
+    useSetterSlab()
+    // stars=5 passes only Bob's problem; Alice's two both fail it. Bob is also selected, which
+    // must not zero Alice (the setter filter is excluded from its own counts).
+    renderWithRouter(`/board/${LAYOUT}/catalog?stars=5&setter=Bob`)
+    expect(await screen.findByText('Visible')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Filter by setter' }))
+    expect(await screen.findByRole('button', { name: 'Remove Bob from the filter' })).toHaveTextContent('1 problem')
+    // One "Alice" row (trailing space folded), zero under stars=5 — listed, not dropped.
+    expect(screen.getByRole('button', { name: 'Filter by Alice, No problems match' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^Filter by Alice/ })).toHaveLength(1)
+  })
+})

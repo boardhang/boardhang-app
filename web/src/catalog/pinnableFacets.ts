@@ -3,7 +3,7 @@
 //
 // A facet is either a `toggle` (a boolean flipped inline in the nav — Benchmarks, Favorites)
 // or `rich` (opens a popover / picker in the nav — Grade, Holds, Sort, min-stars, Status,
-// Methods). Lists is a rich opener but is only offered when the board actually has lists.
+// Methods, Setter). Lists is a rich opener but is only offered when the board actually has lists.
 //
 // CANONICAL_ORDER is the fixed left-to-right order pinned controls render in, so a pinned
 // filter always sits in the same spot (muscle memory). It is intentionally NOT selection
@@ -13,6 +13,7 @@ import { FONT_GRADES } from '../board/grades'
 import {
   BENCHMARK_LABEL,
   FAVORITES_LABEL,
+  SETTER_LABEL,
   SORT_LABELS,
   STATUS_LABELS,
   type FilterState,
@@ -29,6 +30,7 @@ export type PinnableFacetId =
   | 'status'
   | 'methods'
   | 'lists'
+  | 'setters'
 
 export type FacetKind = 'toggle' | 'rich'
 
@@ -51,6 +53,8 @@ export const CANONICAL_ORDER: readonly PinnableFacet[] = [
   { id: 'status', label: 'Ascent status', kind: 'rich' },
   { id: 'methods', label: 'Method', kind: 'rich' },
   { id: 'lists', label: 'Lists', kind: 'rich' },
+  // Appended last so no existing pin moves (muscle memory is the point of the fixed order).
+  { id: 'setters', label: SETTER_LABEL, kind: 'rich' },
 ]
 
 export const FACET_BY_ID: Record<PinnableFacetId, PinnableFacet> = Object.fromEntries(
@@ -131,7 +135,16 @@ export function isFacetActive(id: PinnableFacetId, s: FilterState, ctx: FacetCon
       return s.methods.length > 0
     case 'lists':
       return s.listFilter.length > 0
+    case 'setters':
+      return s.setterFilter.length > 0
   }
+}
+
+/** The collapsed label for a setter selection: the one name when one is picked (the most useful
+ *  thing a header can say), `Setters (n)` otherwise. Shared by the pinned control and the chip. */
+export function settersLabel(names: string[]): string {
+  if (names.length === 0) return SETTER_LABEL
+  return names.length === 1 ? names[0] : `Setters (${names.length})`
 }
 
 /** The label shown on a rich facet's nav control: the collapsed active value when the facet is
@@ -168,6 +181,8 @@ export function facetActiveLabel(id: PinnableFacetId, s: FilterState, ctx?: Face
     }
     case 'sort':
       return SORT_LABELS[s.sortPrimary]
+    case 'setters':
+      return settersLabel(s.setterFilter)
     default:
       return FACET_BY_ID[id].label
   }
@@ -212,6 +227,8 @@ export function facetClearPatch(id: PinnableFacetId): Partial<FilterState> {
       return { methods: [] }
     case 'lists':
       return { listFilter: [] }
+    case 'setters':
+      return { setterFilter: [] }
     case 'benchmarks':
       return { benchmarkOnly: false }
     case 'favorites':
