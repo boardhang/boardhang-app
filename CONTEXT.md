@@ -40,8 +40,8 @@ fully offline; sign-in and the first catalog sync need network.
 | `shared/spec/` | **Markdown specs only** (BLE, geometry, data model). Not shared code — `web/` reimplements them in TS. |
 | `supabase/` | Postgres migrations backing accounts/profiles, the logbook, and the **catalog** (`0006_catalog_problems.sql`). |
 | `docs/` | Subsystem deep dives + index ([docs/README.md](docs/README.md)). |
-| `scripts/` | Python catalog fetchers + `import_catalog.py` (upload to Supabase) + board-art importers. |
-| `catalog-data/` | Staged board catalogs — the input to `scripts/import_catalog.py`, which upserts them into Supabase. |
+| `scripts/` | Python catalog pipeline — `fetch_boardsesh.py` → `merge_catalog.py` → `import_catalog.py` (diff-only deploy to Supabase) on the shared `catalog_lib.py`, backup/restore, plus board-art importers. |
+| `catalog-data/` | The **canonical** problem catalog: one committed snapshot per board+angle (sorted by id, one problem per line) plus `overrides.json` (identity verdicts). Supabase is a deployment of these files; a refresh is a PR whose diff is the review. |
 
 ## Build & run
 
@@ -87,9 +87,10 @@ needs a secure context — desktop Chrome/Edge, Android Chrome, or iPhone via Bl
   points at, so `npm run dev` never touches live data. Vercel injects its own
   env at build time and ignores `web/.env`, so deploys always hit prod regardless of the local
   file. To recreate/reseed a dev project: apply every `supabase/migrations/*.sql` in order, then
-  seed with `scripts/import_catalog.py --all` (see
-  [docs/catalog-data-pipeline.md](docs/catalog-data-pipeline.md)). The **service_role** key it
-  needs is a full-access secret — pass it inline, never commit it, rotate it if leaked.
+  deploy the committed snapshots with `scripts/import_catalog.py --all --apply` (every row is an
+  insert on an empty table; see [docs/catalog-data-pipeline.md](docs/catalog-data-pipeline.md)).
+  The **service_role** key it needs is a full-access secret — pass it inline, never commit it,
+  rotate it if leaked.
 - **Branch reality:** iOS auth is on `main`; **web auth is only on `feat/pwa-login`**, unmerged.
   Don't hunt for Supabase code in `web/` on `main` — there isn't any.
 

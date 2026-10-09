@@ -1,6 +1,6 @@
 """Unit tests for the pure merge in scripts/merge_catalog.py (no network, no DB).
 
-The first block ports every scenario of test_reconcile_catalog_renames.py into the new world:
+The first block ports every scenario of the retired rename reconciler's tests into the new world:
 "staged" rows are the incoming fetch, "live" rows are the snapshot, the repeats tier of the
 evidence ladder is gone, and a tombstoned counterpart lives in overrides.retired_ids instead
 of the snapshot. The rest are the plan's scenarios (U3) and the shell.
@@ -113,7 +113,7 @@ class MergeCase(unittest.TestCase):
         return [c.kind for c in exc.cases]
 
 
-# ── ported from test_reconcile_catalog_renames.py ─────────────────────────────────────
+# ── ported from the retired rename reconciler's tests (the evidence-ladder spec) ───────
 
 class EvidenceTest(unittest.TestCase):
     def test_name_beats_setter_and_repeats_are_not_evidence(self):
