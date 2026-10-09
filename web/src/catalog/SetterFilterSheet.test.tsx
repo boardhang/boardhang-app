@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { SetterOption } from './filters'
 import { SetterFilterSheet } from './SetterFilterSheet'
-import { SETTER_LIST_CAP, visibleSetters } from './visibleSetters'
+import { SETTER_LIST_CAP, problemCountLabel, visibleSetters } from './visibleSetters'
 
 const options: SetterOption[] = [
   { name: 'Kyle Knapp', count: 512 },
@@ -52,16 +52,30 @@ describe('visibleSetters', () => {
   })
 })
 
+describe('problemCountLabel', () => {
+  it('spells the count out in the app\'s own word, singular at one, and says so at zero', () => {
+    expect(problemCountLabel(512)).toBe('512 problems')
+    expect(problemCountLabel(1)).toBe('1 problem')
+    expect(problemCountLabel(0)).toBe('No problems match')
+  })
+})
+
 describe('SetterFilterSheet', () => {
-  it('lists setters with their counts and marks the selected ones pressed', () => {
+  it('lists setters with the count captioned under the name and marks the selected ones pressed', () => {
     renderSheet({ selected: ['Ben Moon'] })
     expect(screen.getByRole('button', { name: 'Remove Ben Moon from the filter' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    const kyle = screen.getByRole('button', { name: 'Filter by Kyle Knapp, 512 climbs' })
+    const kyle = screen.getByRole('button', { name: 'Filter by Kyle Knapp, 512 problems' })
     expect(kyle).toHaveAttribute('aria-pressed', 'false')
-    expect(kyle).toHaveTextContent('512')
+    expect(kyle).toHaveTextContent('512 problems')
+    expect(screen.getByRole('button', { name: /kyle knapp, No problems match/ })).toHaveTextContent('No problems match')
+  })
+
+  it('has no description line — the captions explain the numbers', () => {
+    renderSheet()
+    expect(screen.queryByText(/pass your other filters/)).toBeNull()
   })
 
   it('does not compute the options while closed', () => {

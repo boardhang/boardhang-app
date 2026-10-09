@@ -21,7 +21,7 @@ any number of them (OR), and the list narrows to those setters' problems. Tier: 
 - **Multi-select, OR** — like Lists and Method. Header chip reads the name when one setter is
   picked, `Setters (n)` otherwise.
 - **Counts shrink with the other active filters** (faceted counts): a setter's number is how many
-  of their climbs pass every filter *except* the setter filter itself, so ticking one setter never
+  of their problems pass every filter *except* the setter filter itself, so ticking one setter never
   zeroes the others. Setters with 0 under the current filters stay in the list, greyed, at the
   bottom.
 - **Before typing, the list shows the top 100 setters by count** with a hint that the rest are
@@ -48,10 +48,11 @@ any number of them (OR), and the list narrows to those setters' problems. Tier: 
    `setters` appended to `CANONICAL_ORDER` (after Lists, so no existing pin moves), active/label/
    clear-patch cases, `VALID` entry, one collapsed chip.
 4. **`SetterFilterSheet.tsx`** (new) — nested shadcn Drawer: title, search `Input`, Clear all,
-   rows (round check + name + tabular count, dimmed at 0), top-100 cap with a "N more — type to
-   search" hint, selected setters pinned to the top so a selection is always removable even when
-   it sits past the cap or is absent from this slab. Live toggles (no Apply), like
-   `ListFilterSheet`.
+   rows (round check + name with the count captioned underneath as "227 problems" / "No problems
+   match", dimmed at 0 — the caption replaces a description line; picked from four prototyped row
+   layouts), top-100 cap with a "N more — type to search" hint, selected setters pinned to the
+   top so a selection is always removable even when it sits past the cap or is absent from this
+   slab. Live toggles (no Apply), like `ListFilterSheet`.
 5. **`FilterControls.tsx`** — "Setter" `Field` with a Holds-style opener row ("Any" / name /
    "n selected") that opens the sheet. **`FilterPillBar.tsx`** — `setters` pinned control opens
    the same sheet; `FacetControlPopover`'s facet union excludes it like Lists. **`FilterSheet` /

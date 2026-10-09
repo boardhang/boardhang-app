@@ -36,3 +36,10 @@ export function visibleSetters(
   const rest = options.filter((o) => !selectedSet.has(o.name) && (!q || o.name.toLowerCase().includes(q)))
   return { rows: [...pinned, ...rest.slice(0, cap)], hidden: Math.max(0, rest.length - cap) }
 }
+
+/** The row caption under a setter's name — the app's own word is "problems" (the catalog header
+ *  counts "62 problems"); zero says so in words rather than showing a bare 0. */
+export function problemCountLabel(count: number): string {
+  if (count === 0) return 'No problems match'
+  return `${count} ${count === 1 ? 'problem' : 'problems'}`
+}

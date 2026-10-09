@@ -5,22 +5,18 @@
 // ListFilterSheet. The rows come from CatalogScreen (`setterOptions` in filters.ts) through a
 // lazy thunk, so the slab pass runs only while this sheet is open.
 //
-// The list is CAPPED at the top SETTER_LIST_CAP by count until you type (see visibleSetters.ts
-// for the cap, the query match and the selected-first ordering); a footer says how many more the
-// search box reaches.
+// Row layout (chosen from four prototypes, 2026-10-09): the name with the count spelled out as a
+// caption underneath ("227 problems"), so the number explains itself without a description line
+// at the top. The list is CAPPED at the top SETTER_LIST_CAP by count until you type (see
+// visibleSetters.ts for the cap, the query match and the selected-first ordering); a footer says
+// how many more the search box reaches.
 
 import { useState } from 'react'
 import { Check } from 'lucide-react'
 import type { SetterOption } from './filters'
-import { visibleSetters } from './visibleSetters'
+import { problemCountLabel, visibleSetters } from './visibleSetters'
 import { Button } from '@/components/ui/button'
-import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from '@/components/ui/drawer'
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
@@ -65,9 +61,6 @@ export function SetterFilterSheet({ open, onOpenChange, getOptions, selected, on
               </Button>
             )}
           </div>
-          <DrawerDescription className="text-left">
-            Show only problems set by the people you pick. Counts are climbs that also pass your other filters.
-          </DrawerDescription>
           <Input
             type="search"
             value={query}
@@ -85,18 +78,15 @@ export function SetterFilterSheet({ open, onOpenChange, getOptions, selected, on
             // Zero under the current filters: still listed (this is who set on the board), but
             // dimmed so the eye lands on the setters that would actually show something.
             const empty = row.count === 0
+            const caption = problemCountLabel(row.count)
             return (
               <button
                 key={row.name}
                 type="button"
                 aria-pressed={isOn}
-                aria-label={
-                  isOn
-                    ? `Remove ${row.name} from the filter`
-                    : `Filter by ${row.name}, ${row.count} ${row.count === 1 ? 'climb' : 'climbs'}`
-                }
+                aria-label={isOn ? `Remove ${row.name} from the filter` : `Filter by ${row.name}, ${caption}`}
                 onClick={() => toggle(row.name)}
-                className="flex w-full min-w-0 items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors hover:bg-accent/50"
+                className="flex w-full min-w-0 items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/50"
               >
                 <span
                   className={cn(
@@ -106,21 +96,13 @@ export function SetterFilterSheet({ open, onOpenChange, getOptions, selected, on
                 >
                   {isOn && <Check className="size-3.5" />}
                 </span>
-                <span
-                  className={cn(
-                    'min-w-0 flex-1 truncate text-sm font-medium',
-                    empty && !isOn && 'text-muted-foreground',
-                  )}
-                >
-                  {row.name}
-                </span>
-                <span
-                  className={cn(
-                    'shrink-0 text-xs tabular-nums',
-                    empty ? 'text-muted-foreground/60' : 'text-muted-foreground',
-                  )}
-                >
-                  {row.count}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className={cn('truncate text-sm font-medium', empty && !isOn && 'text-muted-foreground')}>
+                    {row.name}
+                  </span>
+                  <span className={cn('text-xs tabular-nums', empty ? 'text-muted-foreground/60' : 'text-muted-foreground')}>
+                    {caption}
+                  </span>
                 </span>
               </button>
             )
