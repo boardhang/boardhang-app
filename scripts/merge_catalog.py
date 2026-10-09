@@ -168,25 +168,18 @@ def evidence(incoming, row):
     return None
 
 
-def _nullable_text(value):
-    """'' -> None on the two nullable text fields, as the seed export stores them."""
-    if value is None:
-        return None
-    return str(value) or None
-
-
 def upstream_fields(incoming):
     """The upstream-owned fields of a fetch row, normalized like `lib.problem_from_live` so
     a re-run and the seed agree byte for byte (R9)."""
     return {
         "name": incoming.get("name") or "",
         "grade": incoming.get("grade") or "",
-        "userGrade": _nullable_text(incoming.get("userGrade")),
+        "userGrade": lib.nullable_text(incoming.get("userGrade")),
         "setter": (incoming.get("setter") or "").strip(),
         "stars": int(incoming.get("stars") or 0),
         "repeats": int(incoming.get("repeats") or 0),
         "isBenchmark": bool(incoming.get("isBenchmark")),
-        "method": _nullable_text(incoming.get("method")),
+        "method": lib.nullable_text(incoming.get("method")),
     }
 
 
@@ -524,7 +517,7 @@ class _Merge:
                 # id would make the import un-delete the tombstone (KTD6).
                 twins = self._absent_twins(inc)
                 self.case("retired id", inc, [uuid],
-                          f"its uuid is a retired id (tombstoned in prod); minting it would un-delete the tombstone",
+                          "its uuid is a retired id (tombstoned in prod); minting it would un-delete the tombstone",
                           self.entry("new", f"{inc.get('name')!r} re-keyed to the retired id; minted fresh",
                                      uuid=uuid, id=fresh),
                           self.entry("match", f"{inc.get('name')!r} is {twins[0]['name']!r} re-keyed",
@@ -702,7 +695,7 @@ def main():
     if args.angle is not None:
         angles = [args.angle]
     else:
-        angles = sorted(a for (l, a) in snapshots if l == args.layout)
+        angles = sorted(angle for (layout, angle) in snapshots if layout == args.layout)
         if not angles:
             ap.error(f"no snapshot for layout {args.layout} in {data_dir}; pass --angle (and --new-slab to bootstrap)")
     if args.fetch and len(angles) != 1:

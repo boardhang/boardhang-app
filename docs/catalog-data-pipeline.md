@@ -291,6 +291,10 @@ slabs, three tombstones skipped and recorded as retired ids). It is only needed 
 shape changes and every slab has to be re-exported; a refresh never runs it. It reads with the anon
 key and writes nothing to prod.
 
+The seed PR's acceptance merges (2024 @ 40° and @ 25°, Mini 2025) ran against scratch copies and
+dry runs, never the committed snapshots or prod, so every snapshot still carries the stats prod had
+on 2026-10-09 and the 25° slabs their old angle-specific uuids until each slab's first refresh PR.
+
 ## PWA cache durability and repair
 
 `web/src/catalog/catalogSync.ts` pages a slab down 1000 rows at a time and **commits each page as

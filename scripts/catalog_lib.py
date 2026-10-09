@@ -142,7 +142,7 @@ def norm_text(s):
 
 # ── row normalization (the import diff compares exactly this shape on both sides) ────────
 
-def _nullable_text(value):
+def nullable_text(value):
     """Collapse '' to null on the two nullable text columns so a missing method and an empty
     one never diff as a change."""
     if value is None:
@@ -159,12 +159,12 @@ def row_from_problem(problem, layout_id, angle, deleted=False):
         "angle": angle,
         "name": problem.get("name") or "",
         "grade": problem.get("grade") or "",
-        "user_grade": _nullable_text(problem.get("userGrade")),
+        "user_grade": nullable_text(problem.get("userGrade")),
         "setter": (problem.get("setter") or "").strip(),
         "stars": int(problem.get("stars") or 0),
         "repeats": int(problem.get("repeats") or 0),
         "is_benchmark": bool(problem.get("isBenchmark")),
-        "method": _nullable_text(problem.get("method")),
+        "method": nullable_text(problem.get("method")),
         "holds": problem.get("holds") or [],
         "deleted": bool(deleted),
     }
@@ -178,12 +178,12 @@ def row_from_live(row):
         "angle": row["angle"],
         "name": row.get("name") or "",
         "grade": row.get("grade") or "",
-        "user_grade": _nullable_text(row.get("user_grade")),
+        "user_grade": nullable_text(row.get("user_grade")),
         "setter": (row.get("setter") or "").strip(),
         "stars": int(row.get("stars") or 0),
         "repeats": int(row.get("repeats") or 0),
         "is_benchmark": bool(row.get("is_benchmark")),
-        "method": _nullable_text(row.get("method")),
+        "method": nullable_text(row.get("method")),
         "holds": row.get("holds") or [],
         "deleted": bool(row.get("deleted")),
     }
@@ -198,12 +198,12 @@ def problem_from_live(row):
         "boardsesh_uuid": row["source_catalog_id"],
         "name": row.get("name") or "",
         "grade": row.get("grade") or "",
-        "userGrade": _nullable_text(row.get("user_grade")),
+        "userGrade": nullable_text(row.get("user_grade")),
         "setter": (row.get("setter") or "").strip(),
         "stars": int(row.get("stars") or 0),
         "repeats": int(row.get("repeats") or 0),
         "isBenchmark": bool(row.get("is_benchmark")),
-        "method": _nullable_text(row.get("method")),
+        "method": nullable_text(row.get("method")),
         "holds": holds,
         "hold_key": hold_key(holds),
         "upstream_last_seen": None,
