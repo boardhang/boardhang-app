@@ -38,8 +38,16 @@ Two safety behaviours from the ce-doc-review:
     can't self-conflict — and we can't PostgREST `on_conflict` that partial index anyway
     (Postgres won't infer one as an ON CONFLICT arbiter; a stray race collision is skipped
     per-row). On a YouTube quota error (403/429) the run stops cleanly — resume tomorrow.
-    Below-cap problems ARE re-searched by later runs (100 units each; there's no per-problem
-    "last searched" state) — batch runs with --limit and let quota pace the tail.
+
+Search log: a below-cap problem is NOT re-searched on the next run. Most problems never reach
+the cap (YouTube has fewer than PER_PROBLEM_CAP clips of them, or none whose title names the
+problem), and a repeat search returns the same clips already stored — so without a memory the
+most-repeated below-cap problems eat the whole daily quota (~99 searches) on every run and the
+queue never advances. Each completed search is dated in
+`catalog-data/.beta_searched_<board>.json`, and the problem sits out RETRY_AFTER_DAYS (new
+clips do get uploaded) before it is searched again; `--retry-after-days 0` ignores the log.
+The log is LOCAL to the machine running the seed — a fresh checkout (the GitHub Actions seed
+mode) starts without one.
 
 Boards: seed the DEFAULT board (Mini 2025) first; 2024, 2019 Masters, 2017 Masters, and 2016
 are separate runs — pick via `--board`.
@@ -59,6 +67,10 @@ Examples
   # dry run (offline: no YouTube calls, no quota, no keys) — preview WHICH benchmarks run:
   python3 scripts/seed_beta_videos.py --board mini2025 --limit 20 --dry-run
 
+  # re-search everything below the cap, ignoring the search log (e.g. after a matching change):
+  YOUTUBE_API_KEY=… SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
+      python3 scripts/seed_beta_videos.py --board mini2025 --retry-after-days 0
+
   # re-validate stored clips and soft-delete dead ones (freshness / seed-rot cleanup):
   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… YOUTUBE_API_KEY=… \
       python3 scripts/seed_beta_videos.py --revalidate
@@ -68,6 +80,7 @@ Examples
       python3 scripts/seed_beta_videos.py --enrich-pending
 """
 import argparse
+import datetime
 import json
 import os
 import re
@@ -82,6 +95,7 @@ VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CANDIDATES = 25         # top-N search hits to consider per problem (search.list costs the
                         # same 100 units for 1 or 50 results, so depth is quota-free)
 PER_PROBLEM_CAP = 6     # max LIVE seed videos per problem — a cap, not a target
+RETRY_AFTER_DAYS = 30   # a searched problem sits out this long before it's searched again
 NAME_MIN_SPECIFIC = 6   # normalized-name length at/above which a match auto-approves
 SHORT_MAX_SECS = 60     # <= this = a "Short"
 PAGE = 1000             # hosted PostgREST's `db-max-rows` — every response is clamped to this
@@ -234,6 +248,39 @@ def select_new(matches, seen, need):
     return out
 
 
+# ── search log (local: which problems were searched, and when) ───────────────
+def search_log_path(catalog_path, board):
+    """The log sits beside the catalog file, next to the `.beta_matches_<board>.json` sidecar."""
+    return os.path.join(os.path.dirname(os.path.abspath(catalog_path)),
+                        f".beta_searched_{board}.json")
+
+
+def load_search_log(path):
+    """{problem id: ISO date of its last completed search}; {} when there's no log yet."""
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return json.load(f)
+
+
+def save_search_log(path, log):
+    """Atomic write (temp file + rename): the log is loaded before any search happens, so a run
+    killed mid-dump must not leave a truncated file that makes every later run crash on load."""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(log, f, indent=0, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def searched_recently(last, today, retry_after_days):
+    """True while a problem's last search (ISO date, or None if never) is inside the cool-down.
+    One search already takes every confident match YouTube has up to the problem's shortfall,
+    so searching again before new clips could have been uploaded only re-finds stored ones."""
+    if not last:
+        return False
+    return (today - datetime.date.fromisoformat(last)).days < retry_after_days
+
+
 # ── Supabase (service role) ──────────────────────────────────────────────────
 def _sb_headers(key, extra=None):
     h = {"Content-Type": "application/json", "apikey": key, "Authorization": f"Bearer {key}"}
@@ -356,7 +403,8 @@ def run_seed(args, yt_key, base_url, sb_key):
     if not os.path.exists(path):
         sys.exit(f"No catalog file: {path}")
 
-    benchmarks = [p for p in json.load(open(path))["problems"] if p.get("isBenchmark")]
+    with open(path) as f:
+        benchmarks = [p for p in json.load(f)["problems"] if p.get("isBenchmark")]
     benchmarks.sort(key=lambda p: p.get("repeats", 0), reverse=True)
 
     # A real run always reads the top-up state. A dry run reads it too WHEN Supabase creds
@@ -366,9 +414,19 @@ def run_seed(args, yt_key, base_url, sb_key):
     live, seen = seed_state(base_url, sb_key) if (read_db or not args.dry_run) else ({}, {})
     cap = args.cap
     at_cap = sum(1 for p in benchmarks if live.get(p["id"], 0) >= cap)
-    todo = [p for p in benchmarks if live.get(p["id"], 0) < cap][:args.limit]
+    below = [p for p in benchmarks if live.get(p["id"], 0) < cap]
+    # Skip below-cap problems searched inside the cool-down — a repeat search only re-finds
+    # the clips already stored, and without this the same head of the queue burns every run.
+    log_path = search_log_path(path, args.board)
+    log = load_search_log(log_path)
+    today = datetime.date.today()
+    due = [p for p in below
+           if not searched_recently(log.get(p["id"]), today, args.retry_after_days)]
+    todo = due[:args.limit]
     print(f"{args.board} @{args.angle}°: {len(benchmarks)} benchmarks, "
-          f"{at_cap} at the {cap}-video cap → processing next {len(todo)} (limit {args.limit})")
+          f"{at_cap} at the {cap}-video cap, {len(below) - len(due)} below it but searched in "
+          f"the last {args.retry_after_days} days (skipped) → processing next {len(todo)} "
+          f"of {len(due)} (limit {args.limit})")
 
     if args.dry_run:
         # Offline preview — no YouTube calls (so zero quota) and no writes. Shows WHICH benchmarks
@@ -383,6 +441,7 @@ def run_seed(args, yt_key, base_url, sb_key):
         return
 
     rows, approved, pending, missed = [], 0, 0, 0
+    matched_ids = []  # logged as searched only once their rows are safely inserted (below)
     try:
         for i, p in enumerate(todo, 1):
             name = p.get("name") or ""
@@ -392,8 +451,10 @@ def run_seed(args, yt_key, base_url, sb_key):
                              seen.get(p["id"], set()), need)
             if not new:
                 missed += 1
+                log[p["id"]] = today.isoformat()
                 print(f"  {i:>3}. ——   {name[:40]}  (no new confident match)")
                 continue
+            matched_ids.append(p["id"])
             # Manual-review gate — same gate for EVERY rank, per the top-up spec: auto-approve
             # ONLY a DISTINCTIVE name (not short/generic) whose matched title actually NAMES
             # THIS BOARD. A short name, or a match on a title that doesn't mention the board,
@@ -424,6 +485,8 @@ def run_seed(args, yt_key, base_url, sb_key):
 
     print(f"\nMatched {len(rows)} clip(s) ({approved} approved, {pending} held for review); "
           f"{missed} problem(s) with no new match.")
+    if missed:
+        save_search_log(log_path, log)  # no-match searches are final — log them now
     if not rows:
         return
 
@@ -437,6 +500,11 @@ def run_seed(args, yt_key, base_url, sb_key):
 
     n = insert_rows(base_url, sb_key, rows)
     print(f"Inserted {n} beta rows.")
+    # Matched problems join the log only now: had the insert failed (it exits), the next run
+    # must search them again rather than skip them while their clips were never stored.
+    for pid in matched_ids:
+        log[pid] = today.isoformat()
+    save_search_log(log_path, log)
 
 
 def run_from_file(args, base_url, sb_key):
@@ -564,6 +632,9 @@ def main():
     ap.add_argument("--cap", type=int, default=PER_PROBLEM_CAP,
                     help="max live seed videos per problem — each run tops problems up to "
                          f"this (default {PER_PROBLEM_CAP})")
+    ap.add_argument("--retry-after-days", type=int, default=RETRY_AFTER_DAYS,
+                    help="skip below-cap problems searched within this many days, per the local "
+                         f"search log (default {RETRY_AFTER_DAYS}; 0 re-searches everything)")
     ap.add_argument("--dir", default=os.path.join(os.path.dirname(__file__), "..", "catalog-data"))
     ap.add_argument("--dry-run", action="store_true", help="no Supabase writes")
     ap.add_argument("--revalidate", action="store_true",

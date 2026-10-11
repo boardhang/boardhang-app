@@ -38,5 +38,7 @@ catalog_problems_backup_*.json
 
 # Beta-seed sidecar: matched rows saved before write (zero-quota reinsert via --from-file)
 catalog-data/.beta_matches_*.json
+# Beta-seed search log: when each problem was last searched on YouTube (local re-search cool-down)
+catalog-data/.beta_searched_*
 /.vercel
 /.env*
