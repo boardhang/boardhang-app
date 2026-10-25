@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 """
-Dump the current `public.catalog_problems` table to a local JSON file — a rollback
-point to take BEFORE re-importing the catalog (import_catalog.py).
+Dump the current `public.catalog_problems` table to a local JSON file — the rollback point
+and the FIRST step of the operator runbook before every `import_catalog.py --apply`.
 
-The dump preserves EVERY column (incl. updated_at and deleted), so it is a faithful
-snapshot. Restore it with restore_catalog_problems.py (it upserts the rows verbatim,
-including `deleted`, so it also UN-tombstones a bad prune). Do NOT feed this file to
-import_catalog.py — that reads the `{setup, layoutId, angle, problems[]}` staging shape,
-not this `{table, count, rows[]}` dump, and never touches `deleted`.
+The catalog pipeline is fetch -> merge -> import: fetch_boardsesh.py pulls a board from
+boardsesh, merge_catalog.py folds it into the canonical committed snapshot in catalog-data/,
+and import_catalog.py deploys the snapshot's diff to prod. The import never deletes or
+tombstones, but it does insert, update and un-delete rows, and each 500-row batch is its own
+transaction, so take this dump right before the apply:
 
-    fetch_boardsesh.py -> catalog-data/*.json -> [BACKUP] -> import_catalog.py -> Supabase
-                                                     |                               |
-                                          restore_catalog_problems.py  <----  (rollback)
+    fetch -> merge -> catalog-data/*.json -> [BACKUP] -> import --apply -> prod
+                                                |                            |
+                                   restore_catalog_problems.py  <------  (rollback)
+
+The dump preserves EVERY column (incl. updated_at and deleted), so it is a faithful copy of
+the table. The rollback is restore_catalog_problems.py: it upserts the dump's rows verbatim,
+`deleted` included, which undoes updates and un-deletes; its slab-scoped
+`--tombstone-absent --layout N --angle A` flag tombstones the rows an apply INSERTED into
+that slab (the only code path in the repo that writes `deleted: true`). Do NOT feed this
+file to import_catalog.py — that reads the snapshot shape, not this `{table, count, rows[]}`
+dump.
 
 Assumes no concurrent writers during the dump (offset paging over a stable PK order can
 skip a row if one is inserted mid-dump). Backups are taken right before a manual import,

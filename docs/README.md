@@ -18,7 +18,7 @@ editing code in that area. Each doc is scoped to one subsystem.
 | Bluetooth, LED lighting, connection UI, calibration | [ble-hardware.md](ble-hardware.md) |
 | Hold coordinates, LED index math, board rendering | [board-geometry.md](board-geometry.md) |
 | Board registry, adding a board, active/added boards, hold-set filtering | [multi-board-model.md](multi-board-model.md) |
-| Fetching/regenerating catalog data, JSON schemas, the Python scripts | [catalog-data-pipeline.md](catalog-data-pipeline.md) |
+| The catalog pipeline (fetch → merge → import), canonical snapshots, overrides, JSON schemas, the Python scripts | [catalog-data-pipeline.md](catalog-data-pipeline.md) |
 | SwiftData models, logging ascents/tries, the logbook & pyramid | [data-model-and-logging.md](data-model-and-logging.md) |
 | Tabs, navigation, Home board management, catalog filters, Settings | [navigation-and-ui-flows.md](navigation-and-ui-flows.md) |
 | Collaboration sessions, cross-member status filtering, the status-only projection RPC (web) | [collaboration-sessions.md](collaboration-sessions.md) |
