@@ -32,7 +32,7 @@ describe('requestDeviceOptionsFor', () => {
   })
 
   it('returns a fresh, unfrozen object on every call', () => {
-    const a = requestDeviceOptionsFor('both')
+    const a = requestDeviceOptionsFor('both') as { filters?: unknown[] }
     const b = requestDeviceOptionsFor('both')
     expect(a).not.toBe(b)
     expect(Object.isFrozen(a)).toBe(false)
