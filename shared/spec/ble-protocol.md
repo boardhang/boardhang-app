@@ -15,6 +15,34 @@ firmware lights the LEDs. Nothing is read back.
 Scan/filter by the **service UUID**, not the device name — the board can be renamed
 but still advertises the NUS service.
 
+## Second controller generation: the original RedBearLab box (unverified)
+
+The official MoonBoard LED kit shipped in two Bluetooth generations (per the
+Moon Climbing app, as documented in boardsesh's MoonBoard protocol spec): the
+original box on a **RedBearLab** BLE module and later boxes on **Nordic UART**.
+The frame, letters, LED index, and 20-byte chunking are the same; only the GATT
+addresses and the accepted ATT write type differ.
+
+| Role | UUID |
+| --- | --- |
+| RedBearLab service | `713D0000-503E-4C75-BA94-3148F18D941E` |
+| Write characteristic (app → board) | `713D0003-503E-4C75-BA94-3148F18D941E` |
+
+- **Scan rule:** filter on either service (OR'd filters) plus the `MoonBoard` name
+  prefix, with both services in `optionalServices`; after connect, resolve the
+  NUS pair first and fall back to the RedBearLab pair on any rejection.
+- **Write-type rule:** the RedBearLab characteristic advertises plain `write`
+  only. CoreBluetooth silently drops a write-without-response to it (and the
+  browser reports success), so chunks to this generation must go
+  **write-with-response**; the Nordic generation keeps write-without-response.
+  When the characteristic's `properties` can be read they decide; when they are
+  absent, RedBearLab defaults to write-with-response (a wrong acknowledged write
+  fails loudly, a wrong unacknowledged one never does).
+- **Status:** unverified on hardware. Only the web client speaks this generation,
+  and only through its admin-only BLE lab (docs/ble-hardware.md); the iOS manager
+  is Nordic UART only. Clear-all (`l##`) is unconfirmed on official boxes and at
+  worst a no-op.
+
 ## Message grammar
 
 ```
@@ -69,8 +97,9 @@ Encoding is **ASCII** (the message is plain ASCII text).
 Each message is self-contained (`l#…#`), so a new message fully replaces any
 partially-sent prior one — reset the write queue on every new message.
 
-Chunks are sent **write-without-response** and must respect back-pressure so the
-stack never silently drops packets:
+Chunks are sent **write-without-response** on the Nordic UART generation (and
+**write-with-response** on the RedBearLab generation, see above) and must respect
+back-pressure so the stack never silently drops packets:
 
 - **iOS (CoreBluetooth):** drain the queue only while
   `peripheral.canSendWriteWithoutResponse` is true; when it goes false, stop and
