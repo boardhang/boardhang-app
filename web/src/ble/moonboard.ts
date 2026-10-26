@@ -6,10 +6,55 @@
 import type { HoldAssignment } from '../types'
 import { displayed, protocolLetter } from '../types'
 import { ledIndex } from '../board/geometry'
+import { DEFAULT_LAB_SETTINGS, getLabSettings, type LabChooser, type LabSettings } from './labSettings'
+import { describeRejection, recordBleEvent } from './bleDiagnostics'
 
 // Nordic UART Service UUIDs (must be lowercase for Web Bluetooth).
 export const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
 export const RX_CHAR = '6e400002-b5a3-f393-e0a9-e50e24dcca9e' // write (app → board)
+
+/**
+ * RedBearLab BLE service family — the first-generation official MoonBoard LED
+ * box. `713d0003` is its write characteristic (app → board). Same `l#…#` frame
+ * and 20-byte chunking as the Nordic boards; only the GATT addresses and the
+ * accepted ATT write type differ. Reachable only through the admin BLE lab
+ * (docs/ble-hardware.md); UUIDs match boardsesh's `transport.ts`.
+ */
+export const RBL_SERVICE = '713d0000-503e-4c75-ba94-3148f18d941e'
+export const RBL_WRITE_CHAR = '713d0003-503e-4c75-ba94-3148f18d941e'
+
+/**
+ * Chooser request for the default (lab-off) path. Kept as a function so every
+ * call hands Web Bluetooth a fresh, unfrozen object — the reverted dual-generation
+ * release passed a frozen module constant, the leading hypothesis for why the
+ * Bluefy shim stopped connecting.
+ */
+function nordicOnlyRequest(): RequestDeviceOptions {
+  return { filters: [{ services: [NUS_SERVICE] }] }
+}
+
+/**
+ * Chooser request for the lab's picker modes. Web Bluetooth ORs the filters and
+ * grants access after connect to the union of `filters[].services` and
+ * `optionalServices`, so a board matched by name alone can still open either
+ * service. Only services listed here are ever visible to the page; `any`
+ * therefore lets the probe try both known services on an unlisted box, nothing
+ * more. Fresh object per call, never frozen.
+ */
+export function requestDeviceOptionsFor(chooser: LabChooser): RequestDeviceOptions {
+  switch (chooser) {
+    case 'both':
+      return {
+        filters: [{ services: [NUS_SERVICE] }, { services: [RBL_SERVICE] }, { namePrefix: 'MoonBoard' }],
+        optionalServices: [NUS_SERVICE, RBL_SERVICE],
+      }
+    case 'any':
+      return { acceptAllDevices: true, optionalServices: [NUS_SERVICE, RBL_SERVICE] }
+    case 'nordic':
+    default:
+      return nordicOnlyRequest()
+  }
+}
 
 /**
  * The firmware characteristic stores at most 20 bytes per write and silently
@@ -75,6 +120,20 @@ export function describeBleError(err: unknown): string {
   const msg = raw.trim()
   if (msg && !/^[\d\s\p{P}]+$/u.test(msg)) return msg
   return "Couldn't reach the board — make sure it's on and in range, then try again."
+}
+
+/**
+ * Diagnostics line for a chosen device. The id is read only on the lab path:
+ * the default path must make exactly the getter reads it made before the lab
+ * existed, and the Bluefy shim's behaviour on `id` is unverified.
+ */
+function describeDevice(device: BluetoothDevice, includeId: boolean): string {
+  try {
+    const name = device.name ?? '(unnamed)'
+    return includeId ? `name=${name} id=${String(device.id).slice(0, 8)}` : `name=${name}`
+  } catch {
+    return 'unreadable'
+  }
 }
 
 /** Beat to wait before the single retry below — short enough to be invisible. */
@@ -159,6 +218,12 @@ export class MoonBoardClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectAttempt = 0
   private inflight: Promise<void> | null = null
+  /**
+   * Lab settings snapshot for the current connect attempt. Taken once when a
+   * user-initiated connect starts and reused by its silent reconnects, so a
+   * settings change can never alter a live attempt mid-flight.
+   */
+  private lab: LabSettings = DEFAULT_LAB_SETTINGS
 
   state: ConnectionState = 'disconnected'
   deviceName: string | null = null
@@ -208,8 +273,16 @@ export class MoonBoardClient {
       }
     }
 
+    // A fresh attempt snapshots the lab settings; everything below (and the
+    // attempt's silent reconnects) reads `this.lab`, never the store.
+    this.lab = getLabSettings()
+    const labLine = this.lab.enabled
+      ? `lab=on chooser=${this.lab.chooser} writeMode=${this.lab.writeMode}`
+      : 'lab=off'
+
     const retained = this.device
     if (retained) {
+      recordBleEvent('connect', `${labLine} retained=${retained.name ?? '(unnamed)'}`)
       this.setState('connecting', retained.name ?? 'MoonBoard')
       try {
         await this.establish(retained)
@@ -224,13 +297,22 @@ export class MoonBoardClient {
     }
 
     const bluetooth = getBluetooth()
+    recordBleEvent('connect', labLine)
     this.setState('connecting', null)
+    let device: BluetoothDevice
     try {
-      const device = await bluetooth.requestDevice({
-        filters: [{ services: [NUS_SERVICE] }],
-      })
-      this.device = device
-      device.addEventListener('gattserverdisconnected', this.onDisconnected)
+      device = await bluetooth.requestDevice(
+        this.lab.enabled ? requestDeviceOptionsFor(this.lab.chooser) : nordicOnlyRequest(),
+      )
+    } catch (err) {
+      recordBleEvent('requestDevice-rejected', describeRejection(err))
+      this.cleanup()
+      throw err
+    }
+    recordBleEvent('device', describeDevice(device, this.lab.enabled))
+    this.device = device
+    device.addEventListener('gattserverdisconnected', this.onDisconnected)
+    try {
       await this.establish(device)
     } catch (err) {
       this.cleanup()
