@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildMessage, NUS_SERVICE, RX_CHAR } from './moonboard'
 import { BLE_DIAG_KEY } from './bleDiagnostics'
 import { getLabSettings } from './labSettings'
-import { bleHarness, chunksOf, fakeStack } from '../test/fakeBleStack'
+import {
+  THREE_CHUNK_HOLDS as threeChunkHolds,
+  bleHarness,
+  chunksOf,
+  fakeStack,
+} from '../test/fakeBleStack'
 
 // Default-path invariance (plan R7, R8, AE1): with the BLE lab off, the client must
 // make exactly the Bluetooth calls it made before the lab existed — the same chooser
@@ -15,15 +20,6 @@ const { newClient, connectedClient, cleanupBleEnv } = bleHarness()
 afterEach(cleanupBleEnv)
 
 const opts = { rows: 12, flipped: false, showBeta: true }
-// 'l#' + 11 tokens + '#' = 45 bytes → 20 + 20 + 5.
-const threeChunkHolds = [
-  { col: 0, row: 1, type: 'start' as const },
-  ...[1, 2, 3, 4, 5, 6].map((row) => ({ col: 2, row, type: 'right' as const })),
-  { col: 4, row: 1, type: 'right' as const },
-  { col: 4, row: 2, type: 'right' as const },
-  { col: 6, row: 1, type: 'right' as const },
-  { col: 8, row: 1, type: 'right' as const },
-]
 
 describe('MoonBoardClient with the lab off (today\'s path)', () => {
   beforeEach(() => {

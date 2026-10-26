@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildMessage, describeBleError } from './moonboard'
 import { BLE_DIAG_KEY, getBleDiagnostics } from './bleDiagnostics'
 import { setLabSettings } from './labSettings'
-import { bleHarness, chunksOf, fakeStack, type WriteFn } from '../test/fakeBleStack'
+import {
+  THREE_CHUNK_HOLDS as threeChunkHolds,
+  bleHarness,
+  chunksOf,
+  fakeStack,
+  type WriteFn,
+} from '../test/fakeBleStack'
 
 // Per-link write mode with the lab on: derivation from controller + properties, the
 // forced overrides, the legacy fallback, the calibration write, and chunking on every
@@ -11,16 +17,6 @@ import { bleHarness, chunksOf, fakeStack, type WriteFn } from '../test/fakeBleSt
 const { connectedClient, cleanupBleEnv } = bleHarness()
 
 afterEach(cleanupBleEnv)
-
-// A 45-byte message: 'l#' + 11 tokens (one 2-char, ten 3-char) + '#' → 20 + 20 + 5.
-const threeChunkHolds = [
-  { col: 0, row: 1, type: 'start' as const }, // S0
-  ...[1, 2, 3, 4, 5, 6].map((row) => ({ col: 2, row, type: 'right' as const })), // R24…R29
-  { col: 4, row: 1, type: 'right' as const }, // R48
-  { col: 4, row: 2, type: 'right' as const }, // R49
-  { col: 6, row: 1, type: 'right' as const }, // R72
-  { col: 8, row: 1, type: 'right' as const }, // R96
-]
 
 const opts = { rows: 12, flipped: false, showBeta: true }
 const oneHold = [{ col: 0, row: 1, type: 'start' as const }]

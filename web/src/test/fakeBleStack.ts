@@ -51,6 +51,19 @@ export function notFound(what: string) {
   return new DOMException(`No ${what} matching UUID found.`, 'NotFoundError')
 }
 
+/**
+ * Holds whose message is exactly 45 bytes ('l#' + 11 tokens + '#'), so a send splits
+ * into 20 + 20 + 5 — three chunks, which makes ordering and the per-chunk retry visible.
+ */
+export const THREE_CHUNK_HOLDS = [
+  { col: 0, row: 1, type: 'start' as const }, // S0
+  ...[1, 2, 3, 4, 5, 6].map((row) => ({ col: 2, row, type: 'right' as const })), // R24…R29
+  { col: 4, row: 1, type: 'right' as const }, // R48
+  { col: 4, row: 2, type: 'right' as const }, // R49
+  { col: 6, row: 1, type: 'right' as const }, // R72
+  { col: 8, row: 1, type: 'right' as const }, // R96
+]
+
 export function fakeStack(write: WriteFn = async () => {}, opts: StackOptions = {}) {
   const nordic = opts.nordic ?? 'present'
   const redbearlab = opts.redbearlab ?? 'absent'

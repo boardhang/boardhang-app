@@ -151,6 +151,14 @@ export function describeBleError(err: unknown): string {
 }
 
 /**
+ * Toast text for a failed connect in the BLE lab: the readable message, plus the raw
+ * rejection in brackets when it adds information (Bluefy's bare `2`, say).
+ */
+export function describeConnectFailure(failure: { message: string; raw: string }): string {
+  return failure.raw !== failure.message ? `${failure.message} [${failure.raw}]` : failure.message
+}
+
+/**
  * True when a probe rejection means "this service/characteristic is not here"
  * rather than a broken link or a permission problem: Chrome's `NotFoundError`,
  * or a rejection carrying no name at all (the Bluefy shim rejects with bare

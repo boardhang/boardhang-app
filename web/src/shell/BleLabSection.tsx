@@ -26,7 +26,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { bleClient, connectBoard, disconnectBoard, useBle } from '../ble/useBle'
-import { describeBleError } from '../ble/moonboard'
+import { describeBleError, describeConnectFailure } from '../ble/moonboard'
 import {
   clearBleDiagnostics,
   formatBleDiagnostics,
@@ -96,11 +96,7 @@ export function BleLabSection() {
     setBusy('connect')
     try {
       const failure = await connectBoard()
-      if (failure) {
-        toast.error(
-          failure.raw !== failure.message ? `${failure.message} [${failure.raw}]` : failure.message,
-        )
-      }
+      if (failure) toast.error(describeConnectFailure(failure))
     } finally {
       setBusy(null)
     }

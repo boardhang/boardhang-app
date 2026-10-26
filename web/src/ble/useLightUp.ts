@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { bleClient, connectBoard, isConnected, setBleError, useBle } from './useBle'
-import { describeBleError } from './moonboard'
+import { describeBleError, describeConnectFailure } from './moonboard'
 import { getLabSettings } from './labSettings'
 import { getFlipped } from '../board/boardStore'
 import { reportProblemLit } from '../sessions/sessionsStore'
@@ -70,9 +70,7 @@ export function useLightUp(board: CatalogBoardDef, resetKey: string): UseLightUp
         // Lab off: silent, as before. A mocked connectBoard resolving to undefined
         // means there is nothing to show.
         if (failure && getLabSettings().enabled && targetRef.current === target) {
-          toast.error(
-            failure.raw !== failure.message ? `${failure.message} [${failure.raw}]` : failure.message,
-          )
+          toast.error(describeConnectFailure(failure))
         }
         return // cancelled or failed
       }
