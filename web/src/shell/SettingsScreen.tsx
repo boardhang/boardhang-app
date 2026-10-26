@@ -23,6 +23,8 @@ import {
   type PreviewSurface,
 } from '../catalog/previewsStore'
 import { LogbookExportSection } from '../logbook/LogbookExportSection'
+import { useAuth } from '../auth/AuthProvider'
+import { BleLabSection } from './BleLabSection'
 import { setTheme, useTheme, type Theme } from './themeStore'
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
@@ -80,6 +82,8 @@ function PreviewToggleRow({ surface, label, detail }: (typeof PREVIEW_OPTIONS)[n
 
 export function SettingsScreen() {
   const theme = useTheme()
+  // Owner-only debug surface; everyone else never sees the card or reads its storage.
+  const { isAdmin } = useAuth()
 
   return (
     <div className="space-y-4">
@@ -172,6 +176,8 @@ export function SettingsScreen() {
           ))}
         </CardContent>
       </Card>
+
+      {isAdmin && <BleLabSection />}
     </div>
   )
 }
