@@ -162,17 +162,25 @@ describe('bleDiagnostics persistence', () => {
     expect(getBleDiagnostics().events.map((e) => e.kind)).toEqual(['a', 'b'])
   })
 
-  it('clear empties events and link, removes the key while on, and notifies', () => {
+  it('clear empties the events, keeps the live link, removes the key while on, and notifies', () => {
     setBleDiagnosticsPersistence(true)
     recordBleEvent('a')
     setBleLinkSummary(sampleLink)
-    const listener = vi.fn()
     const { result } = renderHook(() => useBleDiagnostics())
     act(() => clearBleDiagnostics())
-    expect(getBleDiagnostics()).toEqual({ events: [], link: null })
+    expect(getBleDiagnostics()).toEqual({ events: [], link: sampleLink })
     expect(localStorage.getItem(BLE_DIAG_KEY)).toBeNull()
     expect(result.current.events).toEqual([])
-    listener.mockReset()
+  })
+
+  it('clear with persistence off drops the stored copy too, so turning the lab on later starts empty', () => {
+    setBleDiagnosticsPersistence(true)
+    recordBleEvent('old')
+    setBleDiagnosticsPersistence(false)
+    clearBleDiagnostics()
+    expect(localStorage.getItem(BLE_DIAG_KEY)).toBeNull()
+    setBleDiagnosticsPersistence(true)
+    expect(getBleDiagnostics().events).toEqual([])
   })
 })
 
@@ -195,6 +203,16 @@ describe('describeRejection', () => {
 
   it('reports an Error with its name and message', () => {
     expect(describeRejection(new Error('adapter off'))).toMatch(/Error.*adapter off/)
+  })
+
+  it('returns a placeholder instead of throwing when a getter on the rejection throws', () => {
+    const hostile = {
+      get name(): string {
+        throw new Error('nope')
+      },
+    }
+    expect(() => describeRejection(hostile)).not.toThrow()
+    expect(describeRejection(hostile)).toMatch(/undescribable/)
   })
 })
 

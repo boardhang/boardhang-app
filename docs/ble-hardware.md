@@ -132,7 +132,8 @@ so the second attempt is opt-in per device and observable.
   enumerate an unknown one (that is an nRF Connect job).
 - **Probe** after `gatt.connect()`: the NUS pair first, then on *any* rejection
   (Bluefy rejects with bare numeric codes, so no name gating) the RedBearLab pair
-  (`713d0000-503e-4c75-ba94-3148f18d941e` / write `713d0003-…`). Both absent →
+  (UUIDs in [shared/spec/ble-protocol.md](../shared/spec/ble-protocol.md#second-controller-generation-the-original-redbearlab-box-unverified)).
+  Both absent →
   readable "no known MoonBoard LED service" error and the link is severed; a named
   `NetworkError`/`SecurityError` surfaces as itself. The guard before the second
   lookup checks user-disconnect and device identity only — never `gatt.connected`,
@@ -152,6 +153,7 @@ so the second attempt is opt-in per device and observable.
   lookup with the raw rejection (`name`/`code`/`message`/`typeof`/`String(err)`),
   properties and available writers (or `not read`/`not probed` with the lab off),
   the mode, every send (bytes, chunks, mode, writer, duration), chunk retries,
+  a failed user-initiated connect (`connect-failed`, with the raw rejection),
   disconnects as `user`/`link`/`echo`, reconnect attempts, and the step a connect
   timeout was waiting on. The Settings card (`web/src/shell/BleLabSection.tsx`,
   rendered only when `useAuth().isAdmin`) shows the log newest-first with Copy,

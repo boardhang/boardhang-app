@@ -4,6 +4,8 @@
 // service role) and rides along in the access token, so a user cannot grant it to
 // themselves from the client. `user_metadata` is user-writable and is deliberately
 // ignored. Granting the claim is documented in docs/social-accounts-login-SETUP.md.
+// The check runs client-side on the restored session, so `isAdmin` is a UI gate only:
+// a server-side operation that needs admin must verify the claim itself.
 
 /** The slice of a supabase-js `User` this check needs; loose so tests can pass literals. */
 export interface AdminCandidate {

@@ -104,6 +104,45 @@ describe('BleLabSection settings', () => {
     expect(getLabSettings().writeMode).toBe('with-response')
     expect(await screen.findByText('Disconnected')).toBeInTheDocument()
   })
+
+  it('locks the switch and both groups while the client is connecting', async () => {
+    setLabSettings({ enabled: true })
+    const stack = fakeStack()
+    let release!: () => void
+    stack.gatt.connect.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => {
+            stack.gatt.connected = true
+            resolve(stack.server)
+          }
+        }),
+    )
+    render(<BleLabSection />)
+    try {
+      await click('Connect')
+      expect(screen.getByText('Connecting…')).toBeInTheDocument()
+      // The Switch is a non-native button, so its disabled state is a data attribute.
+      expect(screen.getByRole('switch', { name: /experimental Bluetooth path/i })).toHaveAttribute(
+        'data-disabled',
+      )
+      expect(screen.getByRole('button', { name: 'Any device' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Acknowledged' })).toBeDisabled()
+    } finally {
+      // Always let the hung connect finish, or the client's in-flight attempt would
+      // outlive this test and wedge the ones after it.
+      await act(async () => {
+        release()
+        await settle()
+      })
+    }
+    expect(await screen.findByText(/Connected to MB/)).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: /experimental Bluetooth path/i })).not.toHaveAttribute(
+      'data-disabled',
+    )
+    expect(screen.getByRole('button', { name: 'Any device' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Acknowledged' })).toBeEnabled()
+  })
 })
 
 describe('BleLabSection status and quick actions', () => {

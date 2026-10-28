@@ -200,18 +200,19 @@ describe('MoonBoardClient dual-generation discovery (lab on)', () => {
     expect(requestDevice).toHaveBeenCalledTimes(2)
   })
 
-  it('bounds the auto-reconnect to four attempts when the probe keeps failing and the disconnect echoes', async () => {
-    // Covers AE14 (lab on). Chrome echoes the client's own gatt.disconnect() as a
-    // disconnect event; before R25 that reset the backoff and looped ~120×/min.
-    const { client, device, gatt, server } = await connectedClient(undefined, {
-      disconnectEvent: 'sync',
+  for (const disconnectEvent of ['sync', 'async'] as const) {
+    it(`bounds the auto-reconnect to four attempts when the probe keeps failing and the disconnect echoes (${disconnectEvent})`, async () => {
+      // Covers AE14 (lab on). Chrome echoes the client's own gatt.disconnect() as a
+      // disconnect event — as a later task in practice, synchronously in the worst
+      // case; before R25 that reset the backoff and looped ~120×/min.
+      const { client, device, gatt, server } = await connectedClient(undefined, { disconnectEvent })
+      server.getPrimaryService.mockRejectedValue(notFound('Services'))
+      device.dropConnection()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(client.state).toBe('disconnected')
+      expect(gatt.connect).toHaveBeenCalledTimes(5)
     })
-    server.getPrimaryService.mockRejectedValue(notFound('Services'))
-    device.dropConnection()
-    await vi.advanceTimersByTimeAsync(60_000)
-    expect(client.state).toBe('disconnected')
-    expect(gatt.connect).toHaveBeenCalledTimes(5)
-  })
+  }
 
   it('bounds the auto-reconnect with the lab off when the connect timeout is the echo source', async () => {
     // Covers AE14 (lab off). Today's path never calls gatt.disconnect() from a lookup,
@@ -346,5 +347,62 @@ describe('MoonBoardClient dual-generation discovery (lab on)', () => {
     expect(kinds.some((k) => k.startsWith('disconnected link'))).toBe(true)
     expect(kinds.some((k) => k.startsWith('disconnected user'))).toBe(true)
     expect(kinds.some((k) => k.startsWith('reconnect'))).toBe(true)
+  })
+})
+
+describe('MoonBoardClient connect-failure diagnostics (both paths)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  for (const [label, enabled] of [
+    ['lab off', false],
+    ['lab on', true],
+  ] as const) {
+    it(`records exactly one connect-failed event when gatt.connect rejects on a user tap (${label})`, async () => {
+      setLabSettings({ enabled, chooser: 'both' })
+      const stack = fakeStack(undefined, enabled ? {} : { minimal: true })
+      stack.gatt.connect.mockRejectedValueOnce(
+        new DOMException('Connection failed for unknown reason.', 'NetworkError'),
+      )
+      const client = newClient()
+      await expect(client.connect()).rejects.toThrow(/Connection failed/)
+      const failed = getBleDiagnostics().events.filter((e) => e.kind === 'connect-failed')
+      expect(failed).toHaveLength(1)
+      expect(failed[0]!.detail).toContain('NetworkError')
+      expect(client.state).toBe('disconnected')
+    })
+  }
+
+  it('records a failed lab-off lookup as a connect-failed event, once', async () => {
+    const stack = fakeStack(undefined, { minimal: true, nordic: 'absent' })
+    const client = newClient()
+    await expect(client.connect()).rejects.toThrow()
+    const kinds = getBleDiagnostics().events.map((e) => e.kind)
+    expect(kinds.filter((k) => k === 'connect-failed')).toHaveLength(1)
+    expect(kinds).not.toContain('reconnect-failed')
+    expect(stack.gatt.connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('a retained-device tap that fails records connect-failed, not reconnect-failed', async () => {
+    const { client, device, gatt, requestDevice } = await connectedClient(undefined, { minimal: true })
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    device.dropConnection() // hidden page: no silent reconnect is scheduled
+    gatt.connect.mockRejectedValueOnce(new DOMException('Connection failed.', 'NetworkError'))
+    await expect(client.connect()).rejects.toThrow(/Connection failed/)
+    const kinds = getBleDiagnostics().events.map((e) => e.kind)
+    expect(kinds.filter((k) => k === 'connect-failed')).toHaveLength(1)
+    expect(kinds).not.toContain('reconnect-failed')
+    expect(requestDevice).toHaveBeenCalledTimes(1) // retained path, no chooser
+  })
+
+  it('a user disconnect with no device records nothing', async () => {
+    const client = newClient()
+    client.disconnect()
+    expect(getBleDiagnostics().events).toEqual([])
   })
 })

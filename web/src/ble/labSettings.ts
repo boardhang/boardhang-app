@@ -11,10 +11,11 @@
 // rebuilds the snapshot from storage.
 
 import { useSyncExternalStore } from 'react'
-import { recordBleEvent, setBleDiagnosticsPersistence } from './bleDiagnostics'
+import { recordBleEvent, setBleDiagnosticsPersistence, type BleWriteMode } from './bleDiagnostics'
 
 export type LabChooser = 'nordic' | 'both' | 'any'
-export type LabWriteMode = 'auto' | 'with-response' | 'without-response'
+/** `auto` derives the write type from the characteristic; the others force one. */
+export type LabWriteMode = 'auto' | BleWriteMode
 
 export interface LabSettings {
   /** Master switch. Off = today's Bluetooth path, byte for byte. */

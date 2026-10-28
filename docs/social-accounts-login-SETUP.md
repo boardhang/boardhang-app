@@ -113,7 +113,10 @@ The web PWA shows owner-only debug surfaces (today: the **BLE lab** card in Sett
 see [ble-hardware.md](ble-hardware.md)) when the signed-in user's token carries the
 custom claim `app_metadata.role = "admin"`. `app_metadata` can only be written
 server-side, so no user can grant it from the client; `user_metadata` (user-writable)
-never counts. There is no migration — grant it once in the Supabase dashboard's
+never counts. The app reads the claim client-side, so it gates UI only; a future
+server-side admin operation must check the claim itself (in RLS:
+`auth.jwt() -> 'app_metadata' ->> 'role'`). There is no migration — grant it once in
+the Supabase dashboard's
 **SQL editor**, merging into the existing JSON so Supabase's own `provider`/`providers`
 keys survive:
 

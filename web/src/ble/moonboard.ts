@@ -19,10 +19,14 @@ import { ledIndex } from '../board/geometry'
 import { DEFAULT_LAB_SETTINGS, getLabSettings, type LabChooser, type LabSettings } from './labSettings'
 import {
   describeRejection,
+  formatProperties,
+  formatWriters,
   recordBleEvent,
   setBleLinkSummary,
+  type BleController,
   type BleLinkSummary,
   type BlePropertiesSnapshot,
+  type BleWriteMode,
   type BleWriter,
 } from './bleDiagnostics'
 
@@ -87,12 +91,13 @@ export type ConnectionState = 'disconnected' | 'connecting' | 'connected'
 /**
  * Which controller generation a connected board turned out to be. Named
  * "controller" (not "generation") to avoid colliding with the board layouts in
- * the board registry.
+ * the board registry. The literal union lives in bleDiagnostics.ts so the client
+ * and the diagnostics record can never drift apart.
  */
-export type ControllerGeneration = 'nordic-uart' | 'redbearlab'
+export type ControllerGeneration = BleController
 
-/** How chunks are written on the current link. */
-export type WriteMode = 'with-response' | 'without-response'
+/** How chunks are written on the current link (the diagnostics record's union). */
+export type WriteMode = BleWriteMode
 
 export interface MessageOptions {
   rows: number
@@ -290,19 +295,17 @@ function labLink(
   const properties = snapshotProperties(characteristic)
   const writers = availableWriters(characteristic)
   const forced = settings.writeMode !== 'auto'
-  const mode: WriteMode = forced
-    ? (settings.writeMode as WriteMode)
-    : deriveWriteMode(controller, properties)
+  const mode: WriteMode =
+    settings.writeMode === 'auto' ? deriveWriteMode(controller, properties) : settings.writeMode
   const splitName = mode === 'with-response' ? 'writeValueWithResponse' : 'writeValueWithoutResponse'
-  const c = characteristic as Partial<BluetoothRemoteGATTCharacteristic>
   let writer: BleWriter = 'split'
   let write: ChunkWriter | null = null
   let missingMethod: string | null = null
-  if (mode === 'with-response' && typeof c.writeValueWithResponse === 'function') {
+  if (mode === 'with-response' && writers.includes('with')) {
     write = (chunk) => characteristic.writeValueWithResponse(chunk)
-  } else if (mode === 'without-response' && typeof c.writeValueWithoutResponse === 'function') {
+  } else if (mode === 'without-response' && writers.includes('without')) {
     write = (chunk) => characteristic.writeValueWithoutResponse(chunk)
-  } else if (typeof c.writeValue === 'function') {
+  } else if (writers.includes('legacy')) {
     writer = 'legacy'
     write = (chunk) => characteristic.writeValue(chunk)
   } else {
@@ -450,7 +453,9 @@ export class MoonBoardClient {
       } catch (err) {
         // Board unreachable (off, out of range). Drop it so the next tap opens
         // the chooser — chaining into requestDevice() here would outlive the
-        // transient user activation a chooser needs.
+        // transient user activation a chooser needs. The attempt that owns the
+        // failure records it once (silent reconnects record `reconnect-failed`).
+        recordBleEvent('connect-failed', describeRejection(err))
         this.cleanup()
         throw err
       }
@@ -475,6 +480,7 @@ export class MoonBoardClient {
     try {
       await this.establish(device)
     } catch (err) {
+      recordBleEvent('connect-failed', describeRejection(err))
       this.cleanup()
       throw err
     }
@@ -513,13 +519,8 @@ export class MoonBoardClient {
           link = built.link
           properties = built.properties
           writers = built.writers
-          recordBleEvent(
-            'properties',
-            properties.present
-              ? `write=${properties.write} writeWithoutResponse=${properties.writeWithoutResponse} notify=${properties.notify}`
-              : 'absent',
-          )
-          recordBleEvent('writers', writers.join('+') || 'none')
+          recordBleEvent('properties', formatProperties(properties))
+          recordBleEvent('writers', formatWriters(writers))
         }
         this.link = link
         this.reconnectAttempt = 0
@@ -615,7 +616,9 @@ export class MoonBoardClient {
   disconnect(): void {
     this.userDisconnect = true
     this.clearReconnectTimer()
-    recordBleEvent('disconnected', 'user')
+    // The lab card disconnects before every setting change (R23), usually with no
+    // device at all; only record a disconnect when there was something to disconnect.
+    if (this.device) recordBleEvent('disconnected', 'user')
     this.device?.gatt?.disconnect()
     this.cleanup()
   }

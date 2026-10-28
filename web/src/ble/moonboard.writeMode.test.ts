@@ -75,6 +75,26 @@ describe('MoonBoardClient write mode (lab on, auto)', () => {
     expect(characteristic.writeValueWithoutResponse).not.toHaveBeenCalled()
   })
 
+  it('Nordic reporting both write types stays without response', async () => {
+    const { client, characteristic } = await connectedClient(undefined, {
+      properties: { write: true, writeWithoutResponse: true },
+    })
+    await client.send(threeChunkHolds, opts)
+    expect(client.writeMode).toBe('without-response')
+    expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(3)
+    expect(characteristic.writeValueWithResponse).not.toHaveBeenCalled()
+  })
+
+  it('Nordic reporting neither write type (nonsense properties) stays without response', async () => {
+    const { client, characteristic } = await connectedClient(undefined, {
+      properties: { write: false, writeWithoutResponse: false },
+    })
+    await client.send(threeChunkHolds, opts)
+    expect(client.writeMode).toBe('without-response')
+    expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(3)
+    expect(characteristic.writeValueWithResponse).not.toHaveBeenCalled()
+  })
+
   it('RedBearLab with write only: three chunks with response, in order, nothing without response', async () => {
     // Covers AE6.
     const { client, characteristic } = await connectedClient(undefined, {
@@ -186,7 +206,7 @@ describe('MoonBoardClient write mode (lab on, auto)', () => {
       caught = err
     })
     expect(caught).toBeInstanceOf(Error)
-    expect(describeBleError(caught)).toMatch(/write/i)
+    expect(describeBleError(caught)).toMatch(/exposes no writeValueWithoutResponse method/)
     expect(describeBleError(caught)).not.toContain("Couldn't reach the board")
   })
 

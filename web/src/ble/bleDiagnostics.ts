@@ -129,9 +129,20 @@ function stringifyDetail(detail: unknown): string | undefined {
 
 /**
  * One compact line describing an unknown rejection — enough to tell a Chrome
- * DOMException from a bare numeric code the Bluefy shim produces.
+ * DOMException from a bare numeric code the Bluefy shim produces. Total: callers
+ * evaluate it as a `recordBleEvent` argument, outside the recorder's own guard, so
+ * a hostile getter on the rejection must not be able to throw into the Bluetooth
+ * path (R18).
  */
 export function describeRejection(err: unknown): string {
+  try {
+    return describeRejectionUnguarded(err)
+  } catch {
+    return '[undescribable rejection]'
+  }
+}
+
+function describeRejectionUnguarded(err: unknown): string {
   if (typeof err === 'object' && err !== null) {
     const e = err as { name?: unknown; code?: unknown; message?: unknown }
     const name = typeof e.name === 'string' && e.name ? e.name : err.constructor?.name || 'object'
@@ -208,10 +219,15 @@ export function setBleDiagnosticsPersistence(on: boolean): void {
   }
 }
 
-/** Empty the log and the link summary; drops the stored copy while persistence is on. */
+/**
+ * Empty the log. The live link summary stays (it describes the current connection,
+ * not the history; `enterDisconnected` clears it when the link goes). The stored copy
+ * is dropped whether or not persistence is on — otherwise a log cleared with the lab
+ * off would come back the next time the lab turned on and found an empty buffer.
+ */
 export function clearBleDiagnostics(): void {
-  snapshot = EMPTY
-  if (persist) removeStored()
+  snapshot = { events: [], link: snapshot.link }
+  removeStored()
   notify()
 }
 
@@ -236,26 +252,28 @@ export function useBleDiagnostics(): BleDiagnosticsSnapshot {
   return useSyncExternalStore(subscribe, getBleDiagnostics)
 }
 
+/** One-line rendering of a properties snapshot, or of the lab-off marker. */
+export function formatProperties(properties: BleLinkSummary['properties']): string {
+  if (properties === null) return 'unknown'
+  if (typeof properties === 'string') return properties
+  if (!properties.present) return 'absent'
+  return `write=${properties.write} writeWithoutResponse=${properties.writeWithoutResponse} notify=${properties.notify}`
+}
+
+/** One-line rendering of the available write methods, or of the lab-off marker. */
+export function formatWriters(writers: BleLinkSummary['writers']): string {
+  if (writers === null) return 'unknown'
+  if (typeof writers === 'string') return writers
+  return writers.join('+') || 'none'
+}
+
 function describeLink(link: BleLinkSummary | null): string {
   if (!link) return 'Link: none'
-  const properties =
-    link.properties === null
-      ? 'unknown'
-      : typeof link.properties === 'string'
-        ? link.properties
-        : link.properties.present
-          ? `write=${link.properties.write} writeWithoutResponse=${link.properties.writeWithoutResponse} notify=${link.properties.notify}`
-          : 'absent'
-  const writers =
-    link.writers === null
-      ? 'unknown'
-      : Array.isArray(link.writers)
-        ? link.writers.join('+') || 'none'
-        : link.writers
   return (
     `Link: ${link.deviceName ?? '(unnamed)'} controller=${link.controller ?? 'none'} ` +
     `writeMode=${link.writeMode ?? 'none'} forced=${link.forced} writer=${link.writer ?? 'none'} ` +
-    `properties=[${properties}] writers=[${writers}] lastAction=${link.lastAction ?? 'none'}`
+    `properties=[${formatProperties(link.properties)}] writers=[${formatWriters(link.writers)}] ` +
+    `lastAction=${link.lastAction ?? 'none'}`
   )
 }
 

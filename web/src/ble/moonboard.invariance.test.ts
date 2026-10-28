@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildMessage, NUS_SERVICE, RX_CHAR } from './moonboard'
-import { BLE_DIAG_KEY } from './bleDiagnostics'
 import { getLabSettings } from './labSettings'
 import {
   THREE_CHUNK_HOLDS as threeChunkHolds,
@@ -99,12 +98,15 @@ describe('MoonBoardClient with the lab off (today\'s path)', () => {
 
   it('writes nothing to localStorage from the Bluetooth path', async () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem')
     const { client, device } = await connectedClient(undefined, { minimal: true })
     await client.send(threeChunkHolds, opts)
     device.dropConnection()
     await vi.advanceTimersByTimeAsync(500)
     client.disconnect()
-    expect(setItem).not.toHaveBeenCalledWith(BLE_DIAG_KEY, expect.anything())
+    // Any key, not just the diagnostics one (R8).
+    expect(setItem).not.toHaveBeenCalled()
+    expect(removeItem).not.toHaveBeenCalled()
   })
 
   it('a chooser rejection still surfaces as the rejection itself and leaves the client disconnected', async () => {

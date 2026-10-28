@@ -81,6 +81,30 @@ describe('useLightUp connect failures', () => {
     expect(toast.error).not.toHaveBeenCalled()
     expect(result.current.busy).toBeNull()
   })
+
+  it('does not toast a stale connect failure after the target changed, even with the lab on', async () => {
+    setLabSettings({ enabled: true })
+    let resolveConnect!: () => void
+    vi.mocked(ble.connectBoard).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveConnect = () => resolve({ message: FALLBACK, raw: '2' })
+      }),
+    )
+    const { result, rerender } = renderHook(({ key }) => useLightUp(board, key), {
+      initialProps: { key: 'a' },
+    })
+    let pending!: Promise<void>
+    act(() => {
+      pending = result.current.lightUp(holds)
+    })
+    rerender({ key: 'b' }) // user swiped to another problem while the chooser was up
+    await act(async () => {
+      resolveConnect()
+      await pending
+    })
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(result.current.busy).toBeNull()
+  })
 })
 
 describe('useLightUp', () => {

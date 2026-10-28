@@ -30,6 +30,7 @@ import { describeBleError, describeConnectFailure } from '../ble/moonboard'
 import {
   clearBleDiagnostics,
   formatBleDiagnostics,
+  formatProperties,
   updateBleLinkSummary,
   useBleDiagnostics,
   type BleLinkSummary,
@@ -61,14 +62,6 @@ function applySetting(patch: Partial<LabSettings>): void {
   setLabSettings(patch)
 }
 
-function describeProperties(link: BleLinkSummary): string {
-  const p = link.properties
-  if (p === null) return 'unknown'
-  if (typeof p === 'string') return p
-  if (!p.present) return 'absent'
-  return `write=${p.write} writeWithoutResponse=${p.writeWithoutResponse} notify=${p.notify}`
-}
-
 function describeMode(link: BleLinkSummary): string {
   if (!link.writeMode) return 'none'
   if (link.writer === 'legacy') {
@@ -91,6 +84,9 @@ export function BleLabSection() {
 
   const connected = ble.state === 'connected'
   const sendDisabled = !connected || busy !== null
+  // A setting change disconnects first; mid-attempt that would leave the next Connect
+  // joining a severed attempt and doing nothing, so the knobs lock while connecting.
+  const settling = ble.state === 'connecting'
 
   async function handleConnect() {
     setBusy('connect')
@@ -149,7 +145,7 @@ export function BleLabSection() {
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Experimental Bluetooth path for older MoonBoard LED boxes, on this device only.
-            Changing a setting disconnects the board.
+            Changing a setting disconnects the board; the controls lock while it connects.
           </p>
         </div>
 
@@ -164,6 +160,7 @@ export function BleLabSection() {
           <Switch
             aria-label="Use the experimental Bluetooth path"
             checked={settings.enabled}
+            disabled={settling}
             onCheckedChange={(checked) => applySetting({ enabled: checked })}
           />
         </div>
@@ -175,7 +172,7 @@ export function BleLabSection() {
             variant="outline"
             spacing={0}
             value={[settings.chooser]}
-            disabled={!settings.enabled}
+            disabled={!settings.enabled || settling}
             onValueChange={(value) => {
               const next = value[0] as LabChooser | undefined
               if (next && next !== getLabSettings().chooser) applySetting({ chooser: next })
@@ -183,7 +180,7 @@ export function BleLabSection() {
             className="w-full"
           >
             {CHOOSER_OPTIONS.map(({ value, label }) => (
-              <ToggleGroupItem key={value} value={value} className="flex-1" disabled={!settings.enabled}>
+              <ToggleGroupItem key={value} value={value} className="flex-1" disabled={!settings.enabled || settling}>
                 {label}
               </ToggleGroupItem>
             ))}
@@ -202,7 +199,7 @@ export function BleLabSection() {
             variant="outline"
             spacing={0}
             value={[settings.writeMode]}
-            disabled={!settings.enabled}
+            disabled={!settings.enabled || settling}
             onValueChange={(value) => {
               const next = value[0] as LabWriteMode | undefined
               if (next && next !== getLabSettings().writeMode) applySetting({ writeMode: next })
@@ -210,7 +207,7 @@ export function BleLabSection() {
             className="w-full"
           >
             {WRITE_MODE_OPTIONS.map(({ value, label }) => (
-              <ToggleGroupItem key={value} value={value} className="flex-1" disabled={!settings.enabled}>
+              <ToggleGroupItem key={value} value={value} className="flex-1" disabled={!settings.enabled || settling}>
                 {label}
               </ToggleGroupItem>
             ))}
@@ -230,7 +227,7 @@ export function BleLabSection() {
               <dt>Write mode</dt>
               <dd>{describeMode(diag.link)}</dd>
               <dt>Properties</dt>
-              <dd className="break-words">{describeProperties(diag.link)}</dd>
+              <dd className="break-words">{formatProperties(diag.link.properties)}</dd>
               <dt>Last action</dt>
               <dd className="break-words">{diag.link.lastAction ?? '—'}</dd>
             </dl>
