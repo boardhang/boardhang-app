@@ -124,6 +124,7 @@ function authValue(status: 'signedOut' | 'signedInWithProfile') {
     status,
     profile: null,
     isRestoring: false,
+    isAdmin: false,
     isConfigured: status !== 'signedOut',
     sendEmailCode: vi.fn(),
     verifyEmailCode: vi.fn(),

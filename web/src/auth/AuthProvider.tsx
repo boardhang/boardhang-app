@@ -17,12 +17,19 @@ import { syncBenchmarkNewsIdentity } from '../catalog/benchmarkNewsStore'
 import { normalizeHandle } from './handle'
 import { profileFromRow, type AuthStatus, type Profile, type ProfileRow } from './types'
 import { isAvatarPath } from './avatarStorage'
+import { isAdminUser } from './admin'
 
 interface AuthContextValue {
   status: AuthStatus
   profile: Profile | null
   /** True during initial session restore, so the UI never flashes "Sign in". */
   isRestoring: boolean
+  /**
+   * True when the session user carries the server-set `app_metadata.role = 'admin'`
+   * claim (see `admin.ts`). Gates owner-only debug surfaces such as the BLE lab in
+   * Settings; recomputed on every auth event, so sign-out clears it.
+   */
+  isAdmin: boolean
   /** Whether Supabase credentials are present; false disables every sign-in surface. */
   isConfigured: boolean
   sendEmailCode: (email: string) => Promise<void>
@@ -51,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('signedOut')
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isRestoring, setIsRestoring] = useState(isConfigured)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   // Latest profile, read inside async resolves to implement iOS's "keep a known
   // profile on a transient load error" semantics without stale closures.
@@ -110,6 +118,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // fetch to a later tick: calling other Supabase methods inside the callback can
     // deadlock the client (documented supabase-js caveat).
     const resolveSession = async (session: Session | null) => {
+      // The admin claim lives on the token's user object; derive it from every auth
+      // event (false when signed out) rather than from the profile row.
+      setIsAdmin(isAdminUser(session?.user))
       // Cross-account cache safety (KTD-I9): clear the saved-lists store + IndexedDB
       // whenever the signed-in identity changes — sign-out or a different user — so on a
       // shared device user B never paints user A's cached lists. A restored same-user
@@ -257,6 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       profile,
       isRestoring,
+      isAdmin,
       isConfigured,
       sendEmailCode,
       verifyEmailCode,
@@ -270,6 +282,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       profile,
       isRestoring,
+      isAdmin,
       sendEmailCode,
       verifyEmailCode,
       signInWithGoogle,

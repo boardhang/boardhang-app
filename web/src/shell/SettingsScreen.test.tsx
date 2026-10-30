@@ -19,7 +19,13 @@ vi.mock('@tanstack/react-router', () => ({
 // without needing an AuthProvider.
 vi.mock('../logbook/LogbookExportSection', () => ({ LogbookExportSection: () => null }))
 
+// The screen reads `isAdmin` from the auth context to gate the BLE lab card; no
+// AuthProvider is mounted here, so stub the hook with a switchable value.
+const h = vi.hoisted(() => ({ isAdmin: false }))
+vi.mock('../auth/AuthProvider', () => ({ useAuth: () => ({ isAdmin: h.isAdmin }) }))
+
 beforeEach(() => {
+  h.isAdmin = false
   localStorage.clear()
   // Reset the previews snapshot (survives localStorage.clear()).
   window.dispatchEvent(new StorageEvent('storage'))
@@ -80,6 +86,18 @@ describe('SettingsScreen', () => {
       'href',
       'https://boardhang.app/about',
     )
+  })
+
+  // The BLE lab is an owner-only debug surface (plan AE11): rendered for an admin
+  // session only, never for anyone else.
+  it('shows the BLE lab card only for an admin', () => {
+    const { unmount } = render(<SettingsScreen />)
+    expect(screen.queryByRole('heading', { name: 'BLE lab' })).not.toBeInTheDocument()
+    unmount()
+
+    h.isAdmin = true
+    render(<SettingsScreen />)
+    expect(screen.getByRole('heading', { name: 'BLE lab' })).toBeInTheDocument()
   })
 
   // A standalone installed PWA has no back affordance, so navigating the window to

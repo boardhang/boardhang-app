@@ -93,9 +93,79 @@ message building, build from the real type, not the displayed one.
 The PWA reimplements the same NUS protocol over Web Bluetooth — `moonboard.ts`
 (`MoonBoardClient`, a module-level singleton exposed reactively via `useBle.ts`),
 with the "connect if needed, then send" interaction in `useLightUp.ts`. Same wire
-format, same 20-byte chunking rule; chunks are drained by awaiting each
-`writeValueWithoutResponse` sequentially (the web equivalent of the flow-controlled
-queue), with a single short retry per chunk for transient GATT hiccups.
+format, same 20-byte chunking rule; chunks are drained by awaiting each write
+sequentially (the web equivalent of the flow-controlled queue), with a single short
+retry per chunk for transient GATT hiccups.
+
+The client has **two paths** selected by the device-local BLE lab setting (next
+section). With the lab **off** — every user, and the default — it is the Nordic UART
+client exactly as it shipped before the lab existed: the chooser filters on the NUS
+service only, only the NUS service and RX characteristic are looked up, the
+characteristic's `properties` and the device `id` are never read, and chunks go
+through `writeValueWithoutResponse`. `moonboard.invariance.test.ts` pins those calls;
+treat a red test there as a regression for real users, not as a test to update.
+
+### BLE lab (admin-only experimental path)
+
+The lab exists because the original official MoonBoard LED box (and possibly other
+official generations) only accepts **acknowledged** ATT writes. On Apple stacks
+(Bluefy on iPhone, Chrome on macOS) a `writeValueWithoutResponse` to such a
+characteristic is handed to CoreBluetooth, which drops it with a log line while the
+browser reports success — the app says "lit", the wall stays dark. Boardsesh's
+MoonBoard protocol spec documents the two controller generations; the first attempt to
+support both for everyone (PR #165) broke the owner's phone and was reverted (#167),
+so the second attempt is opt-in per device and observable.
+
+- **Settings** live in `labSettings.ts` (localStorage `ble.lab.v1`): `enabled`
+  (default off), `chooser` (`nordic` = today's filter, `both` = NUS + RedBearLab
+  services + `MoonBoard` name prefix, `any` = `acceptAllDevices`), `writeMode`
+  (`auto`, `with-response`, `without-response`). The in-memory snapshot is the
+  source of truth and storage a best-effort mirror, so the lab still works where
+  `localStorage` throws. The client snapshots the settings once per user-initiated
+  connect and reuses that snapshot for the attempt's silent reconnects; the
+  Settings card disconnects the board before any change, so a live link never
+  changes behaviour.
+- **Chooser** options are built fresh per call and never frozen (the reverted
+  release froze a module constant — the leading hypothesis for the Bluefy failure).
+  Web Bluetooth exposes only the services named in `filters`/`optionalServices`,
+  so `any` lets the probe try both known services on an unlisted box; it cannot
+  enumerate an unknown one (that is an nRF Connect job).
+- **Probe** after `gatt.connect()`: the NUS pair first, then on *any* rejection
+  (Bluefy rejects with bare numeric codes, so no name gating) the RedBearLab pair
+  (UUIDs in [shared/spec/ble-protocol.md](../shared/spec/ble-protocol.md#second-controller-generation-the-original-redbearlab-box-unverified)).
+  Both absent →
+  readable "no known MoonBoard LED service" error and the link is severed; a named
+  `NetworkError`/`SecurityError` surfaces as itself. The guard before the second
+  lookup checks user-disconnect and device identity only — never `gatt.connected`,
+  which Chrome clears before a lookup rejects with `NetworkError`.
+- **Write mode** `auto`: Nordic → without response unless `properties` reports
+  only plain `write`; RedBearLab → with response unless `properties` reports only
+  `writeWithoutResponse` (absent properties also → with response, the loud-failure
+  direction). A forced mode wins outright. The split method for the mode is used;
+  when a shim lacks it, legacy `writeValue` stands in and the link is marked
+  `legacy` (the browser then chooses the ATT type, so "forced" is nominal). No
+  method at all → a readable send error. A link's mode never changes; a reconnect
+  re-derives it from the new characteristic.
+- **Diagnostics** (`bleDiagnostics.ts`): a 100-event in-memory ring buffer plus a
+  link summary, recorded on **both** paths (the lab-off run is the control),
+  mirrored to localStorage `ble.diag.v1` only while the lab is on, never throwing
+  into the Bluetooth path. Events cover connect start, the chosen device, each
+  lookup with the raw rejection (`name`/`code`/`message`/`typeof`/`String(err)`),
+  properties and available writers (or `not read`/`not probed` with the lab off),
+  the mode, every send (bytes, chunks, mode, writer, duration), chunk retries,
+  a failed user-initiated connect (`connect-failed`, with the raw rejection),
+  disconnects as `user`/`link`/`echo`, reconnect attempts, and the step a connect
+  timeout was waiting on. The Settings card (`web/src/shell/BleLabSection.tsx`,
+  rendered only when `useAuth().isAdmin`) shows the log newest-first with Copy,
+  Show as text, and a confirmed Clear, plus quick actions (Connect, Light LED 0 =
+  `l#P0#` via `lightLed(0)`, Clear LEDs, Disconnect).
+- **Toasts:** a failed connect on the problem screens is toasted only while the
+  lab is on (message plus the raw rejection in brackets); with the lab off it stays
+  silent, as before.
+- **Hardware status:** the RedBearLab path and the write-type rule are
+  **unverified on hardware**. The owner's check order on the DIY Nordic board is
+  lab off → `nordic` + Unacknowledged → `nordic` + Auto; at a gym `both` + Auto,
+  then `both` + Acknowledged if dark, then `any`. Copy the diagnostics between steps.
 
 ### Reconnect model
 
@@ -132,6 +202,12 @@ delivered. The client therefore designs for disconnection instead of fighting it
   `inflight` promise and freeze every later `connect()` (including user taps) at
   `'connecting'` with no UI escape. On timeout the attempt aborts the link and
   rejects into the normal backoff/chooser-fallback paths.
+- **Chrome echoes the client's own `gatt.disconnect()`** (after a failed lookup,
+  the connect timeout, or a guard bail) back as `gattserverdisconnected`, while
+  state is still `'connecting'`. Only a drop from `'connected'` resets the backoff
+  counter; an echo keeps counting, so an auto-reconnect whose lookups keep failing
+  stops after the four attempts instead of looping. This is the one rule that
+  applies on both the default and the lab path.
 
 `requestDevice()` (first connect, or after a retained device was dropped) must be
 called from a user gesture. `getDevices()`/`watchAdvertisements()` (chooser-free
@@ -146,6 +222,12 @@ Chrome) and Bluefy on iOS — see `web/src/shell/BleBrowserBanner.tsx`.
 - `flipped` reverses the *entire* LED strip (`total - 1 - led`) — see [board-geometry.md](board-geometry.md).
 - Message format must be byte-exact `l#…#`.
 - Auto-reconnect stays off after a user disconnect until the next explicit `connect()`.
+- CoreBluetooth (Bluefy, Chrome on macOS) **silently drops** a write-without-response to a
+  characteristic that only permits plain `write`, and the browser still reports success —
+  the only sign is a dark wall. The original RedBearLab box is such a characteristic. The
+  web client's lab path writes with response there; the default path still cannot.
+- With the BLE lab off the web client must stay byte-identical to the pre-lab client
+  (`moonboard.invariance.test.ts`); route any new Bluetooth behaviour through the lab first.
 - BLE does **not** work in the iOS Simulator — only on a real device.
 - Manager is `@MainActor`; CoreBluetooth callbacks already run on the main queue. Moving to
   Swift 6 language mode will surface concurrency warnings here that are benign under Swift 5.
