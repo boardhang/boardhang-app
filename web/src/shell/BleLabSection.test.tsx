@@ -86,6 +86,19 @@ describe('BleLabSection settings', () => {
     expect(screen.getByText(/Acknowledged = write with response/)).toBeInTheDocument()
     expect(screen.getByText(/nRF Connect capture/)).toBeInTheDocument()
     expect(screen.getByText(/Changing a setting disconnects the board/)).toBeInTheDocument()
+    // 2026-10-30 plan R10: both paths read the write type from the box; the card says so.
+    expect(
+      screen.getByText(/standard Bluetooth path reads the write type from the box and lights the older Nordic boxes/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/probing a board it still cannot light/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/the standard path connects to Nordic boards and reads the write type from the box/),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/the lab adds the original box's controller type and lets you force the write type/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/today's Bluetooth behaviour/)).toBeNull()
+    expect(screen.queryByText(/for older MoonBoard LED boxes/)).toBeNull()
   })
 
   it('disconnects the board before a setting changes (AE10)', async () => {

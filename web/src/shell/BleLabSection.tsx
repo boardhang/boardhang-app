@@ -144,8 +144,9 @@ export function BleLabSection() {
             <Badge variant="outline">Experimental</Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Experimental Bluetooth path for older MoonBoard LED boxes, on this device only.
-            Changing a setting disconnects the board; the controls lock while it connects.
+            The standard Bluetooth path reads the write type from the box and lights the older
+            Nordic boxes. This lab is for probing a board it still cannot light, on this device
+            only. Changing a setting disconnects the board; the controls lock while it connects.
           </p>
         </div>
 
@@ -153,8 +154,9 @@ export function BleLabSection() {
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium">Use the experimental path</div>
             <div className="mt-0.5 text-xs text-muted-foreground">
-              Off = today's Bluetooth behaviour. On = pick both controller types and choose the
-              write type from the box.
+              Off: the standard path connects to Nordic boards and reads the write type from the
+              box. On: the lab adds the original box's controller type and lets you force the
+              write type.
             </div>
           </div>
           <Switch
