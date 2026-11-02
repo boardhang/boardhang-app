@@ -1,9 +1,11 @@
 # BLE protocol — DIY MoonBoard LED controller
 
 Cross-platform spec extracted from `ios/MoonBoardLED/BLE/MoonBoardBLEManager.swift`.
-The controller runs the **ArduinoMoonBoardLED** firmware, which exposes a Nordic
+The DIY controller runs the **ArduinoMoonBoardLED** firmware, which exposes a Nordic
 UART Service (NUS). The app writes a problem string to the RX characteristic; the
-firmware lights the LEDs. Nothing is read back.
+firmware lights the LEDs. Nothing is read back. The official MoonBoard LED boxes
+speak the same frame over the controllers described below; only the GATT
+addresses and the accepted ATT write type differ.
 
 ## UUIDs (Nordic UART Service)
 
@@ -14,6 +16,41 @@ firmware lights the LEDs. Nothing is read back.
 
 Scan/filter by the **service UUID**, not the device name — the board can be renamed
 but still advertises the NUS service.
+
+## Write-type rule
+
+The RX characteristic's `properties` decide the ATT write type, read once per
+connection after the characteristic resolves:
+
+| The characteristic reports | Write type |
+| --- | --- |
+| plain `write` only (`write=true`, `writeWithoutResponse=false`) | **write-with-response** (acknowledged) |
+| `writeWithoutResponse` (alone or together with `write`) | write-without-response |
+| neither flag, or properties absent or unreadable | the controller's default: Nordic UART → write-without-response; RedBearLab → write-with-response |
+
+Plain write only means the box accepts acknowledged writes only. CoreBluetooth
+silently drops a write-without-response to such a characteristic while the browser
+reports success, so the rule never guesses in the unacknowledged direction when the
+properties are plain. The DIY Nordic boards (ArduinoMoonBoardLED firmware) are
+write-without-response and stay on that method, including behind a shim that hides
+the properties: the two failure directions are not symmetric — a wrong acknowledged
+write is rejected loudly, a wrong unacknowledged write is silent at every layer — so
+each controller's default for absent properties is its field-proven method. A
+reconnect re-derives the type from the new characteristic; a live link never changes
+it. A forced write type (the web client's admin lab) overrides the rule. The iOS
+manager is Nordic UART only and writes without response.
+
+## Official Nordic UART boxes (one unit hardware-verified)
+
+Later official MoonBoard LED kits use a Nordic UART controller with the same service
+and RX characteristic UUIDs, frame, letters, and 20-byte chunking as the DIY boards,
+but the RX characteristic advertises plain `write` only, so the rule above sends it
+acknowledged writes. One unit is verified: the box installed at a gym, advertising as
+"MoonBoard A" (also the DIY firmware's default name, so identify a box by its
+installation, not its name), in Bluefy 3.9.3 on iPhone on 2026-10-30. Its properties
+read `write=true writeWithoutResponse=false`; write-without-response left it dark;
+acknowledged writes lit it, about 50 ms for a one-chunk send and 100 to 220 ms for two
+or three chunks. Other official boxes may differ — the rule decides per connection.
 
 ## Second controller generation: the original RedBearLab box (unverified)
 
@@ -31,13 +68,10 @@ addresses and the accepted ATT write type differ.
 - **Scan rule:** filter on either service (OR'd filters) plus the `MoonBoard` name
   prefix, with both services in `optionalServices`; after connect, resolve the
   NUS pair first and fall back to the RedBearLab pair on any rejection.
-- **Write-type rule:** the RedBearLab characteristic advertises plain `write`
-  only. CoreBluetooth silently drops a write-without-response to it (and the
-  browser reports success), so chunks to this generation must go
-  **write-with-response**; the Nordic generation keeps write-without-response.
-  When the characteristic's `properties` can be read they decide; when they are
-  absent, RedBearLab defaults to write-with-response (a wrong acknowledged write
-  fails loudly, a wrong unacknowledged one never does).
+- **Write type:** the RedBearLab characteristic is documented as plain `write`
+  only, so the write-type rule above sends it acknowledged writes; when its
+  `properties` are absent, RedBearLab defaults to write-with-response (a wrong
+  acknowledged write fails loudly, a wrong unacknowledged one never does).
 - **Status:** unverified on hardware. Only the web client speaks this generation,
   and only through its admin-only BLE lab (docs/ble-hardware.md); the iOS manager
   is Nordic UART only. Clear-all (`l##`) is unconfirmed on official boxes and at
@@ -77,7 +111,7 @@ tokens go out as the blue "right"/move letter.
 - **Single-LED calibration:** `l#P<n>#` — lights exactly one LED, sent as a one-hold
   "move" problem. Used by the LED test / calibration screen.
 
-## The 20-byte chunking + write-without-response flow control (critical gotcha)
+## The 20-byte chunking + flow control (critical gotcha)
 
 The firmware's RX characteristic accepts **at most 20 bytes per write**
 (`BLE_ATTRIBUTE_MAX_VALUE_LENGTH` in ArduinoMultiUserHardwareBLESerial). It
@@ -97,9 +131,9 @@ Encoding is **ASCII** (the message is plain ASCII text).
 Each message is self-contained (`l#…#`), so a new message fully replaces any
 partially-sent prior one — reset the write queue on every new message.
 
-Chunks are sent **write-without-response** on the Nordic UART generation (and
-**write-with-response** on the RedBearLab generation, see above) and must respect
-back-pressure so the stack never silently drops packets:
+Chunks are sent with the write type the [write-type rule](#write-type-rule) selects
+for the characteristic and must respect back-pressure so the stack never silently
+drops packets:
 
 - **iOS (CoreBluetooth):** drain the queue only while
   `peripheral.canSendWriteWithoutResponse` is true; when it goes false, stop and
@@ -107,10 +141,12 @@ back-pressure so the stack never silently drops packets:
   allowed right after connect because `canSendWriteWithoutResponse` can briefly report
   false before the ready-callback starts firing.
 - **Web Bluetooth:** there is no explicit ready-callback. The equivalent back-pressure
-  is to `await characteristic.writeValueWithoutResponse(chunk)` for each chunk
-  **sequentially** — awaiting each write provides the flow control. A write can still
-  transiently reject on a healthy link (GATT momentarily busy, radio hiccup); the web
-  client retries each chunk once after a short beat before surfacing the failure.
+  is to `await` each chunk's write **sequentially**, whichever write type the rule
+  selected (`writeValueWithoutResponse` or `writeValueWithResponse`) — awaiting each
+  write provides the flow control, and with acknowledged writes the await is a true
+  ATT-level acknowledgement. A write can still transiently reject on a healthy link
+  (GATT momentarily busy, radio hiccup); the web client retries each chunk once, in
+  the same write type, after a short beat before surfacing the failure.
 
 ## Connection lifecycle (iOS reference behavior)
 
