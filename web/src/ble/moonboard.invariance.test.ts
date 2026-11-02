@@ -116,13 +116,25 @@ describe('MoonBoardClient with the lab off (the default path)', () => {
     expect(link).toBe('link controller=nordic-uart mode=with-response forced=false writer=split')
   })
 
-  for (const [label, stack, absent] of [
-    ['writeWithoutResponse only', { properties: { write: false, writeWithoutResponse: true } }, false],
-    ['both write flags', { properties: { write: true, writeWithoutResponse: true } }, false],
-    ['neither write flag', { properties: { write: false, writeWithoutResponse: false } }, false],
-    ['no properties and only writeValueWithoutResponse (thin shim)', { minimal: true }, true],
-    ['a properties getter that throws', { properties: 'throws' }, true],
-  ] as const satisfies ReadonlyArray<readonly [string, StackOptions, boolean]>) {
+  for (const [label, stack, recorded] of [
+    [
+      'writeWithoutResponse only',
+      { properties: { write: false, writeWithoutResponse: true } },
+      'properties write=false writeWithoutResponse=true notify=false',
+    ],
+    [
+      'both write flags',
+      { properties: { write: true, writeWithoutResponse: true } },
+      'properties write=true writeWithoutResponse=true notify=false',
+    ],
+    [
+      'neither write flag',
+      { properties: { write: false, writeWithoutResponse: false } },
+      'properties write=false writeWithoutResponse=false notify=false',
+    ],
+    ['no properties and only writeValueWithoutResponse (thin shim)', { minimal: true }, 'properties absent'],
+    ['a properties getter that throws', { properties: 'throws' }, 'properties absent'],
+  ] as const satisfies ReadonlyArray<readonly [string, StackOptions, string]>) {
     it(`writes without response when the characteristic reports ${label}`, async () => {
       // Covers AE2, AE3. Every other combination keeps the DIY boards' unacknowledged mode.
       const { client, characteristic, reads } = await connectedClient(undefined, {
@@ -136,11 +148,40 @@ describe('MoonBoardClient with the lab off (the default path)', () => {
       expect(callCount(c.writeValueWithResponse)).toBe(0)
       expect(callCount(c.writeValue)).toBe(0)
       expect(reads.properties).toBe(1)
-      const properties = eventLines().find((e) => e.startsWith('properties '))
-      if (absent) expect(properties).toBe('properties absent')
-      else expect(properties).toMatch(/^properties write=(true|false) writeWithoutResponse=(true|false)/)
+      expect(eventLines().find((e) => e.startsWith('properties '))).toBe(recorded)
     })
   }
+
+  it('on a plain-write-only box, a shim without writeValueWithResponse falls back to legacy writeValue', async () => {
+    // The plan's risk row: the gym box on a shim that lacks the split method. Today that
+    // box is silently dark; the legacy method lets the browser choose the ATT type.
+    const { client, characteristic } = await connectedClient(undefined, {
+      properties: { write: true, writeWithoutResponse: false },
+      methods: ['without', 'legacy'],
+    })
+    expect(client.writeMode).toBe('with-response')
+    await client.send(threeChunkHolds, opts)
+    expect(chunksOf(characteristic.writeValue).map((c) => c.length)).toEqual([20, 20, 5])
+    expect(characteristic.writeValueWithoutResponse).not.toHaveBeenCalled()
+    expect(eventLines().find((e) => e.startsWith('link '))).toBe(
+      'link controller=nordic-uart mode=with-response forced=false writer=legacy',
+    )
+  })
+
+  it('on a plain-write-only box, a shim with neither writeValueWithResponse nor writeValue rejects naming the acknowledged method', async () => {
+    const { client, characteristic } = await connectedClient(undefined, {
+      properties: { write: true, writeWithoutResponse: false },
+      methods: ['without'],
+    })
+    expect(client.writeMode).toBe('with-response')
+    expect(eventLines().find((e) => e.startsWith('link '))).toContain('writer=split write=unavailable')
+    let caught: unknown
+    await client.send(oneHold, opts).catch((err: unknown) => {
+      caught = err
+    })
+    expect(describeBleError(caught)).toMatch(/exposes no writeValueWithResponse method/)
+    expect(characteristic.writeValueWithoutResponse).not.toHaveBeenCalled()
+  })
 
   it('with no write method the link commits and a send rejects readably at once, without naming the lab', async () => {
     const { client, characteristic } = await connectedClient(undefined, { methods: [] })
@@ -153,8 +194,7 @@ describe('MoonBoardClient with the lab off (the default path)', () => {
     expect(caught).toBeInstanceOf(Error)
     const message = describeBleError(caught)
     expect(message).toMatch(/exposes no writeValueWithoutResponse method/)
-    expect(message).not.toMatch(/BLE lab/i)
-    expect(message).not.toMatch(/lab/i)
+    expect(message).not.toMatch(/\blab\b/i)
     expect(vi.getTimerCount()).toBe(0)
     const c = characteristic as Partial<typeof characteristic>
     expect(callCount(c.writeValueWithoutResponse)).toBe(0)

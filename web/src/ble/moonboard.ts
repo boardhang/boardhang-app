@@ -1,5 +1,5 @@
-// Web Bluetooth client for the DIY MoonBoard LED controller.
-// TS port of shared/spec/ble-protocol.md (from
+// Web Bluetooth client for MoonBoard LED controllers: the DIY Nordic UART boards
+// and the official boxes. TS port of shared/spec/ble-protocol.md (from
 // ios/MoonBoardLED/BLE/MoonBoardBLEManager.swift). Separate reimplementation,
 // not a shared binary.
 //
@@ -256,13 +256,22 @@ function snapshotProperties(characteristic: BluetoothRemoteGATTCharacteristic): 
   }
 }
 
-/** Which write methods the characteristic exposes (a thin shim may lack the split pair). */
+/**
+ * Which write methods the characteristic exposes (a thin shim may lack the split
+ * pair). Guarded like `snapshotProperties`: a shim accessor that throws leaves the
+ * methods found so far, so the link still builds and a missing method surfaces as
+ * the readable send error instead of a failed connect.
+ */
 function availableWriters(characteristic: BluetoothRemoteGATTCharacteristic): Array<'with' | 'without' | 'legacy'> {
   const c = characteristic as Partial<BluetoothRemoteGATTCharacteristic>
   const found: Array<'with' | 'without' | 'legacy'> = []
-  if (typeof c.writeValueWithResponse === 'function') found.push('with')
-  if (typeof c.writeValueWithoutResponse === 'function') found.push('without')
-  if (typeof c.writeValue === 'function') found.push('legacy')
+  try {
+    if (typeof c.writeValueWithResponse === 'function') found.push('with')
+    if (typeof c.writeValueWithoutResponse === 'function') found.push('without')
+    if (typeof c.writeValue === 'function') found.push('legacy')
+  } catch {
+    // Keep what was found.
+  }
   return found
 }
 
@@ -512,10 +521,14 @@ export class MoonBoardClient {
     let phase = 'gatt.connect'
     this.inflight ??= withTimeout(
       (async () => {
+        // One snapshot per attempt body: the branch and the mode source below must
+        // agree even if a later user-initiated connect replaces `this.lab` while a
+        // lookup of this attempt is still pending.
+        const lab = this.lab
         const server = await device.gatt!.connect()
         recordBleEvent('gatt-connected')
         let resolved: ResolvedCharacteristic | null
-        if (!this.lab.enabled) {
+        if (!lab.enabled) {
           phase = 'nordic-uart lookup'
           const service = await server.getPrimaryService(NUS_SERVICE)
           const characteristic = await service.getCharacteristic(RX_CHAR)
@@ -525,7 +538,7 @@ export class MoonBoardClient {
           if (!resolved) return
         }
         if (this.bailedOut(device)) return
-        const modeSource: LabWriteMode = this.lab.enabled ? this.lab.writeMode : 'auto'
+        const modeSource: LabWriteMode = lab.enabled ? lab.writeMode : 'auto'
         const { link, properties, writers } = buildLink(resolved.characteristic, resolved.controller, modeSource)
         recordBleEvent('properties', formatProperties(properties))
         recordBleEvent('writers', formatWriters(writers))

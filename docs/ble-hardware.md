@@ -103,12 +103,10 @@ With the lab **off** — every user, and the default — it is a Nordic UART cli
 chooser filters on the NUS service only, only the NUS service and RX characteristic
 are looked up, the device `id` is never read, and the characteristic's `properties`
 are read once per connect, after the lookups and the bail-out guard. The write type
-follows the rule in
-[shared/spec/ble-protocol.md](../shared/spec/ble-protocol.md#write-type-rule):
-acknowledged (`writeValueWithResponse`) only when the properties report plain
-`write` and not `writeWithoutResponse` — the older official boxes — and
-unacknowledged (`writeValueWithoutResponse`) in every other case, including absent
-or unreadable properties, so the DIY boards and thin shims keep their method. The
+follows the spec's
+[write-type rule](../shared/spec/ble-protocol.md#write-type-rule): acknowledged
+writes only for a plain-write-only characteristic (the older official boxes),
+unacknowledged otherwise, so the DIY boards and thin shims keep their method. The
 split method for the mode carries the chunks; a shim without it falls back to legacy
 `writeValue`, and one with no write method at all gets a readable send error. A
 reconnect re-derives the mode from the new characteristic; a live link never changes
@@ -119,15 +117,16 @@ off.
 Nordic lookups, no `id` read, exactly one `properties` read per connect, the write
 method per property combination (plain write only → with response; every other
 combination, absent, or a throwing getter → without response), the stale-override
-cases both ways, 20/20/5 chunking with the single same-mode retry, the readable
-rejection when the shim has no write method, the lab-off log shape (no `probe`
-lines), the reconnect re-derivation, and no storage writes. Change a pin only
-through a plan that names it.
+cases both ways, 20/20/5 chunking with the single same-mode retry, the legacy
+fallback and the readable rejection when the shim lacks the method for the mode, the
+lab-off log shape (no `probe` lines), the reconnect re-derivation, and no storage
+writes. Change a pin only through a plan that names it.
 
 ### BLE lab (admin-only experimental path)
 
-The lab exists because the official MoonBoard LED boxes only accept **acknowledged**
-ATT writes. On Apple stacks (Bluefy on iPhone, Chrome on macOS) a
+The lab exists because the official MoonBoard LED boxes seen so far — one Nordic
+UART unit at a gym, and the original RedBearLab box as boardsesh documents it —
+accept only **acknowledged** ATT writes. On Apple stacks (Bluefy on iPhone, Chrome on macOS) a
 `writeValueWithoutResponse` to such a characteristic is handed to CoreBluetooth,
 which drops it with a log line while the browser reports success — the app says
 "lit", the wall stays dark. Boardsesh's MoonBoard protocol spec documents the two
@@ -159,15 +158,14 @@ the forced write modes, and the persisted log.
   `NetworkError`/`SecurityError` surfaces as itself. The guard before the second
   lookup checks user-disconnect and device identity only — never `gatt.connected`,
   which Chrome clears before a lookup rejects with `NetworkError`.
-- **Write mode** `auto` is the same rule the default path runs (see the spec):
-  Nordic → without response unless `properties` reports only plain `write`;
-  RedBearLab → with response unless `properties` reports only
-  `writeWithoutResponse` (absent properties also → with response, the loud-failure
-  direction). A forced mode wins outright and is recorded as `forced=true`. The
-  split method for the mode is used; when a shim lacks it, legacy `writeValue`
-  stands in and the link is marked `legacy` (the browser then chooses the ATT type,
-  so "forced" is nominal). No method at all → a readable send error. A link's mode
-  never changes; a reconnect re-derives it from the new characteristic.
+- **Write mode** `auto` applies the spec's
+  [write-type rule](../shared/spec/ble-protocol.md#write-type-rule) — the same rule
+  the default path runs. A forced mode wins outright and is recorded as
+  `forced=true`. The split method for the mode is used; when a shim lacks it, legacy
+  `writeValue` stands in and the link is marked `legacy` (the browser then chooses
+  the ATT type, so the recorded mode, forced or derived, may not be what went on the
+  wire). No method at all → a readable send error. A link's mode never changes; a
+  reconnect re-derives it from the new characteristic.
 - **Diagnostics** (`bleDiagnostics.ts`): a 100-event in-memory ring buffer plus a
   link summary, recorded on **both** paths (the lab-off run is the control),
   mirrored to localStorage `ble.diag.v1` only while the lab is on, never throwing
@@ -254,9 +252,10 @@ Chrome) and Bluefy on iOS — see `web/src/shell/BleBrowserBanner.tsx`.
 - Auto-reconnect stays off after a user disconnect until the next explicit `connect()`.
 - CoreBluetooth (Bluefy, Chrome on macOS) **silently drops** a write-without-response to a
   characteristic that only permits plain `write`, and the browser still reports success —
-  the only sign is a dark wall. The official boxes are such characteristics. The web
-  client reads the properties once per connect and writes with response to a
-  plain-write-only characteristic on both paths; it never guesses in the silent direction.
+  the only sign is a dark wall. The gym's official Nordic box is such a characteristic,
+  and boardsesh documents the original RedBearLab box as one too. The web client reads
+  the properties once per connect and writes with response to a plain-write-only
+  characteristic on both paths; it never guesses in the silent direction.
 - The lab-off web client is pinned by `moonboard.invariance.test.ts`; change a pin only
   through a plan that names it.
 - BLE does **not** work in the iOS Simulator — only on a real device.

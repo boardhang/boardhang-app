@@ -22,23 +22,27 @@ but still advertises the NUS service.
 The RX characteristic's `properties` decide the ATT write type, read once per
 connection after the characteristic resolves:
 
-| The characteristic reports | Write type |
-| --- | --- |
-| plain `write` only (`write=true`, `writeWithoutResponse=false`) | **write-with-response** (acknowledged) |
-| `writeWithoutResponse` (alone or together with `write`) | write-without-response |
-| neither flag, or properties absent or unreadable | the controller's default: Nordic UART → write-without-response; RedBearLab → write-with-response |
+| The characteristic reports | Nordic UART | RedBearLab |
+| --- | --- | --- |
+| plain `write` only (`write=true`, `writeWithoutResponse=false`) | **write-with-response** (acknowledged) | write-with-response |
+| `writeWithoutResponse` only (`write=false`) | write-without-response | **write-without-response** |
+| both flags | write-without-response | write-with-response |
+| neither flag, or properties absent or unreadable | write-without-response | write-with-response |
 
-Plain write only means the box accepts acknowledged writes only. CoreBluetooth
-silently drops a write-without-response to such a characteristic while the browser
-reports success, so the rule never guesses in the unacknowledged direction when the
-properties are plain. The DIY Nordic boards (ArduinoMoonBoardLED firmware) are
-write-without-response and stay on that method, including behind a shim that hides
-the properties: the two failure directions are not symmetric — a wrong acknowledged
-write is rejected loudly, a wrong unacknowledged write is silent at every layer — so
-each controller's default for absent properties is its field-proven method. A
-reconnect re-derives the type from the new characteristic; a live link never changes
-it. A forced write type (the web client's admin lab) overrides the rule. The iOS
-manager is Nordic UART only and writes without response.
+Each controller has a default and exactly one combination that flips it. Nordic
+UART defaults to write-without-response — the DIY boards' (ArduinoMoonBoardLED
+firmware) field-proven method, which must survive a shim that hides the
+properties — and flips to acknowledged writes only for plain write only. RedBearLab
+defaults to write-with-response — the box is documented as plain write only, and a
+wrong acknowledged write is rejected loudly while a wrong unacknowledged write is
+silent at every layer — and flips to unacknowledged writes only when the
+characteristic reports `writeWithoutResponse` alone. Plain write only means the box
+accepts acknowledged writes only: CoreBluetooth silently drops a
+write-without-response to such a characteristic while the browser reports success,
+so the rule never guesses in the unacknowledged direction when the properties are
+plain. A reconnect re-derives the type from the new characteristic; a live link
+never changes it. A forced write type (the web client's admin lab) overrides the
+rule. The iOS manager is Nordic UART only and writes without response.
 
 ## Official Nordic UART boxes (one unit hardware-verified)
 
