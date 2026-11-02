@@ -42,3 +42,7 @@ catalog-data/.beta_matches_*.json
 catalog-data/.beta_searched_*
 /.vercel
 /.env*
+
+# Catalog fetch scratch (boardsesh feed before the merge) — never commit; the merged
+# snapshot beside it is the canonical copy
+catalog-data/.upstream/
