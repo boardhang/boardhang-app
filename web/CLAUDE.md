@@ -39,11 +39,24 @@ deliberate, reviewed commit.
 
 The web app is hosted on Vercel as the **`boardly`** project (org
 `skepparpaulbertil-1035s-projects`), serving `https://www.boardhang.app`.
-Deploys are **manual via the Vercel CLI from the repo root** — there is no
-git-integration auto-deploy, so merging to `main` does *not* ship. You must deploy
-explicitly. The project's Root Directory setting is `web`, and current CLI versions
-resolve that against the linked directory, so the link and all commands live at the
-**repo root**, not in `web/` (running from `web/` fails with a `web/web` path error).
+The **Vercel GitHub integration** deploys it: every pushed branch is built to a
+preview (the Vercel check on the PR links the deployment for that commit; the
+branch alias always serves the newest successful build), and a merge to `main`
+deploys production. **Merging ships.** Treat the squash-merge of a PR as its
+production deploy and gate it accordingly; a safety-critical plan names the gate.
+
+- **Rolling back:** the fast way is the Vercel dashboard — open the `boardly`
+  project's Deployments, pick the last good production deployment, and roll back to
+  it (seconds, works from a phone). Then open a code-only revert PR on `main` (which
+  requires a pull request) so the next merge does not re-ship the change.
+- **Installed PWA:** the service worker serves its cached shell for one load after a
+  deploy; the second load runs the new build. When checking a deploy on a phone,
+  reload until a visible marker of the new build shows.
+- **Manual CLI deploy** is the fallback when the integration is unavailable. The
+  project's Root Directory setting is `web`, and current CLI versions resolve that
+  against the linked directory, so the link and all commands live at the **repo
+  root**, not in `web/` (running from `web/` fails with a `web/web` path error, and an
+  unlinked directory silently creates a new project).
 
 The CLI uploads and builds the current **working tree** (not a git ref), so make sure it's
 clean and on the commit you want live before deploying:

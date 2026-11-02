@@ -86,6 +86,19 @@ describe('BleLabSection settings', () => {
     expect(screen.getByText(/Acknowledged = write with response/)).toBeInTheDocument()
     expect(screen.getByText(/nRF Connect capture/)).toBeInTheDocument()
     expect(screen.getByText(/Changing a setting disconnects the board/)).toBeInTheDocument()
+    // 2026-10-30 plan R10: both paths read the write type from the box; the card says so.
+    expect(
+      screen.getByText(/standard Bluetooth path reads the write type from the box and lights the older Nordic boxes/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/probing a board it still cannot light/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/the standard path connects to Nordic boards and reads the write type from the box/),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/the lab adds the original box's controller type and lets you force the write type/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/today's Bluetooth behaviour/)).toBeNull()
+    expect(screen.queryByText(/for older MoonBoard LED boxes/)).toBeNull()
   })
 
   it('disconnects the board before a setting changes (AE10)', async () => {
@@ -199,13 +212,29 @@ describe('BleLabSection status and quick actions', () => {
     expect(screen.getByText(/Light LED 0 failed: write not permitted/)).toBeInTheDocument()
   })
 
-  it("connects through today's path when the lab is off", async () => {
+  it('connects through the standard path when the lab is off and shows what it read from the box', async () => {
+    // 2026-10-30 plan R1, R7: the Nordic-only chooser, one properties read, absent on a thin shim.
     const stack = fakeStack(undefined, { minimal: true })
     render(<BleLabSection />)
     await connectViaCard()
     expect(stack.requestDevice.mock.calls[0]![0]).toEqual({ filters: [{ services: [NUS_SERVICE] }] })
-    expect(stack.reads.properties).toBe(0)
-    expect(screen.getByText('not read')).toBeInTheDocument()
+    expect(stack.reads.properties).toBe(1)
+    expect(stack.reads.id).toBe(0)
+    expect(screen.getByText('absent')).toBeInTheDocument()
+  })
+
+  it('with the lab off, a plain-write-only box shows with-response and Light LED 0 goes with response', async () => {
+    // 2026-10-30 plan R2: the gym box through the card with the lab off.
+    const stack = fakeStack(undefined, { properties: { write: true, writeWithoutResponse: false } })
+    render(<BleLabSection />)
+    await connectViaCard()
+    expect(screen.getByText('with-response')).toBeInTheDocument()
+    await click('Light LED 0')
+    await waitFor(() =>
+      expect(screen.getByText('Light LED 0 sent, 1 chunk, with-response')).toBeInTheDocument(),
+    )
+    expect(chunksOf(stack.characteristic.writeValueWithResponse)).toEqual(['l#P0#'])
+    expect(stack.characteristic.writeValueWithoutResponse).not.toHaveBeenCalled()
   })
 })
 

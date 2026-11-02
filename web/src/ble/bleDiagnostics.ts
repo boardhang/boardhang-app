@@ -1,8 +1,8 @@
 // In-app Bluetooth diagnostics for the admin "BLE lab" (docs/ble-hardware.md).
 //
 // A capped ring buffer of timestamped events plus a summary of the current link.
-// The in-memory snapshot is the source of truth; it is recorded on BOTH the default
-// and the experimental client path so the lab-off path can serve as the control run.
+// The in-memory snapshot is the source of truth; it is recorded in the same shape on
+// BOTH the default and the lab client path, so a lab-off log reads like a lab-on one.
 // Persistence to localStorage is opt-in (switched on by the lab settings store while
 // the lab is enabled) so no key is written for users who never touch the lab.
 // Recording never throws into the caller and never awaits — a diagnostics failure
@@ -24,9 +24,8 @@ export interface BleEvent {
 
 export type BleController = 'nordic-uart' | 'redbearlab'
 export type BleWriteMode = 'with-response' | 'without-response'
-/** How chunks reach the characteristic: a split method, legacy `writeValue`, or the
- *  lab-off direct call (no probing of which methods exist). */
-export type BleWriter = 'split' | 'legacy' | 'direct'
+/** How chunks reach the characteristic: the split method for the mode, or legacy `writeValue`. */
+export type BleWriter = 'split' | 'legacy'
 
 export interface BlePropertiesSnapshot {
   write: boolean
@@ -42,10 +41,10 @@ export interface BleLinkSummary {
   writeMode: BleWriteMode | null
   forced: boolean
   writer: BleWriter | null
-  /** The characteristic's properties, or 'not read' on the lab-off path. */
-  properties: BlePropertiesSnapshot | 'not read' | null
-  /** Which write methods the characteristic exposes, or 'not probed' on the lab-off path. */
-  writers: string[] | 'not probed' | null
+  /** The characteristic's properties, read once when the link was built. */
+  properties: BlePropertiesSnapshot | null
+  /** Which write methods the characteristic exposes (`with`, `without`, `legacy`). */
+  writers: string[] | null
   /** Result of the last quick action from the lab card. */
   lastAction: string | null
 }
@@ -252,18 +251,16 @@ export function useBleDiagnostics(): BleDiagnosticsSnapshot {
   return useSyncExternalStore(subscribe, getBleDiagnostics)
 }
 
-/** One-line rendering of a properties snapshot, or of the lab-off marker. */
+/** One-line rendering of a properties snapshot. */
 export function formatProperties(properties: BleLinkSummary['properties']): string {
   if (properties === null) return 'unknown'
-  if (typeof properties === 'string') return properties
   if (!properties.present) return 'absent'
   return `write=${properties.write} writeWithoutResponse=${properties.writeWithoutResponse} notify=${properties.notify}`
 }
 
-/** One-line rendering of the available write methods, or of the lab-off marker. */
+/** One-line rendering of the available write methods. */
 export function formatWriters(writers: BleLinkSummary['writers']): string {
   if (writers === null) return 'unknown'
-  if (typeof writers === 'string') return writers
   return writers.join('+') || 'none'
 }
 

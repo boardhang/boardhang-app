@@ -12,7 +12,8 @@ import {
 
 // Per-link write mode with the lab on: derivation from controller + properties, the
 // forced overrides, the legacy fallback, the calibration write, and chunking on every
-// write method (plan R11-R13, AE6-AE9).
+// write method (2026-10-26 plan R11-R13, AE6-AE9); plus the lab-off link's record, built
+// by the same builder (2026-10-30 plan R1, R7).
 
 const { connectedClient, cleanupBleEnv } = bleHarness()
 
@@ -409,17 +410,18 @@ describe('MoonBoardClient forced write modes (lab on)', () => {
 })
 
 describe('MoonBoardClient link with the lab off', () => {
-  it('is a direct without-response link even when properties say plain write only, with not-read markers', async () => {
+  it('records the same link shape as the lab: a split writer, the properties snapshot, and the writers', async () => {
     const { client, characteristic } = await connectedClient(undefined, {
       properties: { write: true, writeWithoutResponse: false },
     })
-    expect(client.writeMode).toBe('without-response')
     expect(client.controller).toBe('nordic-uart')
+    expect(client.writeMode).toBe('with-response')
     await client.send(oneHold, opts)
-    expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1)
+    expect(characteristic.writeValueWithResponse).toHaveBeenCalledTimes(1)
     const link = getBleDiagnostics().link
-    expect(link?.writer).toBe('direct')
-    expect(link?.properties).toBe('not read')
-    expect(link?.writers).toBe('not probed')
+    expect(link?.writer).toBe('split')
+    expect(link?.forced).toBe(false)
+    expect(link?.properties).toEqual({ write: true, writeWithoutResponse: false, notify: false, present: true })
+    expect(link?.writers).toEqual(['with', 'without'])
   })
 })
