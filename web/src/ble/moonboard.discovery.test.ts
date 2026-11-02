@@ -4,8 +4,9 @@ import { getBleDiagnostics } from './bleDiagnostics'
 import { setLabSettings } from './labSettings'
 import { bleHarness, fakeStack, notFound } from '../test/fakeBleStack'
 
-// The Nordic-then-RedBearLab probe with the lab on (plan R10, R14, AE14) and the
-// reconnect bound that ships on both paths (R25).
+// The Nordic-then-RedBearLab probe with the lab on (2026-10-26 plan R10, R14, AE14), the
+// reconnect bound that ships on both paths (R25), and the severed lab-off attempts that
+// must leave no properties read and no link recorded (2026-10-30 plan AE8).
 
 const { newClient, connectedClient, cleanupBleEnv } = bleHarness()
 
@@ -215,7 +216,7 @@ describe('MoonBoardClient dual-generation discovery (lab on)', () => {
   }
 
   it('bounds the auto-reconnect with the lab off when the connect timeout is the echo source', async () => {
-    // Covers AE14 (lab off). Today's path never calls gatt.disconnect() from a lookup,
+    // Covers AE14 (lab off). The default path never calls gatt.disconnect() from a lookup,
     // so the 10 s connect timeout is the only echo source there.
     setLabSettings({ enabled: false })
     const { client, device, gatt, server } = await connectedClient(undefined, {
@@ -262,12 +263,66 @@ describe('MoonBoardClient dual-generation discovery (lab on)', () => {
 
   it('a lab-off attempt stays lab-off across a silent reconnect even if the lab is switched on meanwhile', async () => {
     setLabSettings({ enabled: false })
-    const { client, device, reads } = await connectedClient(undefined, { minimal: true })
+    const { client, device, server, reads } = await connectedClient(undefined, { minimal: true })
     setLabSettings({ enabled: true, chooser: 'both' })
     device.dropConnection()
     await vi.advanceTimersByTimeAsync(500)
     expect(client.state).toBe('connected')
-    expect(reads.properties).toBe(0)
+    // Still the default path on both connects: the Nordic lookup only, no probe, no id
+    // read, and one properties read per connect (2026-10-30 plan R1, R6).
+    expect(server.getPrimaryService.mock.calls.map(([uuid]) => uuid)).toEqual([NUS_SERVICE, NUS_SERVICE])
+    expect(getBleDiagnostics().events.some((e) => e.kind === 'probe')).toBe(false)
+    expect(reads.id).toBe(0)
+    expect(reads.properties).toBe(2)
+  })
+
+  it('a lab-off Nordic lookup that hangs past the connect timeout reads no properties and records no link', async () => {
+    // Covers AE8 (2026-10-30 plan).
+    setLabSettings({ enabled: false })
+    const stack = fakeStack(undefined, { minimal: true })
+    stack.server.getPrimaryService.mockReturnValue(new Promise(() => {}))
+    const client = newClient()
+    const attempt = client.connect()
+    attempt.catch(() => {})
+    await vi.advanceTimersByTimeAsync(10_000)
+    await expect(attempt).rejects.toThrow(/timed out/)
+    expect(client.state).toBe('disconnected')
+    expect(stack.reads.properties).toBe(0)
+    const events = getBleDiagnostics().events
+    expect(events.find((e) => e.kind === 'connect-timeout')?.detail).toBe('pending=nordic-uart lookup')
+    expect(events.map((e) => e.kind)).not.toContain('properties')
+    expect(events.map((e) => e.kind)).not.toContain('link')
+    expect(getBleDiagnostics().link).toBeNull()
+  })
+
+  it('a user disconnect during a held lab-off Nordic lookup bails before the properties are read', async () => {
+    // Covers AE8 (2026-10-30 plan). The lookup resolves after the disconnect landed; the
+    // guard must run before the builder, or a severed attempt would log a phantom link.
+    setLabSettings({ enabled: false })
+    const stack = fakeStack(undefined, { minimal: true })
+    const nordicService = { getCharacteristic: vi.fn().mockResolvedValue(stack.characteristic) }
+    let release!: () => void
+    stack.server.getPrimaryService.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(nordicService)
+        }),
+    )
+    const client = newClient()
+    const attempt = client.connect()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(client.state).toBe('connecting')
+
+    client.disconnect()
+    release()
+    await expect(attempt).resolves.toBeUndefined()
+    expect(client.state).toBe('disconnected')
+    expect(nordicService.getCharacteristic).toHaveBeenCalledTimes(1)
+    expect(stack.reads.properties).toBe(0)
+    const kinds = getBleDiagnostics().events.map((e) => e.kind)
+    expect(kinds).not.toContain('properties')
+    expect(kinds).not.toContain('link')
+    expect(getBleDiagnostics().link).toBeNull()
   })
 
   it('after an explicit disconnect, a different board generation is resolved on the next connect', async () => {

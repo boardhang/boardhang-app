@@ -3,20 +3,31 @@
 // ios/MoonBoardLED/BLE/MoonBoardBLEManager.swift). Separate reimplementation,
 // not a shared binary.
 //
-// Two code paths share one client (docs/ble-hardware.md, "BLE lab"):
+// Two code paths share one client and one link builder (docs/ble-hardware.md,
+// "Web client" and "BLE lab"):
 // - Lab off (the default, every user): the Nordic UART board only, found by its
-//   service filter, written with `writeValueWithoutResponse` — byte for byte the
-//   behaviour that shipped before the lab existed. The invariance suite pins it.
+//   service filter. The ATT write type comes from the RX characteristic's
+//   properties, read once per connect: acknowledged writes only when the box
+//   reports plain write and not write-without-response (the older official
+//   boxes), unacknowledged otherwise (the DIY boards, and any shim that hides
+//   the properties). A stored lab override is never honoured here. The
+//   invariance suite pins the path.
 // - Lab on (an admin's own device): the picker can list both MoonBoard
 //   controller generations, the client probes Nordic UART then RedBearLab after
-//   connecting, and the ATT write type comes from the characteristic's
-//   properties or from the admin's override. Everything is recorded in the
-//   diagnostics store so a dark wall can be explained after the fact.
+//   connecting, and the admin can force the write type. Everything is recorded
+//   in the diagnostics store on both paths so a dark wall can be explained
+//   after the fact.
 
 import type { HoldAssignment } from '../types'
 import { displayed, protocolLetter } from '../types'
 import { ledIndex } from '../board/geometry'
-import { DEFAULT_LAB_SETTINGS, getLabSettings, type LabChooser, type LabSettings } from './labSettings'
+import {
+  DEFAULT_LAB_SETTINGS,
+  getLabSettings,
+  type LabChooser,
+  type LabSettings,
+  type LabWriteMode,
+} from './labSettings'
 import {
   describeRejection,
   formatProperties,
@@ -178,8 +189,8 @@ function isAbsentRejection(err: unknown): boolean {
 
 /**
  * Diagnostics line for a chosen device. The id is read only on the lab path:
- * the default path must make exactly the getter reads it made before the lab
- * existed, and the Bluefy shim's behaviour on `id` is unverified.
+ * the default path keeps no per-device memory, and the Bluefy shim's behaviour
+ * on `id` is unverified.
  */
 function describeDevice(device: BluetoothDevice, includeId: boolean): string {
   try {
@@ -215,7 +226,7 @@ interface Link {
   mode: WriteMode
   /** True when the admin forced the mode instead of deriving it. */
   forced: boolean
-  /** Which method carries the chunks; `direct` is the lab-off straight call. */
+  /** Which method carries the chunks: the split method for the mode, or legacy `writeValue`. */
   writer: BleWriter
   /** Resolved once per link; null when no usable write method exists. */
   write: ChunkWriter | null
@@ -223,17 +234,10 @@ interface Link {
   missingMethod: string | null
 }
 
-/** The lab-off link: today's characteristic call, no probing, no property reads. */
-function directLink(characteristic: BluetoothRemoteGATTCharacteristic): Link {
-  return {
-    characteristic,
-    controller: 'nordic-uart',
-    mode: 'without-response',
-    forced: false,
-    writer: 'direct',
-    write: (chunk) => characteristic.writeValueWithoutResponse(chunk),
-    missingMethod: null,
-  }
+/** What either path's lookups produce before the shared builder runs. */
+interface ResolvedCharacteristic {
+  characteristic: BluetoothRemoteGATTCharacteristic
+  controller: ControllerGeneration
 }
 
 /** `properties` as a plain snapshot; a thin shim may omit the object entirely. */
@@ -282,21 +286,24 @@ function deriveWriteMode(controller: ControllerGeneration, properties: BleProper
 }
 
 /**
- * Build the lab link: mode from the override or the properties, writer from
- * the split method for that mode, else legacy `writeValue` (Chrome then picks
- * the ATT type itself, so a forced mode is only nominal — recorded as such),
- * else none.
+ * Build the link for either path. The mode comes from `modeSource`: `auto`
+ * derives it from the controller and the properties (the default path always
+ * passes `auto`; the lab passes its snapshot), a fixed mode is the admin's
+ * override and is recorded as forced. The writer is the split method for that
+ * mode, else legacy `writeValue` (Chrome then picks the ATT type itself, so a
+ * forced mode is only nominal — recorded as such), else none, in which case the
+ * link still commits and every send rejects with `missingMethod`. Synchronous,
+ * so no await separates the caller's bail-out guard from its commit.
  */
-function labLink(
+function buildLink(
   characteristic: BluetoothRemoteGATTCharacteristic,
   controller: ControllerGeneration,
-  settings: LabSettings,
+  modeSource: LabWriteMode,
 ): { link: Link; properties: BlePropertiesSnapshot; writers: string[] } {
   const properties = snapshotProperties(characteristic)
   const writers = availableWriters(characteristic)
-  const forced = settings.writeMode !== 'auto'
-  const mode: WriteMode =
-    settings.writeMode === 'auto' ? deriveWriteMode(controller, properties) : settings.writeMode
+  const forced = modeSource !== 'auto'
+  const mode: WriteMode = modeSource === 'auto' ? deriveWriteMode(controller, properties) : modeSource
   const splitName = mode === 'with-response' ? 'writeValueWithResponse' : 'writeValueWithoutResponse'
   let writer: BleWriter = 'split'
   let write: ChunkWriter | null = null
@@ -311,7 +318,7 @@ function labLink(
   } else {
     missingMethod =
       `This browser exposes no ${splitName} method for the board's characteristic, and no ` +
-      'legacy writeValue either — change the write mode in the BLE lab or try Chrome, Edge, or Bluefy.'
+      'legacy writeValue either — use a current Chrome or Edge, or Bluefy on iPhone.'
   }
   return { link: { characteristic, controller, mode, forced, writer, write, missingMethod }, properties, writers }
 }
@@ -489,12 +496,17 @@ export class MoonBoardClient {
   /**
    * GATT connect + service/characteristic resolution, deduped across callers.
    *
-   * Lab off: the Nordic UART pair only, exactly as before the lab existed.
-   * Lab on: the Nordic UART pair first (the common case; a missing service
-   * rejects fast), then the RedBearLab pair. It falls through on *any* Nordic
-   * rejection — including the nameless numeric ones the Bluefy shim produces —
-   * because gating on an error name would break the original box on iOS.
-   * Reconnects re-run `establish`, so the probe is repeated on every connect.
+   * Lab off: the Nordic UART pair only. Lab on: the Nordic UART pair first (the
+   * common case; a missing service rejects fast), then the RedBearLab pair. It
+   * falls through on *any* Nordic rejection — including the nameless numeric
+   * ones the Bluefy shim produces — because gating on an error name would break
+   * the original box on iOS. Both paths then meet at one bail-out guard, one
+   * `buildLink` call, and one recording tail; only the mode source differs: the
+   * Auto rule with the lab off (never the stored lab setting, which may still
+   * hold a forced mode from an earlier lab session), the attempt's snapshot
+   * with it on. Reconnects re-run `establish`, so the lookups, the properties
+   * read, and the derivation are repeated on every connect; a live link never
+   * changes mode.
    */
   private establish(device: BluetoothDevice): Promise<void> {
     let phase = 'gatt.connect'
@@ -502,26 +514,21 @@ export class MoonBoardClient {
       (async () => {
         const server = await device.gatt!.connect()
         recordBleEvent('gatt-connected')
-        let link: Link
-        let properties: BlePropertiesSnapshot | 'not read' = 'not read'
-        let writers: string[] | 'not probed' = 'not probed'
+        let resolved: ResolvedCharacteristic | null
         if (!this.lab.enabled) {
           phase = 'nordic-uart lookup'
           const service = await server.getPrimaryService(NUS_SERVICE)
           const characteristic = await service.getCharacteristic(RX_CHAR)
-          if (this.bailedOut(device)) return
-          link = directLink(characteristic)
+          resolved = { characteristic, controller: 'nordic-uart' }
         } else {
-          const resolved = await this.probe(device, server, (p) => (phase = p))
+          resolved = await this.probe(device, server, (p) => (phase = p))
           if (!resolved) return
-          if (this.bailedOut(device)) return
-          const built = labLink(resolved.characteristic, resolved.controller, this.lab)
-          link = built.link
-          properties = built.properties
-          writers = built.writers
-          recordBleEvent('properties', formatProperties(properties))
-          recordBleEvent('writers', formatWriters(writers))
         }
+        if (this.bailedOut(device)) return
+        const modeSource: LabWriteMode = this.lab.enabled ? this.lab.writeMode : 'auto'
+        const { link, properties, writers } = buildLink(resolved.characteristic, resolved.controller, modeSource)
+        recordBleEvent('properties', formatProperties(properties))
+        recordBleEvent('writers', formatWriters(writers))
         this.link = link
         this.reconnectAttempt = 0
         recordBleEvent(
@@ -563,7 +570,7 @@ export class MoonBoardClient {
     device: BluetoothDevice,
     server: BluetoothRemoteGATTServer,
     setPhase: (phase: string) => void,
-  ): Promise<{ characteristic: BluetoothRemoteGATTCharacteristic; controller: ControllerGeneration } | null> {
+  ): Promise<ResolvedCharacteristic | null> {
     try {
       setPhase('nordic-uart lookup')
       const service = await server.getPrimaryService(NUS_SERVICE)

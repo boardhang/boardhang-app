@@ -1,6 +1,7 @@
 // Device-local settings for the admin "BLE lab" (docs/ble-hardware.md). Three knobs:
-// whether the experimental Bluetooth path is on at all, how the device picker searches,
-// and whether the write type is derived from the characteristic or forced.
+// whether the lab's Bluetooth path is on at all, how the device picker searches, and
+// whether the write type is derived from the characteristic (as the standard path always
+// does) or forced.
 //
 // The Bluetooth client reads these synchronously at connect time and never consults
 // auth; only the admin card in Settings can change them. Unlike themeStore/previewsStore,
@@ -18,9 +19,11 @@ export type LabChooser = 'nordic' | 'both' | 'any'
 export type LabWriteMode = 'auto' | BleWriteMode
 
 export interface LabSettings {
-  /** Master switch. Off = today's Bluetooth path, byte for byte. */
+  /** Master switch. Off = the standard path: the Nordic UART chooser, the write type read
+   *  from the box, and `writeMode` below ignored. On = the lab's chooser modes, the
+   *  RedBearLab probe, and the forced write modes. */
   enabled: boolean
-  /** Which devices the picker lists: today's Nordic UART filter, both known MoonBoard
+  /** Which devices the picker lists: the standard Nordic UART filter, both known MoonBoard
    *  controller services plus the `MoonBoard` name prefix, or any nearby device. */
   chooser: LabChooser
   /** `auto` derives the ATT write type from the characteristic; the others force it. */

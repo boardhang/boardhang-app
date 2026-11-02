@@ -6,10 +6,11 @@
 // UUID-aware: by default only the Nordic UART service resolves; `opts` selects
 // which controller generation the fake board exposes, how a missing lookup
 // rejects, how gatt.disconnect() echoes back as an event, and what the
-// characteristic looks like (properties, which write methods). `minimal`
-// reproduces the shape the pre-lab tests used (only `writeValueWithoutResponse`,
-// no properties), and the `reads` counters let a suite assert that the lab-off
-// path never touches `characteristic.properties` or `device.id`.
+// characteristic looks like (properties — present, absent, or a throwing getter —
+// and which write methods exist). `minimal` is the thin-shim shape (only
+// `writeValueWithoutResponse`, no properties), and the `reads` counters let a
+// suite assert how often `characteristic.properties` is read and that `device.id`
+// is never read with the lab off.
 
 import { vi } from 'vitest'
 import { MoonBoardClient, NUS_SERVICE, RBL_SERVICE } from '../ble/moonboard'
@@ -29,8 +30,11 @@ export interface StackOptions {
   redbearlab?: 'present' | 'absent'
   /** Rejection value for an absent lookup. Default: a NotFoundError DOMException. */
   rejectWith?: { nordic?: unknown; redbearlab?: unknown }
-  /** Characteristic `properties`; `null` makes the getter return undefined (thin shim). */
-  properties?: FakeProperties | null
+  /**
+   * Characteristic `properties`; `null` makes the getter return undefined (thin shim);
+   * `'throws'` makes it count the read and then throw.
+   */
+  properties?: FakeProperties | null | 'throws'
   /** Which write methods the characteristic exposes. Default: both split methods. */
   methods?: Array<'with' | 'without' | 'legacy'>
   /** Separate implementation for writeValueWithResponse (defaults to `write`). */
@@ -41,7 +45,7 @@ export interface StackOptions {
    * call, or as a later task. Default: no echo (the pre-existing fake shape).
    */
   disconnectEvent?: 'none' | 'sync' | 'async'
-  /** Today's pre-lab fake: only `writeValueWithoutResponse`, properties undefined. */
+  /** Thin shim: only `writeValueWithoutResponse`, properties undefined (the inline fake in moonboard.test.ts). */
   minimal?: boolean
   /** Advertised device name. Default 'MB'. */
   name?: string
@@ -69,8 +73,9 @@ export function fakeStack(write: WriteFn = async () => {}, opts: StackOptions = 
   const redbearlab = opts.redbearlab ?? 'absent'
   const methods = opts.minimal ? ['without'] : (opts.methods ?? ['with', 'without'])
   const reads = { properties: 0, id: 0 }
+  const propertiesThrow = opts.properties === 'throws'
   const propertiesValue: FakeProperties | undefined =
-    opts.minimal || opts.properties === null
+    opts.minimal || opts.properties === null || opts.properties === 'throws'
       ? undefined
       : (opts.properties ??
         (redbearlab === 'present' && nordic !== 'present'
@@ -84,6 +89,7 @@ export function fakeStack(write: WriteFn = async () => {}, opts: StackOptions = 
   } = {
     get properties() {
       reads.properties += 1
+      if (propertiesThrow) throw new TypeError('properties is not implemented by this shim')
       return propertiesValue
     },
     writeValueWithoutResponse: vi.fn<WriteFn>(write),
