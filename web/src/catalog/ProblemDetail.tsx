@@ -29,6 +29,7 @@ import type { CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw } from '../board/boardStore'
 import { holdSetContext } from '../board/holdSetMembership'
 import type { CatalogProblem } from './catalogSync'
+import { MethodChip } from './ProblemMeta'
 import { recordRecent } from './recentsStore'
 import { recordOpened } from './lastOpenedStore'
 import { useFavorites } from './favoritesStore'
@@ -415,7 +416,7 @@ export function ProblemDetail({
                 <Repeat className="size-3.5" /> {current.repeats}
               </span>
             )}
-            {current.method && <span className="text-foreground/70">{current.method}</span>}
+            {current.method && <MethodChip method={current.method} className="h-5 text-xs" />}
           </div>
         </div>
         {/* Share: same glyph and size as the catalog's "Share session" button (SessionBar). */}
