@@ -2,10 +2,9 @@
 // the user has sent. "Show grades" expands one bar per grade (sent of total), hardest
 // grade on top; collapsed by default so the Logbook's ascents stay near the top.
 //
-// The card covers a grade range: the ring, the count and the bars all follow it. Until
-// the user picks one it runs from the easiest grade up to their hardest send. The slider
-// in the expanded area (same look as the catalog filter's) sets any range, remembered per
-// board; the expanded state is remembered per device.
+// By default the card covers the grades up to the user's hardest send — the ring, the
+// count and the bars all leave out the grades above it. "Show all grades" brings those
+// back. Both toggles are remembered on this device.
 //
 // Totals come from the cached catalog slab for the board's current angle — a cache read
 // only, the Logbook never starts a slab download. With no cached slab (or no benchmarks)
@@ -15,10 +14,7 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
-import { gradeBadgeCls } from '../board/gradeBadge'
-import { FONT_GRADES } from '../board/grades'
 import { defaultAngle, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle } from '../board/boardStore'
 import { holdSetContext, isClimbable } from '../board/holdSetMembership'
@@ -27,16 +23,12 @@ import { readSlab, type CatalogProblem } from '../catalog/catalogSync'
 import { DEFAULT_FILTERS } from '../catalog/filters'
 import {
   benchmarkRows,
-  clampRange,
-  defaultRange,
-  gradeSpan,
+  loadAllGrades,
   loadExpanded,
-  loadRange,
-  rowsInRange,
+  rowsUpToHardestSend,
+  saveAllGrades,
   saveExpanded,
-  saveRange,
   summarize,
-  type GradeRange,
 } from './benchmarkProgress'
 
 const RING_RADIUS = 24
@@ -50,7 +42,6 @@ interface Props {
   sentIds: ReadonlySet<string>
 }
 
-/** Render with `key={board.layoutId}` so the remembered range reloads on a board switch. */
 export function BenchmarkProgressCard({ board, sentIds }: Props) {
   const navigate = useNavigate()
   const gradesId = useId()
@@ -82,32 +73,24 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
   }, [slab, slabKey, board.membershipResource, activeHoldSetsRaw, sentIds])
 
   const [expanded, setExpanded] = useState(loadExpanded)
-  const [picked, setPicked] = useState<GradeRange | null>(() => loadRange(board.layoutId))
+  const [allGrades, setAllGrades] = useState(loadAllGrades)
 
-  const span = gradeSpan(allRows)
-  const fallback = defaultRange(allRows)
-  if (!span || !fallback) return null
+  if (allRows.length === 0) return null
 
-  const range = clampRange(picked, span) ?? fallback
-  const rows = rowsInRange(allRows, range)
+  const reached = rowsUpToHardestSend(allRows)
+  /** Grades above the hardest send exist, so there is something to hide or show. */
+  const canTrim = reached.length < allRows.length
+  const rows = allGrades ? allRows : reached
   const summary = summarize(rows)
-  const wholeBoard = range[0] === span[0] && range[1] === span[1]
-  const rangeLabel =
-    range[0] === range[1]
-      ? FONT_GRADES[range[0]]
-      : `${FONT_GRADES[range[0]]} to ${FONT_GRADES[range[1]]}`
 
   function toggleExpanded() {
     saveExpanded(!expanded)
     setExpanded(!expanded)
   }
 
-  function changeRange(next: GradeRange) {
-    // Dragging back to the default hands control back to it, so the range keeps
-    // following the hardest send as it moves up.
-    const isDefault = next[0] === fallback![0] && next[1] === fallback![1]
-    setPicked(isDefault ? null : next)
-    saveRange(board.layoutId, isDefault ? null : next)
+  function toggleAllGrades() {
+    saveAllGrades(!allGrades)
+    setAllGrades(!allGrades)
   }
 
   /** Open the catalog on this grade's benchmarks the user hasn't sent yet. */
@@ -163,8 +146,8 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
           </h2>
           <p className="text-xs text-muted-foreground tabular-nums">
             {summary.sent} of {summary.total} sent
-            {/* Say what a smaller total covers, so it isn't mistaken for the whole board. */}
-            {!wholeBoard && ` · ${rangeLabel}`}
+            {/* Say what the smaller total covers, so it isn't mistaken for the whole board. */}
+            {canTrim && !allGrades && ` · up to ${rows[rows.length - 1].grade}`}
           </p>
         </div>
 
@@ -183,36 +166,6 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
 
       {expanded && (
         <div id={gradesId} className="mt-3">
-          {/* Same look as the catalog filter's grade slider: label, min/max badges, slider. */}
-          {span[0] < span[1] && (
-            <div className="mb-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-muted-foreground">Grade</span>
-                <div className="ml-auto flex items-center gap-1.5">
-                  <span className={gradeBadgeCls}>{FONT_GRADES[range[0]]}</span>
-                  {range[1] !== range[0] && (
-                    <>
-                      <span className="text-xs text-muted-foreground">to</span>
-                      <span className={gradeBadgeCls}>{FONT_GRADES[range[1]]}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="px-0.5">
-                <Slider
-                  aria-label="Grade range"
-                  min={span[0]}
-                  max={span[1]}
-                  step={1}
-                  value={range}
-                  onValueChange={(value) => {
-                    const [lo, hi] = value as number[]
-                    changeRange([lo, hi])
-                  }}
-                />
-              </div>
-            </div>
-          )}
           {/* Hardest grade on top, like a pyramid. Track length = this grade's share of the
               largest visible grade; fill = sent / total. */}
           <ul className="space-y-0.5">
@@ -243,6 +196,16 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
               </li>
             ))}
           </ul>
+          {canTrim && (
+            <Button
+              variant="link"
+              size="xs"
+              className="mt-1 h-auto px-0 text-muted-foreground"
+              onClick={toggleAllGrades}
+            >
+              {allGrades ? 'Only up to my hardest send' : 'Show all grades'}
+            </Button>
+          )}
         </div>
       )}
     </section>

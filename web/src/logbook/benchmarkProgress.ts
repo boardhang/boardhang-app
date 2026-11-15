@@ -1,5 +1,5 @@
 // Pure derivations for the Logbook's benchmark progress card: how many of a slab's
-// benchmarks the user has sent, per grade, and which grade range the card covers. No React
+// benchmarks the user has sent, per grade, and which grades the card shows. No React
 // here so it stays unit-testable (same split as sessions.ts).
 
 import { FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
@@ -46,41 +46,17 @@ export function benchmarkRows(
     .map(([ordinal, counts]) => ({ ordinal, grade: FONT_GRADES[ordinal], ...counts }))
 }
 
-/** Inclusive ordinal [min, max] over FONT_GRADES. */
-export type GradeRange = [number, number]
-
-/** The full span of grades that have benchmarks, or null when there are none. */
-export function gradeSpan(rows: BenchmarkGradeRow[]): GradeRange | null {
-  if (rows.length === 0) return null
-  return [rows[0].ordinal, rows[rows.length - 1].ordinal]
-}
-
 /**
- * The range shown until the user picks one: from the easiest grade up to the hardest
- * grade with a send. Grades above it are the ones the user hasn't reached; a grade with
- * no sends *below* it is a gap worth seeing and stays in. With no sends at all there is
- * nothing to trim by, so it is the whole span.
+ * The rows up to and including the hardest grade with a send. Grades above it are the
+ * ones the user hasn't reached; a grade with no sends *below* it is a gap worth seeing
+ * and stays. With no sends at all there is nothing to trim by, so every row is kept.
  */
-export function defaultRange(rows: BenchmarkGradeRow[]): GradeRange | null {
-  const span = gradeSpan(rows)
-  if (!span) return null
-  let hardest = -1
-  for (const row of rows) if (row.sent > 0) hardest = row.ordinal
-  return [span[0], hardest === -1 ? span[1] : hardest]
-}
-
-/** Fit a remembered range inside the span; one that misses the span entirely (or is
- *  inverted) is dropped so the caller falls back to the default. */
-export function clampRange(range: GradeRange | null, span: GradeRange): GradeRange | null {
-  if (!range) return null
-  const lo = Math.max(range[0], span[0])
-  const hi = Math.min(range[1], span[1])
-  return lo <= hi ? [lo, hi] : null
-}
-
-/** The rows whose grade falls inside the range, easiest first. */
-export function rowsInRange(rows: BenchmarkGradeRow[], range: GradeRange): BenchmarkGradeRow[] {
-  return rows.filter((r) => r.ordinal >= range[0] && r.ordinal <= range[1])
+export function rowsUpToHardestSend(rows: BenchmarkGradeRow[]): BenchmarkGradeRow[] {
+  let last = -1
+  rows.forEach((row, i) => {
+    if (row.sent > 0) last = i
+  })
+  return last === -1 ? rows : rows.slice(0, last + 1)
 }
 
 export interface BenchmarkSummary {
@@ -105,47 +81,32 @@ export function summarize(rows: BenchmarkGradeRow[]): BenchmarkSummary {
   return { sent, total, percent: total === 0 ? 0 : Math.round((sent / total) * 100), maxTotal }
 }
 
-// ── Remembered on this device ─────────────────────────────────────────────────
+// ── Remembered toggles (this device) ──────────────────────────────────────────
 
-const rangeKey = (layoutId: number) => `logbookBenchmarkGrades_${layoutId}`
-
-/** The grade range the user picked for a board, or null when they haven't (the card
- *  then follows `defaultRange`, which moves up as they send harder grades). */
-export function loadRange(layoutId: number): GradeRange | null {
+function loadFlag(key: string): boolean {
   try {
-    const m = /^(\d+)-(\d+)$/.exec(localStorage.getItem(rangeKey(layoutId)) ?? '')
-    return m ? [Number(m[1]), Number(m[2])] : null
-  } catch {
-    return null
-  }
-}
-
-/** Remember a picked range for a board; null goes back to following the default. */
-export function saveRange(layoutId: number, range: GradeRange | null): void {
-  try {
-    if (range) localStorage.setItem(rangeKey(layoutId), `${range[0]}-${range[1]}`)
-    else localStorage.removeItem(rangeKey(layoutId))
-  } catch {
-    /* best-effort — the range still applies for this visit */
-  }
-}
-
-const EXPANDED_KEY = 'logbookBenchmarkExpanded'
-
-/** Whether the per-grade bars were left open. Collapsed by default. */
-export function loadExpanded(): boolean {
-  try {
-    return localStorage.getItem(EXPANDED_KEY) === '1'
+    return localStorage.getItem(key) === '1'
   } catch {
     return false
   }
 }
 
-export function saveExpanded(expanded: boolean): void {
+function saveFlag(key: string, on: boolean): void {
   try {
-    if (expanded) localStorage.setItem(EXPANDED_KEY, '1')
-    else localStorage.removeItem(EXPANDED_KEY)
+    if (on) localStorage.setItem(key, '1')
+    else localStorage.removeItem(key)
   } catch {
-    /* best-effort */
+    /* best-effort — the toggle still works for this visit */
   }
 }
+
+const EXPANDED_KEY = 'logbookBenchmarkExpanded'
+const ALL_GRADES_KEY = 'logbookBenchmarkAllGrades'
+
+/** Whether the per-grade bars were left open. Collapsed by default. */
+export const loadExpanded = () => loadFlag(EXPANDED_KEY)
+export const saveExpanded = (expanded: boolean) => saveFlag(EXPANDED_KEY, expanded)
+
+/** Whether grades above the hardest send are shown too. Hidden by default. */
+export const loadAllGrades = () => loadFlag(ALL_GRADES_KEY)
+export const saveAllGrades = (all: boolean) => saveFlag(ALL_GRADES_KEY, all)

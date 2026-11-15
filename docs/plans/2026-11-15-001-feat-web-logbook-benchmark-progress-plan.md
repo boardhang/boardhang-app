@@ -18,21 +18,17 @@ only; no schema, no BLE, no geometry).
 ## Decisions (mocked up, previewed and revised 2026-11-15)
 
 - **One row by default**: a ring with the share sent, the title and the count. A chevron in the
-  card's top right expands the rest.
-- **Expanded**: a grade-range slider, then one bar per grade, hardest grade on top. Each track's
-  length is that grade's benchmark total relative to the largest visible grade; the fill is
-  sent / total.
-- **The card covers a grade range**: the ring, the count and the bars all follow it, and the
-  count line names it ("8 of 116 sent · 7A to 7A+") unless it is the whole board.
-- **Default range = easiest grade up to the hardest send.** Grades above the hardest send are
-  left out; a grade with no sends below it is a gap worth seeing and stays. With no sends at
-  all, the default is every grade. The default moves up as the user sends harder grades.
-- **The slider sets any range**, so the user can see what is left in a specific band. It uses
-  the catalog filter's look ("Grade" label, min/max badges, blue range) via the shared
-  `web/src/board/gradeBadge.ts` style. A picked range is remembered per board; dragging back
-  to the default clears it so the range goes on following the hardest send.
-- **No filter button.** The slider lives in the expanded area, so the collapsed card carries no
-  filter control.
+  card's top right expands one bar per grade, hardest grade on top. Each track's length is that
+  grade's benchmark total relative to the largest visible grade; the fill is sent / total.
+- **Grades above the hardest send are hidden**, and left out of the ring and count (the count
+  line says "up to 7A+"). A grade with no sends below the hardest send is a gap worth seeing
+  and stays. With no sends at all, every grade shows.
+- **"Show all grades"** under the bars brings the hidden grades back, into the ring and count
+  too. It only appears when there is something hidden.
+- **Both toggles are remembered per device** (localStorage).
+- **No grade slider or filter button.** An earlier revision had a two-thumb grade slider behind
+  a filter button; it was dropped as too much UI for the card. Hiding the unreached grades does
+  the same job without a control.
 - **Existing sends pyramid stays** below the card, unchanged.
 - **Tap a grade row** to open the catalog on that board + angle filtered to benchmarks at that
   grade the user has not sent (`bench=1`, `grade=n-n`, `status=attempted,unlogged`).
@@ -50,10 +46,10 @@ only; no schema, no BLE, no geometry).
 
 ## Units
 
-1. `web/src/logbook/benchmarkProgress.ts` — pure: per-grade rows, default and picked grade
-   range, summary, remembered range and expanded state. Unit tests.
+1. `web/src/logbook/benchmarkProgress.ts` — pure: per-grade rows, trim to the hardest send,
+   summary, remembered toggles. Unit tests.
 2. `web/src/logbook/BenchmarkProgressCard.tsx` — the card. Component tests (render, hidden
-   when no slab, expand, grade slider, tap-through target).
+   when no slab, expand, show all grades, tap-through target).
 3. `web/src/logbook/LogbookScreen.tsx` — render the card above the pyramid.
 4. `docs/data-model-and-logging.md` — note the card next to the pyramid.
 
