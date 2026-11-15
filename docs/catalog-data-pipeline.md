@@ -243,9 +243,19 @@ the snapshot by hand, from the official app. The row is ours like any other:
   `repeats`/`stars` when boardsesh's counts are wrong for a row it already returns.
 
 Write the row with `catalog_lib.write_snapshot` (canonical order and `hold_key`), run the tests and
-a merge dry run, and deploy with the import as usual. The 2024 @ 40° slab has three: ADVECTIVE
-TERM and REDEYE DISASTER (hand ids) and SICK AND SOUND (boardsesh's uuid, flag, grade and counts
-pinned), all 6C benchmarks added 2026-11-15.
+a merge dry run, and deploy with the import as usual.
+
+- **An existing row the official app lists as a benchmark** (boardsesh has it unflagged, often at
+  another grade): edit the row's fields in the snapshot and pin the same fields, so the import
+  updates it now and the feed cannot undo it.
+- **Grade:** where the official app shows a user grade and a setter grade that differ, a
+  hand-entered row takes the **user** grade (`grade`; the snapshot has no slot for the other).
+
+Entered this way on 2026-11-15, all MoonBoard 2024: at 40° ADVECTIVE TERM, REDEYE DISASTER and SPIT
+AND SPITE (hand ids), SICK AND SOUND and 28 DEGREES (boardsesh's uuid; flag, grade and counts
+pinned) and BILLY MAVERICK, ME TIME, SHORT STACK and EARTH BENDER (existing rows; flag, grade and
+counts pinned, BILLY MAVERICK's setter too); at 25° DUQUE DE AHUMADA (existing row; flag, grade and
+counts pinned).
 
 ## Runbook: refreshing a slab
 
