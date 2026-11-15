@@ -94,6 +94,249 @@
       "field": "stars",
       "value": 5,
       "note": "SICK AND SOUND: held with the repeat count (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "eeda911b-f06b-52a7-bce4-804eb878dc97",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "SPIT AND SPITE: hand-added benchmark boardsesh lacks; holds the flag if its copy arrives unflagged (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "eeda911b-f06b-52a7-bce4-804eb878dc97",
+      "field": "grade",
+      "value": "7A+",
+      "note": "SPIT AND SPITE: hand-added benchmark grade; holds it if boardsesh's copy arrives with another (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "943abace-8ec7-59e9-bfe9-9e50d59bbd54",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "28 DEGREES: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "943abace-8ec7-59e9-bfe9-9e50d59bbd54",
+      "field": "grade",
+      "value": "6C+",
+      "note": "28 DEGREES: the app's user grade (setter grade 7A); boardsesh says 6C (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "943abace-8ec7-59e9-bfe9-9e50d59bbd54",
+      "field": "repeats",
+      "value": 1005,
+      "note": "28 DEGREES: boardsesh counts 4; drop this pin once its count is real (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "943abace-8ec7-59e9-bfe9-9e50d59bbd54",
+      "field": "stars",
+      "value": 5,
+      "note": "28 DEGREES: held with the repeat count (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "e88811eb-2655-5f5a-967c-468ddb8e0b61",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "BILLY MAVERICK: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "e88811eb-2655-5f5a-967c-468ddb8e0b61",
+      "field": "grade",
+      "value": "7B",
+      "note": "BILLY MAVERICK: benchmark grade; boardsesh says 7C (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "e88811eb-2655-5f5a-967c-468ddb8e0b61",
+      "field": "setter",
+      "value": "MoonBoardSystem",
+      "note": "BILLY MAVERICK: the app credits the benchmark to MoonBoardSystem; boardsesh says JoeTheSloper (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "e88811eb-2655-5f5a-967c-468ddb8e0b61",
+      "field": "repeats",
+      "value": 155,
+      "note": "BILLY MAVERICK: boardsesh counts 30; drop this pin once its count is real (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "e88811eb-2655-5f5a-967c-468ddb8e0b61",
+      "field": "stars",
+      "value": 5,
+      "note": "BILLY MAVERICK: held with the repeat count (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 25,
+      "id": "3601c451-825c-5b53-b35d-4e767e3fe01f",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "DUQUE DE AHUMADA: a 25° benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 25,
+      "id": "3601c451-825c-5b53-b35d-4e767e3fe01f",
+      "field": "grade",
+      "value": "6C+",
+      "note": "DUQUE DE AHUMADA: benchmark grade; our row said 7A (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 25,
+      "id": "3601c451-825c-5b53-b35d-4e767e3fe01f",
+      "field": "repeats",
+      "value": 1134,
+      "note": "DUQUE DE AHUMADA: our row counted 105; drop this pin once boardsesh's count is real (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 25,
+      "id": "3601c451-825c-5b53-b35d-4e767e3fe01f",
+      "field": "stars",
+      "value": 4,
+      "note": "DUQUE DE AHUMADA: held with the repeat count (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "ada7d159-cba6-5bd5-91b6-06bf2a8832ba",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "ME TIME: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "ada7d159-cba6-5bd5-91b6-06bf2a8832ba",
+      "field": "grade",
+      "value": "6C+",
+      "note": "ME TIME: benchmark grade (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "ada7d159-cba6-5bd5-91b6-06bf2a8832ba",
+      "field": "repeats",
+      "value": 1174,
+      "note": "ME TIME: boardsesh counts 11; drop this pin once its count is real (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "ada7d159-cba6-5bd5-91b6-06bf2a8832ba",
+      "field": "stars",
+      "value": 5,
+      "note": "ME TIME: held with the repeat count (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "0261782d-fc25-5265-95ba-e8805896a23c",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "SHORT STACK: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "0261782d-fc25-5265-95ba-e8805896a23c",
+      "field": "grade",
+      "value": "7A",
+      "note": "SHORT STACK: benchmark grade (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "0261782d-fc25-5265-95ba-e8805896a23c",
+      "field": "repeats",
+      "value": 338,
+      "note": "SHORT STACK: boardsesh counts 13; drop this pin once its count is real (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "0261782d-fc25-5265-95ba-e8805896a23c",
+      "field": "stars",
+      "value": 4,
+      "note": "SHORT STACK: held with the repeat count (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "4f800c98-3db5-5eb5-aab8-a97aa3300a82",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "EARTH BENDER: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "4f800c98-3db5-5eb5-aab8-a97aa3300a82",
+      "field": "grade",
+      "value": "7B",
+      "note": "EARTH BENDER: benchmark grade (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "4f800c98-3db5-5eb5-aab8-a97aa3300a82",
+      "field": "repeats",
+      "value": 156,
+      "note": "EARTH BENDER: boardsesh counts 15; drop this pin once its count is real (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "4f800c98-3db5-5eb5-aab8-a97aa3300a82",
+      "field": "stars",
+      "value": 5,
+      "note": "EARTH BENDER: held with the repeat count (official MoonBoard app, 2026-11-15)"
     }
   ]
 }
