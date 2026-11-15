@@ -144,6 +144,12 @@ in the flash bucket.
   ascent per distinct problem (earliest send kept, keyed by `sourceCatalogID` or `problemName`),
   groups by `problemGrade` (consensus, not the vote), and stacks by try bucket (flash / 2nd / 3rd /
   4+, see `TryBadge.swift`).
+- **Benchmark progress** (web only, `web/src/logbook/BenchmarkProgressCard.tsx`) sits above the
+  pyramid: sent / total benchmarks on the active board at its current angle, overall and per
+  grade. Totals come from the cached catalog slab (no download is started; no cache → no card)
+  and count only benchmarks climbable with the installed hold sets. A grade-range filter on the
+  card is remembered per board in localStorage (`logbookBenchmarkGrades_<layoutId>`). Tapping a
+  grade opens the catalog on that grade's benchmarks not yet sent.
 
 ## Settings live in `@AppStorage`, not SwiftData
 
