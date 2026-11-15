@@ -4,7 +4,6 @@ import { boardByLayoutId } from '../board/boards'
 import { FONT_GRADES } from '../board/grades'
 import type { CatalogProblem } from '../catalog/catalogSync'
 import { BenchmarkProgressCard } from './BenchmarkProgressCard'
-import { saveRange } from './benchmarkProgress'
 
 const navigate = vi.fn()
 let slab: CatalogProblem[] = []
@@ -42,13 +41,19 @@ function problem(id: string, grade: string, isBenchmark = true): CatalogProblem 
   }
 }
 
+// 6C ×2, 6C+ ×1, 7A ×1, 7B ×1 benchmarks, plus one 7B that is not a benchmark.
 const SLAB = [
   problem('a', '6C'),
   problem('b', '6C'),
+  problem('g', '6C+'),
   problem('c', '7A'),
   problem('d', '7B'),
   problem('x', '7B', false),
 ]
+// Sends at 6C and 7A: the hardest send is 7A, 6C+ is a gap below it, 7B is above it.
+const SENT = new Set(['a', 'c'])
+
+const rowTexts = () => screen.getAllByRole('listitem').map((li) => li.textContent)
 
 afterEach(() => {
   localStorage.clear()
@@ -57,17 +62,56 @@ afterEach(() => {
 })
 
 describe('BenchmarkProgressCard', () => {
-  it('shows the overall share and a row per grade, hardest first', async () => {
+  it('counts the grades up to the hardest send and starts collapsed', async () => {
     slab = SLAB
-    render(<BenchmarkProgressCard board={board} sentIds={new Set(['a', 'c'])} />)
+    render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
 
-    expect(await screen.findByText('2 of 4 sent')).toBeInTheDocument()
+    // 7B (above the hardest send) is left out of the total: 2 of 4, not 2 of 5.
+    expect(await screen.findByText('2 of 4 sent · up to 7A')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: '50% of benchmarks sent' })).toBeInTheDocument()
-    // The per-grade bars are collapsed until asked for.
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+  })
+
+  it('expands to a row per grade, hardest first, keeping gaps below the hardest send', async () => {
+    slab = SLAB
+    render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
+    expect(rowTexts()).toEqual(['7A1/1', '6C+0/1', '6C1/2'])
+  })
+
+  it('shows every grade, and counts them, on "Show all grades"', async () => {
+    slab = SLAB
+    render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show all grades' }))
+
+    expect(rowTexts()).toEqual(['7B0/1', '7A1/1', '6C+0/1', '6C1/2'])
+    expect(screen.getByText('2 of 5 sent')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Only up to my hardest send' })).toBeInTheDocument()
+  })
+
+  it('remembers both toggles', async () => {
+    slab = SLAB
+    const first = render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show all grades' }))
+    first.unmount()
+
+    render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
+    expect(await screen.findByRole('button', { name: 'Hide grades' })).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
+  })
+
+  it('shows every grade, with no toggle, when nothing has been sent', async () => {
+    slab = SLAB
+    render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
+
+    expect(await screen.findByText('0 of 5 sent')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show grades' }))
-    const rows = screen.getAllByRole('listitem').map((li) => li.textContent)
-    expect(rows).toEqual(['7B0/1', '7A1/1', '6C1/2'])
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
+    expect(screen.queryByRole('button', { name: 'Show all grades' })).not.toBeInTheDocument()
   })
 
   it('renders nothing when the slab is not cached', async () => {
@@ -77,65 +121,12 @@ describe('BenchmarkProgressCard', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('keeps the grade slider hidden until the filter button is pressed', async () => {
-    slab = SLAB
-    render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
-
-    const button = await screen.findByRole('button', { name: 'Filter grades' })
-    const sliderId = button.getAttribute('aria-controls')!
-    expect(document.getElementById(sliderId)).toBeNull()
-    expect(button).toHaveAttribute('aria-expanded', 'false')
-
-    fireEvent.click(button)
-    expect(button).toHaveAttribute('aria-expanded', 'true')
-    // One range input per thumb: the lowest and the highest grade.
-    expect(document.getElementById(sliderId)!.querySelectorAll('input[type="range"]')).toHaveLength(2)
-
-    fireEvent.click(button)
-    expect(document.getElementById(sliderId)).toBeNull()
-  })
-
-  it('remembers that the grades were left open', async () => {
-    slab = SLAB
-    const first = render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
-    first.unmount()
-
-    render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
-    expect(await screen.findByRole('button', { name: 'Hide grades' })).toBeInTheDocument()
-    expect(screen.getAllByRole('listitem')).toHaveLength(3)
-  })
-
-  it('shows the range as grade badges beside the slider, like the catalog filter', async () => {
-    slab = SLAB
-    saveRange(board.layoutId, [ord('7A'), ord('7B')])
-    render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
-
-    const button = await screen.findByRole('button', { name: 'Filter grades' })
-    fireEvent.click(button)
-    // Let the slider thumbs finish mounting.
-    await act(async () => {})
-    const panel = document.getElementById(button.getAttribute('aria-controls')!)!
-    expect(panel).toHaveTextContent('Grade7Ato7B')
-  })
-
-  it('applies the remembered range to the count, the rows and the button', async () => {
-    slab = SLAB
-    saveRange(board.layoutId, [ord('7A'), ord('7B')])
-    render(<BenchmarkProgressCard board={board} sentIds={new Set(['a', 'c'])} />)
-
-    expect(await screen.findByText('1 of 2 sent · 7A to 7B')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Show grades' }))
-    expect(screen.getAllByRole('listitem')).toHaveLength(2)
-    expect(screen.getByTestId('grade-filter-active')).toBeInTheDocument()
-  })
-
   it('opens the catalog on the unsent benchmarks of a tapped grade', async () => {
     slab = SLAB
-    render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
+    render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
-    fireEvent.click(screen.getByRole('button', { name: /^6C: 0 of 2 sent/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^6C: 1 of 2 sent/ }))
 
     expect(navigate).toHaveBeenCalledTimes(1)
     const target = navigate.mock.calls[0][0]

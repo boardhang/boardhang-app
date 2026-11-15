@@ -11,24 +11,24 @@ execution: code
 ## Goal
 
 Show, at the top of the web Logbook, how many of the active board's benchmarks the user has
-sent: a ring with the overall share, and one progress bar per grade (sent of total). A grade
-range filter, hidden behind a filter button on the card, narrows the card to the grades the
-user cares about. Tier: **Standard** (new component inside the existing logbook pattern; reads
+sent: a ring with the share sent, and one progress bar per grade (sent of total) on demand,
+covering the grades up to the user's hardest send. Tier: **Standard** (new component inside the existing logbook pattern; reads
 only; no schema, no BLE, no geometry).
 
-## Decisions (mocked up and chosen 2026-11-15)
+## Decisions (mocked up, previewed and revised 2026-11-15)
 
-- **Layout A**: ring + headline, then a bar per grade, hardest grade on top. Each track's length
-  is that grade's benchmark total relative to the largest visible grade; the fill is sent / total.
-- **Grade filter**: a funnel icon button in the card's top right toggles a two-thumb slider. The
-  slider is hidden by default. When a range is set the button shows a dot and the range is
-  appended to the count line. The ring and count are computed over the selected range only.
-- **Revised after the first preview (2026-11-15)**: the per-grade bars are collapsed behind a
-  "Show grades" toggle (remembered per device) so the card is one row tall by default, and the
-  slider uses the catalog filter's look (a "Grade" label, min/max badges, blue range) via the
-  shared `web/src/board/gradeBadge.ts` style.
-- **The range is remembered per board** (localStorage), clamped to the grades that have
-  benchmarks.
+- **One row by default**: a ring with the share sent, the title and the count. A chevron in the
+  card's top right expands one bar per grade, hardest grade on top. Each track's length is that
+  grade's benchmark total relative to the largest visible grade; the fill is sent / total.
+- **Grades above the hardest send are hidden**, and left out of the ring and count (the count
+  line says "up to 7A+"). A grade with no sends below the hardest send is a gap worth seeing
+  and stays. With no sends at all, every grade shows.
+- **"Show all grades"** under the bars brings the hidden grades back, into the ring and count
+  too. It only appears when there is something hidden.
+- **Both toggles are remembered per device** (localStorage).
+- **No grade slider or filter button.** An earlier revision had a two-thumb grade slider behind
+  a filter button; it was dropped as too much UI for the card. Hiding the unreached grades does
+  the same job without a control.
 - **Existing sends pyramid stays** below the card, unchanged.
 - **Tap a grade row** to open the catalog on that board + angle filtered to benchmarks at that
   grade the user has not sent (`bench=1`, `grade=n-n`, `status=attempted,unlogged`).
@@ -46,10 +46,10 @@ only; no schema, no BLE, no geometry).
 
 ## Units
 
-1. `web/src/logbook/benchmarkProgress.ts` — pure: per-grade rows, range summary, range
-   clamp, range storage. Unit tests.
+1. `web/src/logbook/benchmarkProgress.ts` — pure: per-grade rows, trim to the hardest send,
+   summary, remembered toggles. Unit tests.
 2. `web/src/logbook/BenchmarkProgressCard.tsx` — the card. Component tests (render, hidden
-   when no slab, filter toggle, tap-through target).
+   when no slab, expand, show all grades, tap-through target).
 3. `web/src/logbook/LogbookScreen.tsx` — render the card above the pyramid.
 4. `docs/data-model-and-logging.md` — note the card next to the pyramid.
 

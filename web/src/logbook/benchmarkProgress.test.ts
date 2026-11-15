@@ -3,10 +3,11 @@ import { FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
 import type { CatalogProblem } from '../catalog/catalogSync'
 import {
   benchmarkRows,
-  clampRange,
-  gradeSpan,
-  loadRange,
-  saveRange,
+  loadAllGrades,
+  loadExpanded,
+  rowsUpToHardestSend,
+  saveAllGrades,
+  saveExpanded,
   summarize,
 } from './benchmarkProgress'
 
@@ -74,54 +75,48 @@ describe('benchmarkRows', () => {
   })
 })
 
-describe('gradeSpan / clampRange', () => {
-  const rows = benchmarkRows([problem('a', '6C'), problem('b', '7B')], new Set(), all)
+describe('rowsUpToHardestSend', () => {
+  const slab = [problem('a', '6C'), problem('b', '6C+'), problem('c', '7A'), problem('d', '7B')]
 
-  it('spans the easiest to the hardest grade with benchmarks', () => {
-    expect(gradeSpan(rows)).toEqual([ord('6C'), ord('7B')])
-    expect(gradeSpan([])).toBeNull()
+  it('drops the grades above the hardest send and keeps gaps below it', () => {
+    const rows = rowsUpToHardestSend(benchmarkRows(slab, new Set(['a', 'c']), all))
+    // 6C+ has no sends but sits below 7A, so it stays; 7B is above it and goes.
+    expect(rows.map((r) => r.grade)).toEqual(['6C', '6C+', '7A'])
   })
 
-  it('uses the whole span when nothing is remembered', () => {
-    expect(clampRange(null, [7, 11])).toEqual([7, 11])
-  })
-
-  it('trims a remembered range to the span', () => {
-    expect(clampRange([3, 9], [7, 11])).toEqual([7, 9])
-  })
-
-  it('falls back to the whole span when the remembered range misses it', () => {
-    expect(clampRange([14, 16], [7, 11])).toEqual([7, 11])
-    expect(clampRange([9, 8], [7, 11])).toEqual([7, 11])
+  it('keeps every grade when nothing has been sent', () => {
+    const rows = rowsUpToHardestSend(benchmarkRows(slab, new Set(), all))
+    expect(rows.map((r) => r.grade)).toEqual(['6C', '6C+', '7A', '7B'])
   })
 })
 
 describe('summarize', () => {
-  const rows = benchmarkRows(
-    [problem('a', '6C'), problem('b', '6C'), problem('c', '6C'), problem('d', '7A'), problem('e', '7B')],
-    new Set(['a', 'd']),
-    all,
-  )
-
-  it('totals the rows inside the range', () => {
-    const s = summarize(rows, [ord('6C'), ord('7A')])
-    expect(s.rows.map((r) => r.grade)).toEqual(['6C', '7A'])
-    expect(s).toMatchObject({ sent: 2, total: 4, percent: 50, maxTotal: 3 })
+  it('totals the given rows', () => {
+    const rows = benchmarkRows(
+      [problem('a', '6C'), problem('b', '6C'), problem('c', '6C'), problem('d', '7A')],
+      new Set(['a', 'd']),
+      all,
+    )
+    expect(summarize(rows)).toEqual({ sent: 2, total: 4, percent: 50, maxTotal: 3 })
   })
 
-  it('reports 0% when the range holds no benchmarks', () => {
-    expect(summarize(rows, [ord('6C+'), ord('6C+')])).toMatchObject({ sent: 0, total: 0, percent: 0 })
+  it('reports 0% for no rows', () => {
+    expect(summarize([])).toEqual({ sent: 0, total: 0, percent: 0, maxTotal: 0 })
   })
 })
 
-describe('remembered range', () => {
+describe('remembered toggles', () => {
   afterEach(() => localStorage.clear())
 
-  it('round-trips per board and clears on null', () => {
-    saveRange(7, [8, 12])
-    expect(loadRange(7)).toEqual([8, 12])
-    expect(loadRange(8)).toBeNull()
-    saveRange(7, null)
-    expect(loadRange(7)).toBeNull()
+  it('default to off and round-trip independently', () => {
+    expect(loadExpanded()).toBe(false)
+    expect(loadAllGrades()).toBe(false)
+    saveExpanded(true)
+    expect(loadExpanded()).toBe(true)
+    expect(loadAllGrades()).toBe(false)
+    saveAllGrades(true)
+    saveExpanded(false)
+    expect(loadExpanded()).toBe(false)
+    expect(loadAllGrades()).toBe(true)
   })
 })

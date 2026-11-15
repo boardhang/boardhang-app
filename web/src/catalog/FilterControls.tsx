@@ -10,7 +10,6 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronRight, Pin } from 'lucide-react'
 import type { CatalogBoardDef } from '../board/boards'
 import type { SavedList } from '../lists/listsTypes'
-import { gradeBadgeCls } from '../board/gradeBadge'
 import { FONT_GRADES } from '../board/grades'
 import { HoldFilterPicker } from './HoldFilterPicker'
 import { MemberStatusRow } from './MemberStatusRow'
@@ -44,6 +43,10 @@ import { cn } from '@/lib/utils'
 import type { PinnableFacetId } from './pinnableFacets'
 import { togglePinned, usePinnedFacets } from './pinnedFiltersStore'
 
+// Tinted pill for the grade min/max readout. dark: uses a lighter blue so the
+// grades stay legible on bg-primary/10 in dark mode (text-primary is too dim there).
+const gradeBadgeCls =
+  'rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-primary dark:text-blue-200'
 
 const RATING_LABELS: Record<string, string> = {
   '0': 'Any rating',

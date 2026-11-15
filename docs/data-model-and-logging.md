@@ -145,10 +145,13 @@ in the flash bucket.
   groups by `problemGrade` (consensus, not the vote), and stacks by try bucket (flash / 2nd / 3rd /
   4+, see `TryBadge.swift`).
 - **Benchmark progress** (web only, `web/src/logbook/BenchmarkProgressCard.tsx`) sits above the
-  pyramid: sent / total benchmarks on the active board at its current angle, overall and (behind
-  "Show grades", collapsed by default, remembered per device) per grade. Totals come from the cached catalog slab (no download is started; no cache → no card)
-  and count only benchmarks climbable with the installed hold sets. A grade-range filter on the
-  card is remembered per board in localStorage (`logbookBenchmarkGrades_<layoutId>`). Tapping a
+  pyramid: a ring and count of sent / total benchmarks on the active board at its current angle.
+  By default it covers the grades up to the user's hardest send (grades above it are left out of
+  the ring, the count and the bars; a grade with no sends below it stays). A chevron expands one
+  bar per grade, and "Show all grades" brings back the grades above the hardest send; both
+  toggles are remembered per device in localStorage (`logbookBenchmarkExpanded`,
+  `logbookBenchmarkAllGrades`). Totals come from the cached catalog slab (no download is started;
+  no cache → no card) and count only benchmarks climbable with the installed hold sets. Tapping a
   grade opens the catalog on that grade's benchmarks not yet sent.
 
 ## Settings live in `@AppStorage`, not SwiftData
