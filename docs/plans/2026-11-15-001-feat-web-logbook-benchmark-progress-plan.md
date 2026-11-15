@@ -18,17 +18,25 @@ only; no schema, no BLE, no geometry).
 ## Decisions (mocked up, previewed and revised 2026-11-15)
 
 - **One row by default**: a ring with the share sent, the title and the count. A chevron in the
-  card's top right expands one bar per grade, hardest grade on top. Each track's length is that
-  grade's benchmark total relative to the largest visible grade; the fill is sent / total.
-- **Grades above the hardest send are hidden**, and left out of the ring and count (the count
-  line says "up to 7A+"). A grade with no sends below the hardest send is a gap worth seeing
-  and stays. With no sends at all, every grade shows.
-- **"Show all grades"** under the bars brings the hidden grades back, into the ring and count
-  too. It only appears when there is something hidden.
-- **Both toggles are remembered per device** (localStorage).
-- **No grade slider or filter button.** An earlier revision had a two-thumb grade slider behind
-  a filter button; it was dropped as too much UI for the card. Hiding the unreached grades does
-  the same job without a control.
+  card's top right expands the rest.
+- **Expanded**: a three-way choice of grade range, then one bar per grade, hardest grade on top.
+  Each track's length is that grade's benchmark total relative to the largest visible grade; the
+  fill is sent / total.
+- **The card covers a grade range**: the ring, the count and the bars all follow it, and the
+  count line names it ("36 of 258 sent · up to 7A+", "8 of 116 sent · 7A to 7A+") unless it is
+  the whole board.
+- **Three ranges**, as a segmented control:
+  - **To my hardest** (default): easiest grade up to the hardest send. Grades above it are left
+    out; a grade with no sends below it is a gap worth seeing and stays. With no sends at all it
+    is every grade. It moves up as the user sends harder grades.
+  - **All grades**: every grade with benchmarks.
+  - **Custom**: reveals a grade slider with the catalog filter's look ("Grade" label, min/max
+    badges, blue range, via the shared `web/src/board/gradeBadge.ts` style). It starts from the
+    "to my hardest" range.
+- **Remembered**: the choice and the expanded state per device, the custom range per board.
+  Switching away from Custom keeps the custom range for next time.
+- **The controls sit above the bars**, not below: the number of bars changes with the range, so
+  a slider below them would move under the thumb while dragging.
 - **Existing sends pyramid stays** below the card, unchanged.
 - **Tap a grade row** to open the catalog on that board + angle filtered to benchmarks at that
   grade the user has not sent (`bench=1`, `grade=n-n`, `status=attempted,unlogged`).
@@ -46,10 +54,10 @@ only; no schema, no BLE, no geometry).
 
 ## Units
 
-1. `web/src/logbook/benchmarkProgress.ts` — pure: per-grade rows, trim to the hardest send,
-   summary, remembered toggles. Unit tests.
+1. `web/src/logbook/benchmarkProgress.ts` — pure: per-grade rows, grade ranges, summary,
+   remembered mode, custom range and expanded state. Unit tests.
 2. `web/src/logbook/BenchmarkProgressCard.tsx` — the card. Component tests (render, hidden
-   when no slab, expand, show all grades, tap-through target).
+   when no slab, expand, the three ranges, custom slider, tap-through target).
 3. `web/src/logbook/LogbookScreen.tsx` — render the card above the pyramid.
 4. `docs/data-model-and-logging.md` — note the card next to the pyramid.
 

@@ -4,6 +4,7 @@ import { boardByLayoutId } from '../board/boards'
 import { FONT_GRADES } from '../board/grades'
 import type { CatalogProblem } from '../catalog/catalogSync'
 import { BenchmarkProgressCard } from './BenchmarkProgressCard'
+import { loadMode, loadRange, saveMode, saveRange } from './benchmarkProgress'
 
 const navigate = vi.fn()
 let slab: CatalogProblem[] = []
@@ -15,6 +16,35 @@ vi.mock('../catalog/catalogSync', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../catalog/catalogSync')>()
   return { ...actual, readSlab: vi.fn(async () => slab) }
 })
+// The real slider (Base UI) keeps updating itself after mount, outside act(). A plain pair of
+// range inputs is enough here: the card only needs value in, onValueChange out.
+vi.mock('@/components/ui/slider', () => ({
+  Slider: ({
+    value,
+    min,
+    max,
+    onValueChange,
+  }: {
+    value: number[]
+    min: number
+    max: number
+    onValueChange: (value: number[]) => void
+  }) => (
+    <div>
+      {value.map((v, i) => (
+        <input
+          key={i}
+          type="range"
+          aria-label={i === 0 ? 'Lowest grade' : 'Highest grade'}
+          min={min}
+          max={max}
+          value={v}
+          onChange={(e) => onValueChange(value.map((x, j) => (j === i ? Number(e.target.value) : x)))}
+        />
+      ))}
+    </div>
+  ),
+}))
 // Every hold counts as installed, so the hold-set filter never hides a test problem.
 vi.mock('../board/holdSetMembership', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../board/holdSetMembership')>()
@@ -54,6 +84,13 @@ const SLAB = [
 const SENT = new Set(['a', 'c'])
 
 const rowTexts = () => screen.getAllByRole('listitem').map((li) => li.textContent)
+const sliders = () => document.querySelectorAll('input[type="range"]')
+
+async function renderExpanded(sentIds: Set<string> = SENT) {
+  slab = SLAB
+  render(<BenchmarkProgressCard board={board} sentIds={sentIds} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
+}
 
 afterEach(() => {
   localStorage.clear()
@@ -73,45 +110,83 @@ describe('BenchmarkProgressCard', () => {
   })
 
   it('expands to a row per grade, hardest first, keeping gaps below the hardest send', async () => {
-    slab = SLAB
-    render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
+    await renderExpanded()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
     expect(rowTexts()).toEqual(['7A1/1', '6C+0/1', '6C1/2'])
+    // "To my hardest" is the selected mode, and it shows no slider.
+    expect(screen.getByRole('button', { name: 'To my hardest' })).toHaveAttribute('aria-pressed', 'true')
+    expect(sliders()).toHaveLength(0)
   })
 
-  it('shows every grade, and counts them, on "Show all grades"', async () => {
-    slab = SLAB
-    render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
+  it('"All grades" covers and counts every grade', async () => {
+    await renderExpanded()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Show all grades' }))
+    fireEvent.click(screen.getByRole('button', { name: 'All grades' }))
 
     expect(rowTexts()).toEqual(['7B0/1', '7A1/1', '6C+0/1', '6C1/2'])
     expect(screen.getByText('2 of 5 sent')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Only up to my hardest send' })).toBeInTheDocument()
+    expect(sliders()).toHaveLength(0)
+    expect(loadMode()).toBe('all')
   })
 
-  it('remembers both toggles', async () => {
+  it('"Custom" shows the grade slider, starting from the up-to-hardest range', async () => {
+    await renderExpanded()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
+
+    // One range input per thumb, and the range as badges beside the "Grade" label.
+    expect(sliders()).toHaveLength(2)
+    expect(screen.getByText('Grade').parentElement).toHaveTextContent('Grade6Cto7A')
+    expect(screen.getByText('2 of 4 sent · 6C to 7A')).toBeInTheDocument()
+    expect(loadMode()).toBe('custom')
+  })
+
+  it('narrows to the dragged custom range and remembers it for the board', async () => {
+    await renderExpanded()
+    fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
+
+    // Raise the low thumb from 6C to 7A: only 7A is left.
+    fireEvent.change(screen.getByLabelText('Lowest grade'), { target: { value: String(ord('7A')) } })
+
+    expect(screen.getByText('1 of 1 sent · 7A')).toBeInTheDocument()
+    expect(rowTexts()).toEqual(['7A1/1'])
+    expect(loadRange(board.layoutId)).toEqual([ord('7A'), ord('7A')])
+  })
+
+  it('keeps the custom range when switching away and back', async () => {
+    saveRange(board.layoutId, [ord('7A'), ord('7B')])
+    await renderExpanded()
+
+    // The stored custom range is not applied until Custom is chosen.
+    expect(screen.getByText('2 of 4 sent · up to 7A')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
+    expect(screen.getByText('1 of 2 sent · 7A to 7B')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'To my hardest' }))
+    expect(screen.getByText('2 of 4 sent · up to 7A')).toBeInTheDocument()
+    expect(loadRange(board.layoutId)).toEqual([ord('7A'), ord('7B')])
+  })
+
+  it('reopens in the remembered mode and expanded state', async () => {
+    saveMode('custom')
+    saveRange(board.layoutId, [ord('7A'), ord('7B')])
     slab = SLAB
     const first = render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Show all grades' }))
+    // The custom range applies while the card is still collapsed.
+    expect(await screen.findByText('1 of 2 sent · 7A to 7B')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show grades' }))
     first.unmount()
 
     render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
     expect(await screen.findByRole('button', { name: 'Hide grades' })).toBeInTheDocument()
-    expect(screen.getAllByRole('listitem')).toHaveLength(4)
+    expect(screen.getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'true')
+    expect(rowTexts()).toEqual(['7B0/1', '7A1/1'])
   })
 
-  it('shows every grade, with no toggle, when nothing has been sent', async () => {
-    slab = SLAB
-    render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
+  it('covers every grade when nothing has been sent', async () => {
+    await renderExpanded(new Set())
 
-    expect(await screen.findByText('0 of 5 sent')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Show grades' }))
+    expect(screen.getByText('0 of 5 sent')).toBeInTheDocument()
     expect(screen.getAllByRole('listitem')).toHaveLength(4)
-    expect(screen.queryByRole('button', { name: 'Show all grades' })).not.toBeInTheDocument()
   })
 
   it('renders nothing when the slab is not cached', async () => {
@@ -122,10 +197,8 @@ describe('BenchmarkProgressCard', () => {
   })
 
   it('opens the catalog on the unsent benchmarks of a tapped grade', async () => {
-    slab = SLAB
-    render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
+    await renderExpanded()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
     fireEvent.click(screen.getByRole('button', { name: /^6C: 1 of 2 sent/ }))
 
     expect(navigate).toHaveBeenCalledTimes(1)
