@@ -21,7 +21,7 @@ Rules, in the order they run (see docs/plans/2026-10-09-002 … U3 for the full 
   overrides   entries for this slab resolve first and consume the rows they name (R14):
               `match` uuid→id re-points our row's boardsesh_uuid, `new` mints the uuid as
               a given id, `accept_holds` allows one exact geometry change, `pin` holds an
-              upstream field against the feed (applied last).
+              upstream field against the feed (applied last, to rows this run mints too).
   guards      an empty fetch is always refused; a fetch below 80% of its own header total
               or of the previous fetch's total is refused unless --accept-short (R16).
   uuid match  incoming uuid == our boardsesh_uuid: update the upstream-owned fields (R4,
@@ -30,8 +30,10 @@ Rules, in the order they run (see docs/plans/2026-10-09-002 … U3 for the full 
               return is a rename when exactly one such row matches by name or setter —
               keep the id, re-point boardsesh_uuid (R5). No evidence, or several incoming
               rows contending for one row, is quarantined. Holds shared only with rows the
-              fetch did return make a distinct problem (R6).
-  curation    remaining unknown rows must be benchmarks or have >= 10 repeats (R8).
+              fetch did return make a distinct problem (R6) — and so does a row whose only
+              evidence is for a row a rename already took on that evidence and more.
+  curation    remaining unknown rows must be benchmarks or have >= 10 repeats (R8), judged
+              with any pin on the id the row would be minted under applied.
   mint        a uuid equal to a retired id is quarantined (KTD6); a uuid that is already
               our id in another slab is the same problem at this angle when its holds
               equal that row's — minted with a derived id (R26, KTD8) — and quarantined
@@ -159,18 +161,25 @@ def index_ids(snapshots):
     return index
 
 
-def evidence(incoming, row):
-    """Strongest reason to believe a geometry match is the same boardsesh record, or None.
+def evidence_kinds(incoming, row):
+    """Every reason to believe a geometry match is the same boardsesh record, strongest first.
     Same name (case/whitespace-insensitive) beats same setter; a blank field is no evidence,
     and neither is the fetch's "Untitled" placeholder (PLACEHOLDER_NAMES) — two nameless
     climbs on the same holds are only the same problem when the setter also matches."""
+    kinds = []
     for kind in EVIDENCE:
         ours, theirs = lib.norm_text(row.get(kind)), lib.norm_text(incoming.get(kind))
         if kind == "name" and theirs in PLACEHOLDER_NAMES:
             continue
         if theirs and theirs == ours:
-            return kind
-    return None
+            kinds.append(kind)
+    return kinds
+
+
+def evidence(incoming, row):
+    """The strongest of `evidence_kinds`, or None."""
+    kinds = evidence_kinds(incoming, row)
+    return kinds[0] if kinds else None
 
 
 def _validate_fetch(fetch):
@@ -346,10 +355,8 @@ class _Merge:
         self.accepted[e["id"]] = e["hold_key"]
 
     def _override_pin(self, e, label):
-        if e["id"] not in self.by_id:
-            self.warn(f"{label} matched nothing this run")
-            return
-        self.pins.append(e)
+        # Recorded whether or not the row exists yet: this run may mint it (curate, apply_pins).
+        self.pins.append((e, label))
 
     # ── stage 2: guards (R16) ──
 
@@ -442,7 +449,7 @@ class _Merge:
         for key, claimants in claims_by_key.items():
             candidates = list(absent_by_key[key])
             original = list(candidates)
-            settled = []
+            settled, winner = [], {}
             # Settle strongest evidence first so a rename beats a new copy of the same holds.
             # A claim settles only when it is the ONE claimant with that evidence for the ONE
             # candidate, so the outcome never depends on fetch order.
@@ -457,9 +464,15 @@ class _Merge:
                     candidates.remove(r)
                     claimants.remove(p)
                     settled.append((r, p, kind))
+                    winner[r["id"]] = p
             # Classify the losers against the rows as they were, before the renames update them.
+            # A loser's evidence for a row counts only while the rename that took the row left
+            # it open: 'Foo 2' by the setter of 'Foo' has nothing over a rename that matches
+            # 'Foo' on name AND setter, so it is a distinct copy (R6). When the evidence is
+            # split — one row has the name, the other the setter — a human decides.
             for p in claimants:
-                evidenced = [r for r in original if evidence(p, r)]
+                evidenced = [r for r in original
+                             if evidence(p, r) and not self._outclassed(p, r, winner.get(r["id"]))]
                 if evidenced:
                     self._contention(p, evidenced)
                 elif candidates:
@@ -470,6 +483,11 @@ class _Merge:
                 self._repoint(r, p, kind)
                 self._update_returned(r, p)
         self.unknown = leftover
+
+    @staticmethod
+    def _outclassed(inc, row, winner):
+        """True when `row` went to `winner` on every kind of evidence `inc` has for it."""
+        return winner is not None and set(evidence_kinds(inc, row)) <= set(evidence_kinds(winner, row))
 
     def _no_evidence(self, inc, candidates):
         first = candidates[0]
@@ -494,10 +512,27 @@ class _Merge:
 
     # ── stage 5: curation (R8) ──
 
+    def _mint_id(self, inc):
+        """(id, derived) a new incoming row would be minted under, or None when the mint stage
+        will quarantine it instead (KTD8)."""
+        uuid = inc["uuid"]
+        ref = self.all_ids.get(uuid)
+        if ref is None:
+            return uuid, False
+        if (ref.layout, ref.angle) != self.slab and ref.hold_key == lib.hold_key(inc["holds"]):
+            return lib.derived_id(uuid, self.angle), True
+        return None
+
     def curate(self):
+        # A pin is a human verdict about the row, so admission is judged with it applied:
+        # a pinned benchmark the feed does not flag is admitted, and minted already flagged.
+        pinned = {}
+        for e, _ in self.pins:
+            pinned.setdefault(e["id"], {})[e["field"]] = e["value"]
         kept = []
         for inc in self.unknown:
-            if lib.admitted(inc):
+            target = self._mint_id(inc)
+            if lib.admitted({**inc, **pinned.get(target[0], {})} if target else inc):
                 kept.append(inc)
             else:
                 self.report.dropped += 1
@@ -520,12 +555,11 @@ class _Merge:
                           self.entry("match", f"{inc.get('name')!r} is {twins[0]['name']!r} re-keyed",
                                      uuid=uuid, id=twins[0]["id"]) if twins else None)
                 continue
-            ref = self.all_ids.get(uuid)
-            if ref is None:
-                self._mint(inc, uuid, derived=False)
-            elif (ref.layout, ref.angle) != self.slab and ref.hold_key == lib.hold_key(inc["holds"]):
-                self._mint(inc, fresh, derived=True)
+            target = self._mint_id(inc)
+            if target is not None:
+                self._mint(inc, *target)
             else:
+                ref = self.all_ids[uuid]
                 where = "this slab" if (ref.layout, ref.angle) == self.slab else f"layout {ref.layout} @ {ref.angle}°"
                 self.case("uuid collision", inc, [uuid],
                           f"its uuid is already our id in {where} with different holds, and nothing in this "
@@ -552,8 +586,12 @@ class _Merge:
     # ── stage 7: pins (R14) ──
 
     def apply_pins(self):
-        for e in self.pins:
-            self.by_id[e["id"]][e["field"]] = e["value"]
+        for e, label in self.pins:
+            row = self.by_id.get(e["id"])
+            if row is None:
+                self.warn(f"{label} matched nothing this run")
+                continue
+            row[e["field"]] = e["value"]
 
     # ── stage 8: invariants (R17) ──
 

@@ -85,6 +85,11 @@ UPSTREAM_FIELDS = ("name", "grade", "userGrade", "setter", "stars", "repeats", "
 ROW_COLUMNS = ("source_catalog_id", "layout_id", "angle", "name", "grade", "user_grade", "setter",
                "stars", "repeats", "is_benchmark", "method", "holds", "deleted")
 
+# What a `pin` may hold each upstream-owned field at. The value is written into the snapshot
+# as is, so a "false" string would read as true on import; bool is not an int here.
+PIN_VALUE_TYPES = {"name": (str,), "grade": (str,), "setter": (str,), "userGrade": (str, type(None)),
+                   "method": (str, type(None)), "stars": (int,), "repeats": (int,), "isBenchmark": (bool,)}
+
 OVERRIDE_ACTIONS = {
     "match": ("uuid", "id"),            # upstream uuid is our row `id`
     "new": ("uuid", "id"),              # upstream uuid is a new problem, minted as `id`
@@ -327,8 +332,16 @@ def load_overrides(path):
                 raise ValueError(f"{where}: {key} must be a plain id string")
         if action == "accept_holds" and not re.fullmatch(r"[0-9a-f]{64}", str(e["hold_key"])):
             raise ValueError(f"{where}: hold_key must be a 64-char sha256 hex digest")
-        if action == "pin" and e["field"] not in UPSTREAM_FIELDS:
-            raise ValueError(f"{where}: can only pin an upstream-owned field {UPSTREAM_FIELDS}")
+        if action == "pin":
+            field, value = e["field"], e["value"]
+            if field not in UPSTREAM_FIELDS:
+                raise ValueError(f"{where}: can only pin an upstream-owned field {UPSTREAM_FIELDS}")
+            types = PIN_VALUE_TYPES[field]
+            ok = isinstance(value, types) and (bool in types or not isinstance(value, bool))
+            if not ok or (isinstance(value, int) and not isinstance(value, bool) and value < 0):
+                want = " or ".join("null" if t is type(None) else t.__name__ for t in types)
+                raise ValueError(f"{where}: pin on {field} needs a {want} value"
+                                 f"{' >= 0' if int in types else ''}, not {value!r}")
     return Overrides(retired, entries)
 
 

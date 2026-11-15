@@ -101,11 +101,11 @@ class FetchSlabTest(unittest.TestCase):
         self.addCleanup(mock.patch.stopall)
 
     def test_pages_until_has_more_is_false_and_reports_first_page_total(self):
-        pages = [page([climb("b"), climb("a")], 250, True),
+        pages = [page([climb("b"), climb("a")], 3, True),
                  page([climb("c")], 999, False)]
         with mock.patch.object(mod, "gql", side_effect=pages) as gql, redirect_stdout(io.StringIO()):
             total, problems = mod.fetch_slab(7, 40, "28,29,30,31", delay=0.5)
-        self.assertEqual(total, 250)
+        self.assertEqual(total, 3)
         self.assertEqual([p["uuid"] for p in problems], ["a", "b", "c"])  # sorted by uuid
         inputs = [call.args[0]["i"] for call in gql.call_args_list]
         self.assertEqual([i["page"] for i in inputs], [0, 1])
@@ -137,6 +137,67 @@ class FetchSlabTest(unittest.TestCase):
         with mock.patch.object(mod, "gql", side_effect=pages), redirect_stdout(io.StringIO()):
             total, problems = mod.fetch_slab(7, 40, "28", delay=0)
         self.assertEqual((total, problems), (0, []))
+
+
+class IncompleteFetchTest(unittest.TestCase):
+    """A feed that ends early must not pass as the whole feed: the rows it lacks would look
+    "not returned" to the merge and become rename targets."""
+
+    def setUp(self):
+        mock.patch.object(mod.time, "sleep").start()
+        self.addCleanup(mock.patch.stopall)
+
+    def fetch(self, pages, **kw):
+        out = io.StringIO()
+        with mock.patch.object(mod, "gql", side_effect=pages), redirect_stdout(out):
+            result = mod.fetch_slab(7, 40, "28", delay=0, **kw)
+        return result, out.getvalue()
+
+    def many(self, start, n):
+        return [climb(f"u{i:04d}") for i in range(start, start + n)]
+
+    def test_has_more_false_before_the_total_is_refused_naming_both_counts(self):
+        pages = [page(self.many(0, 100), 250, True), page(self.many(100, 100), 250, False)]
+        with self.assertRaises(SystemExit) as ctx:
+            self.fetch(pages)
+        self.assertIn("200", str(ctx.exception))
+        self.assertIn("250", str(ctx.exception))
+        self.assertIn("--allow-incomplete", str(ctx.exception))
+
+    def test_empty_page_before_the_total_is_refused(self):
+        pages = [page(self.many(0, 100), 250, True), page([], 250, True)]
+        with self.assertRaises(SystemExit):
+            self.fetch(pages)
+
+    def test_allow_incomplete_returns_the_rows_and_warns(self):
+        pages = [page(self.many(0, 100), 250, True), page(self.many(100, 100), 250, False)]
+        (total, problems), printed = self.fetch(pages, allow_incomplete=True)
+        self.assertEqual((total, len(problems)), (250, 200))
+        self.assertIn("WARNING", printed)
+
+    def test_holdless_climbs_count_as_seen(self):
+        pages = [page(self.many(0, 60) + [climb(f"x{i}", frames="") for i in range(40)], 100, False)]
+        (total, problems), _ = self.fetch(pages)
+        self.assertEqual((total, len(problems)), (100, 60))
+
+    def test_a_few_rows_of_drift_on_a_live_feed_are_tolerated(self):
+        short = mod.INCOMPLETE_TOLERANCE
+        (total, problems), _ = self.fetch([page(self.many(0, 100), 100 + short, False)])
+        self.assertEqual(len(problems), 100)
+        with self.assertRaises(SystemExit):
+            self.fetch([page(self.many(0, 100), 100 + short + 1, False)])
+
+    def test_cli_flag_reaches_the_fetch(self):
+        pages = [page(self.many(0, 100), 250, False)]
+        with tempfile.TemporaryDirectory() as d:
+            mock.patch.object(mod, "utc_now_iso", return_value="2026-10-09T20:15:03Z").start()
+            with mock.patch.object(mod, "gql", side_effect=pages), redirect_stdout(io.StringIO()):
+                mod.main(["--layout", "7", "--angle", "40", "--out-dir", d, "--allow-incomplete"])
+            self.assertTrue(os.path.exists(lib.fetch_path(d, 7, 40)))
+            with mock.patch.object(mod, "gql", side_effect=pages), redirect_stdout(io.StringIO()), \
+                    self.assertRaises(SystemExit):
+                mod.main(["--layout", "7", "--angle", "25", "--out-dir", d])
+            self.assertFalse(os.path.exists(lib.fetch_path(d, 7, 25)))
 
 
 class FakeResponse:

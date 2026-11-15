@@ -323,6 +323,19 @@ class ContentionTest(MergeCase):
         self.assertEqual([(c.kind, c.uuid) for c in exc.cases], [("contention", "u2")])
         self.assertEqual([(r.id, r.new_uuid) for r in exc.report.renamed], [("old", "u1")])
 
+    def test_same_setter_sibling_of_a_rename_matching_name_and_setter_is_a_distinct_copy(self):
+        # 'Bingo' by orig matches the old row on name AND setter, so the old row is spoken for
+        # beyond doubt; 'Bingo 2' by the same setter on the same holds is just another problem
+        # (R6) and goes through curation like any new row, instead of refusing the slab.
+        for repeats, minted, dropped in ((3, [], 1), (12, ["u2"], 0)):
+            snap = snapshot([snap_problem("old", "BINGO", H1, setter="orig")])
+            out, report = run(snap, fetch([incoming("u2", "Bingo 2", H1, setter="orig", repeats=repeats),
+                                           incoming("u1", "Bingo", H1, setter="orig")]))
+            self.assertEqual([(r.id, r.new_uuid, r.evidence) for r in report.renamed], [("old", "u1", "name")])
+            self.assertEqual([m.id for m in report.minted], minted)
+            self.assertEqual(report.dropped, dropped)
+            self.assertEqual(sorted(by_id(out)), sorted(["old", *minted]))
+
     def test_one_incoming_row_tied_between_two_absent_rows_is_contention(self):
         snap = snapshot([snap_problem("old-1", "BINGO", H1, setter="a"), snap_problem("old-2", "bingo", H1, setter="b")])
         exc = self.refuse(snap, fetch([incoming("u1", "Bingo", H1, setter="z")]))
@@ -573,6 +586,38 @@ class PinTest(MergeCase):
         self.assertTrue(by_id(out)["p1"]["isBenchmark"])
         self.assertEqual(report.transitions, [])
         self.assertEqual(report.warnings, [])
+
+    def test_pin_flags_a_row_minted_in_the_same_run(self):
+        out, report = run(snapshot([]), fetch([incoming("u1", "New", H1, repeats=10)]),
+                          overrides([pin("u1", "isBenchmark", True)]))
+        self.assertTrue(by_id(out)["u1"]["isBenchmark"])
+        self.assertEqual(report.warnings, [])
+        self.assertEqual(report.transitions, [])   # born flagged: no rising edge on a later run
+
+    def test_benchmark_pin_admits_a_new_row_below_the_repeat_floor(self):
+        out, report = run(snapshot([]), fetch([incoming("u1", "New", H1, repeats=2), incoming("u2", "Other", H2, repeats=2)]),
+                          overrides([pin("u1", "isBenchmark", True)]))
+        self.assertEqual(sorted(by_id(out)), ["u1"])
+        self.assertTrue(by_id(out)["u1"]["isBenchmark"])
+        self.assertEqual(report.dropped, 1)
+        self.assertEqual(report.warnings, [])
+
+    def test_benchmark_pin_on_a_derived_id_admits_the_second_angle_twin(self):
+        other = snapshot([snap_problem("shared", "SHARED", H1)], angle=40)
+        derived = lib.derived_id("shared", 25)
+        out, report = run(snapshot([], angle=25), fetch([incoming("shared", "SHARED", H1, repeats=0)], angle=25),
+                          overrides([pin(derived, "isBenchmark", True, angle=25)]), others=[other])
+        self.assertEqual([(m.id, m.derived) for m in report.minted], [(derived, True)])
+        self.assertTrue(by_id(out)[derived]["isBenchmark"])
+        self.assertEqual(report.warnings, [])
+
+    def test_pin_naming_the_plain_uuid_does_not_admit_a_row_that_would_get_a_derived_id(self):
+        other = snapshot([snap_problem("shared", "SHARED", H1)], angle=40)
+        out, report = run(snapshot([], angle=25), fetch([incoming("shared", "SHARED", H1, repeats=0)], angle=25),
+                          overrides([pin("shared", "isBenchmark", True, angle=25)]), others=[other])
+        self.assertEqual(out["problems"], [])
+        self.assertEqual(len(report.warnings), 1, report.warnings)
+        self.assertIn("matched nothing", report.warnings[0])
 
     def test_pin_on_name_does_not_silence_a_holds_quarantine(self):
         snap = snapshot([snap_problem("p1", "P1", H1)])

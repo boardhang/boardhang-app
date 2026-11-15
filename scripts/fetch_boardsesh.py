@@ -76,6 +76,9 @@ ENDPOINT = "https://ws.boardsesh.com/graphql"
 SIZE_ID = 1
 PAGE_SIZE = 100  # boardsesh caps page size at 100
 DEFAULT_OUT_DIR = lib.DATA_DIR
+# Rows the feed may fall short of its own totalCount before the fetch is called incomplete:
+# room for climbs added or removed on a live service mid-fetch, well under one page.
+INCOMPLETE_TOLERANCE = 25
 HEADERS = {"Content-Type": "application/json", "User-Agent": "moonboard-led-catalog/1.0"}
 
 # boardsesh difficulty label ("6a+/V3") -> MoonBoard Font grade ("6A+").
@@ -180,11 +183,16 @@ def normalize(climb):
 
 # ── paging shell ────────────────────────────────────────────────────────────────────
 
-def fetch_slab(layout, angle, set_ids, delay):
+def fetch_slab(layout, angle, set_ids, delay, allow_incomplete=False):
     """Page through the whole feed for one (board, angle). Returns (total_count, problems),
     with total_count the first page's totalCount and problems deduped by uuid (boardsesh
-    paging can repeat a row) and sorted by uuid."""
-    by_uuid, total, page = {}, None, 0
+    paging can repeat a row) and sorted by uuid.
+
+    Exits when paging ended more than INCOMPLETE_TOLERANCE rows short of that total (an early
+    hasMore=false or an empty page): the merge reads a row the fetch lacks as "boardsesh no
+    longer returns it" and may hand its identity to a look-alike. `allow_incomplete` warns
+    instead."""
+    by_uuid, seen, total, page = {}, set(), None, 0
     while True:
         inp = {"boardName": "moonboard", "layoutId": layout, "sizeId": SIZE_ID,
                "setIds": set_ids, "angle": angle, "page": page, "pageSize": PAGE_SIZE}
@@ -193,6 +201,7 @@ def fetch_slab(layout, angle, set_ids, delay):
             total = res.get("totalCount")
         climbs = res["climbs"] or []
         for c in climbs:
+            seen.add(c.get("uuid"))   # hold-less climbs count: they are in boardsesh's total
             p = normalize(c)
             if p is not None and p["uuid"] not in by_uuid:
                 by_uuid[p["uuid"]] = p
@@ -202,14 +211,21 @@ def fetch_slab(layout, angle, set_ids, delay):
             break
         page += 1
         time.sleep(delay)
+    if total is not None and len(seen) < int(total) - INCOMPLETE_TOLERANCE:
+        text = (f"incomplete fetch of layout {layout} @ {angle}°: paging ended after {len(seen)} climb(s) "
+                f"but boardsesh reported {total}")
+        if not allow_incomplete:
+            sys.exit(f"{text}; nothing written. Run it again, or pass --allow-incomplete if the feed "
+                     f"really is that short")
+        print(f"  WARNING {text} (--allow-incomplete)")
     return total, [by_uuid[u] for u in sorted(by_uuid)]
 
 
-def fetch_and_write(layout, angle, out_dir, delay):
+def fetch_and_write(layout, angle, out_dir, delay, allow_incomplete=False):
     """Fetch one slab and write it to lib.fetch_path(out_dir, layout, angle). Returns the path."""
     board = lib.BOARDS[layout]
     print(f"\n{board.name} @ {angle}° (layout {layout}, sets {board.set_ids})…")
-    total, problems = fetch_slab(layout, angle, board.set_ids, delay)
+    total, problems = fetch_slab(layout, angle, board.set_ids, delay, allow_incomplete)
     out = {"fetched_at": utc_now_iso(), "layoutId": layout, "angle": angle, "setIds": board.set_ids,
            "total_count": total, "count": len(problems), "problems": problems}
     path = lib.fetch_path(out_dir, layout, angle)
@@ -229,6 +245,8 @@ def main(argv=None):
     ap.add_argument("--delay", type=float, default=0.25, help="seconds between page requests")
     ap.add_argument("--out-dir", default=DEFAULT_OUT_DIR,
                     help="catalog-data dir; the file lands in its .upstream/ subdir (default: %(default)s)")
+    ap.add_argument("--allow-incomplete", action="store_true",
+                    help="write a feed that ended short of boardsesh's own total (default: exit, write nothing)")
     args = ap.parse_args(argv)
 
     if args.all:
@@ -241,7 +259,7 @@ def main(argv=None):
     out_dir = os.path.abspath(args.out_dir)
     for lid in layouts:
         for angle in ([args.angle] if args.angle else lib.BOARDS[lid].angles):
-            fetch_and_write(lid, angle, out_dir, args.delay)
+            fetch_and_write(lid, angle, out_dir, args.delay, args.allow_incomplete)
 
 
 if __name__ == "__main__":

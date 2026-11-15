@@ -341,6 +341,23 @@ class OverridesTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             lib.load_overrides(path)
 
+    def test_rejects_a_pin_value_of_the_wrong_type(self):
+        bad = [("isBenchmark", "false"), ("isBenchmark", 1), ("isBenchmark", None), ("stars", "4"), ("stars", True),
+               ("repeats", -1), ("repeats", 2.5), ("name", 7), ("name", None), ("grade", None), ("setter", 3),
+               ("method", 5), ("userGrade", False)]
+        for field, value in bad:
+            path = self.write({"retired_ids": [], "entries": [
+                {"action": "pin", "layout_id": 3, "angle": 40, "id": "p", "field": field, "value": value}]})
+            with self.assertRaises(ValueError, msg=f"{field}={value!r}") as ctx:
+                lib.load_overrides(path)
+            self.assertIn(field, str(ctx.exception))
+
+    def test_accepts_a_pin_value_of_the_fields_type(self):
+        good = [("isBenchmark", False), ("stars", 4), ("repeats", 0), ("name", "X"), ("grade", "6C"),
+                ("setter", ""), ("method", None), ("method", "Footless"), ("userGrade", None)]
+        entries = [{"action": "pin", "layout_id": 3, "angle": 40, "id": "p", "field": f, "value": v} for f, v in good]
+        self.assertEqual(len(lib.load_overrides(self.write({"retired_ids": [], "entries": entries})).entries), len(good))
+
     def test_rejects_a_file_that_looks_like_a_slab(self):
         path = self.write({"layoutId": 3, "angle": 40, "problems": [], "retired_ids": [], "entries": []})
         with self.assertRaises(ValueError):

@@ -140,14 +140,18 @@ is slab-scoped and may carry a free-form `note`:
 ```
 
 Overrides resolve before any rule runs and consume the rows they name; an entry that matched
-nothing produces a warning. The file must never carry both `problems` and `layoutId` at top level
+nothing produces a warning. A `pin`'s `value` must have the field's type (`isBenchmark` a JSON
+boolean, `stars`/`repeats` a non-negative integer, the text fields a string, `method`/`userGrade`
+a string or null) — the file is refused otherwise, because the value is written as is. The file must never carry both `problems` and `layoutId` at top level
 — the slab selectors treat any such file as a snapshot.
 
 ### Fetch scratch (`catalog-data/.upstream/<slug>_<angle>.json`)
 
 `{fetched_at, layoutId, angle, setIds, total_count, count, problems[]}` with problems keyed by
 `uuid` (not `id`). `total_count` is boardsesh's reported total on the first page — the short-fetch
-guard compares against it. Not committed, not diffed.
+guard compares against it. Not committed, not diffed. The fetch itself exits without writing when
+paging ended more than 25 climbs short of that total (an early `hasMore: false` or an empty page);
+`--allow-incomplete` writes it anyway with a warning.
 
 ### HoldSets file
 
@@ -195,14 +199,20 @@ run still prints the renames and mints it would have made):
    (case/whitespace-insensitive) or, failing that, by setter: the row keeps its id and gets the new
    `boardsesh_uuid`. A geometry match with neither (*no evidence*), or several incoming rows with
    evidence for one row (*contention*), is quarantined. Holds shared only with rows the fetch *did*
-   return make a distinct problem. Repeats are not evidence.
+   return make a distinct problem. So does a row whose only evidence is for a row a rename already
+   took on that evidence and more: with `Foo` by S renamed to `foo` by S, `Foo 2` by S on the same
+   holds is just another problem and goes on to curation. Split evidence — one incoming row has the
+   name, another the setter — is still *contention*. Repeats are not evidence.
 5. **Curation.** Remaining unknown rows are admitted only if they are benchmarks or have ≥ 10
    repeats (`catalog_lib.CURATION`, recorded in the header). At 25° the unfiltered feed carries every
-   40° problem and most fail the per-angle floor; they are dropped, not quarantined.
+   40° problem and most fail the per-angle floor; they are dropped, not quarantined. A `pin` on the
+   id the row would be minted under counts: a pinned `isBenchmark: true` admits a row the feed does
+   not flag.
 6. **Mint.** A uuid equal to a *retired id* is quarantined. A uuid that is already our id in another
    slab is minted with a derived id when the holds equal that row's, and quarantined *uuid collision*
    when they differ. Everything else is minted with `id = uuid`.
-7. **Pins** apply last, so a pinned field holds against the feed.
+7. **Pins** apply last, so a pinned field holds against the feed — on rows this run minted too, so
+   a pinned benchmark is born flagged rather than flipping on the next merge.
 8. **Invariants** before writing: ids unique across *all* snapshots, `boardsesh_uuid` unique in the
    slab, every id plain (`ID_RE`), every stored `hold_key` equal to the recomputed one.
 
@@ -230,6 +240,7 @@ python3 scripts/fetch_boardsesh.py --layout 3 --angle 40
 # 2. Merge. Rewrites catalog-data/moonboard2024_40.json in place on success; on a quarantine it
 #    prints each case with an overrides.json entry and writes nothing (exit 2). --dry-run to preview.
 python3 scripts/merge_catalog.py --layout 3 --angle 40
+#   "incomplete fetch" from step 1? boardsesh ended paging early; run the fetch again.
 #   Short fetch refused? Check the counts it names against boardsesh before --accept-short.
 #   Quarantines? Decide each one, add the entry to catalog-data/overrides.json, re-run.
 
@@ -374,7 +385,9 @@ the confirm dialog.
 - **The benchmark flag flaps upstream.** A true→false drop removes benchmark status in the app
   silently; the merge report lists both directions so the reviewer sees it, and a `pin` override
   holds it. The two pins that exist (THE WARM UP PROBLEM, FULL SWINGS; Masters 2019 @ 40°) replaced
-  the hard-coded overrides the old fetch script carried.
+  the hard-coded overrides the old fetch script carried. They are 40° only: prod has never flagged
+  either at 25° (`The warm up problem 25°` is a non-benchmark row there, FULL SWINGS has no 25° row),
+  and a pin is slab-scoped. Pinning a 25° twin means an entry for that slab naming the 25° row's id.
 - **Foot-rule `method` comes from boardsesh `characteristics`.** The fetch maps `method_no_kickboard`
   / `method_footless` / `method_footless_kickboard` → `"No kickboard"` / `"Footless"` /
   `"Footless + kickboard"` (else `null`). The web/iOS filter offers a **fixed** label list (not
