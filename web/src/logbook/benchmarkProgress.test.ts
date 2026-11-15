@@ -3,11 +3,14 @@ import { FONT_GRADES, GRADE_FILTER_FLOOR } from '../board/grades'
 import type { CatalogProblem } from '../catalog/catalogSync'
 import {
   benchmarkRows,
-  loadAllGrades,
+  clampRange,
+  defaultRange,
+  gradeSpan,
   loadExpanded,
-  rowsUpToHardestSend,
-  saveAllGrades,
+  loadRange,
+  rowsInRange,
   saveExpanded,
+  saveRange,
   summarize,
 } from './benchmarkProgress'
 
@@ -75,18 +78,32 @@ describe('benchmarkRows', () => {
   })
 })
 
-describe('rowsUpToHardestSend', () => {
+describe('grade ranges', () => {
   const slab = [problem('a', '6C'), problem('b', '6C+'), problem('c', '7A'), problem('d', '7B')]
 
-  it('drops the grades above the hardest send and keeps gaps below it', () => {
-    const rows = rowsUpToHardestSend(benchmarkRows(slab, new Set(['a', 'c']), all))
-    // 6C+ has no sends but sits below 7A, so it stays; 7B is above it and goes.
-    expect(rows.map((r) => r.grade)).toEqual(['6C', '6C+', '7A'])
+  it('spans the easiest to the hardest grade with benchmarks', () => {
+    expect(gradeSpan(benchmarkRows(slab, new Set(), all))).toEqual([ord('6C'), ord('7B')])
+    expect(gradeSpan([])).toBeNull()
   })
 
-  it('keeps every grade when nothing has been sent', () => {
-    const rows = rowsUpToHardestSend(benchmarkRows(slab, new Set(), all))
-    expect(rows.map((r) => r.grade)).toEqual(['6C', '6C+', '7A', '7B'])
+  it('defaults to the grades up to the hardest send, keeping gaps below it', () => {
+    const rows = benchmarkRows(slab, new Set(['a', 'c']), all)
+    const range = defaultRange(rows)!
+    expect(range).toEqual([ord('6C'), ord('7A')])
+    // 6C+ has no sends but sits below 7A, so it stays; 7B is above it and goes.
+    expect(rowsInRange(rows, range).map((r) => r.grade)).toEqual(['6C', '6C+', '7A'])
+  })
+
+  it('defaults to every grade when nothing has been sent', () => {
+    expect(defaultRange(benchmarkRows(slab, new Set(), all))).toEqual([ord('6C'), ord('7B')])
+    expect(defaultRange([])).toBeNull()
+  })
+
+  it('trims a picked range to the span and drops one that misses it', () => {
+    expect(clampRange(null, [7, 11])).toBeNull()
+    expect(clampRange([3, 9], [7, 11])).toEqual([7, 9])
+    expect(clampRange([14, 16], [7, 11])).toBeNull()
+    expect(clampRange([9, 8], [7, 11])).toBeNull()
   })
 })
 
@@ -105,18 +122,22 @@ describe('summarize', () => {
   })
 })
 
-describe('remembered toggles', () => {
+describe('remembered on this device', () => {
   afterEach(() => localStorage.clear())
 
-  it('default to off and round-trip independently', () => {
+  it('keeps a picked range per board and clears it on null', () => {
+    saveRange(7, [8, 12])
+    expect(loadRange(7)).toEqual([8, 12])
+    expect(loadRange(8)).toBeNull()
+    saveRange(7, null)
+    expect(loadRange(7)).toBeNull()
+  })
+
+  it('keeps whether the grades were left open, closed by default', () => {
     expect(loadExpanded()).toBe(false)
-    expect(loadAllGrades()).toBe(false)
     saveExpanded(true)
     expect(loadExpanded()).toBe(true)
-    expect(loadAllGrades()).toBe(false)
-    saveAllGrades(true)
     saveExpanded(false)
     expect(loadExpanded()).toBe(false)
-    expect(loadAllGrades()).toBe(true)
   })
 })
