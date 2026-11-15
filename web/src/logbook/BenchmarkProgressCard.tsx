@@ -1,7 +1,9 @@
 // Benchmark progress for the Logbook: a ring with the share of the board's benchmarks
-// the user has sent, then one bar per grade (sent of total), hardest grade on top. A
-// grade-range slider, hidden behind the filter button, narrows the card to the grades
-// the user cares about; the range is remembered per board.
+// the user has sent. "Show grades" expands one bar per grade (sent of total), hardest
+// grade on top; collapsed by default so the Logbook's ascents stay near the top. A
+// grade-range slider, hidden behind the filter button and styled like the catalog
+// filter's, narrows the card to the grades the user cares about. The range is remembered
+// per board, the expanded state per device.
 //
 // Totals come from the cached catalog slab for the board's current angle — a cache read
 // only, the Logbook never starts a slab download. With no cached slab (or no benchmarks)
@@ -9,9 +11,11 @@
 
 import { useEffect, useId, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { ListFilter } from 'lucide-react'
+import { ChevronDown, ListFilter } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
+import { cn } from '@/lib/utils'
+import { gradeBadgeCls } from '../board/gradeBadge'
 import { defaultAngle, hasAngleChoice, type CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle } from '../board/boardStore'
 import { FONT_GRADES } from '../board/grades'
@@ -23,7 +27,9 @@ import {
   benchmarkRows,
   clampRange,
   gradeSpan,
+  loadExpanded,
   loadRange,
+  saveExpanded,
   saveRange,
   summarize,
   type GradeRange,
@@ -73,6 +79,15 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
 
   const [stored, setStored] = useState<GradeRange | null>(() => loadRange(board.layoutId))
   const [filterOpen, setFilterOpen] = useState(false)
+  const [expanded, setExpanded] = useState(loadExpanded)
+  const gradesId = useId()
+
+  function toggleExpanded() {
+    setExpanded((was) => {
+      saveExpanded(!was)
+      return !was
+    })
+  }
 
   const span = gradeSpan(rows)
   if (!span) return null
@@ -170,26 +185,53 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
       </div>
 
       {filterOpen && span[0] < span[1] && (
-        <div id={sliderId} className="mt-3 px-0.5">
-          {/* Muted range so the blue stays reserved for the progress bars and ring. */}
-          <Slider
-            className="[&_[data-slot=slider-range]]:bg-muted-foreground/50"
-            aria-label="Grade range"
-            min={span[0]}
-            max={span[1]}
-            step={1}
-            value={range}
-            onValueChange={(value) => {
-              const [lo, hi] = value as number[]
-              changeRange([lo, hi])
-            }}
-          />
+        // Same look as the catalog filter's grade slider: label, min/max badges, slider.
+        <div id={sliderId} className="mt-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">Grade</span>
+            <div className="ml-auto flex items-center gap-1.5">
+              <span className={gradeBadgeCls}>{FONT_GRADES[range[0]]}</span>
+              {range[1] !== range[0] && (
+                <>
+                  <span className="text-xs text-muted-foreground">to</span>
+                  <span className={gradeBadgeCls}>{FONT_GRADES[range[1]]}</span>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="px-0.5">
+            <Slider
+              aria-label="Grade range"
+              min={span[0]}
+              max={span[1]}
+              step={1}
+              value={range}
+              onValueChange={(value) => {
+                const [lo, hi] = value as number[]
+                changeRange([lo, hi])
+              }}
+            />
+          </div>
         </div>
       )}
 
+      {/* The per-grade bars are tucked away by default so the card stays one line tall. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="mt-2 -ml-2 text-muted-foreground"
+        aria-expanded={expanded}
+        aria-controls={gradesId}
+        onClick={toggleExpanded}
+      >
+        {expanded ? 'Hide grades' : 'Show grades'}
+        <ChevronDown className={cn('transition-transform', expanded && 'rotate-180')} aria-hidden />
+      </Button>
+
       {/* Hardest grade on top, like a pyramid. Track length = this grade's share of the
           largest visible grade; fill = sent / total. */}
-      <ul className="mt-3 space-y-0.5">
+      {expanded && (
+      <ul id={gradesId} className="mt-1 space-y-0.5">
         {[...summary.rows].reverse().map((row) => (
           <li key={row.ordinal}>
             <button
@@ -217,6 +259,7 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
           </li>
         ))}
       </ul>
+      )}
     </section>
   )
 }

@@ -118,3 +118,25 @@ export function saveRange(layoutId: number, range: GradeRange | null): void {
     /* best-effort — the filter still works for this visit */
   }
 }
+
+// ── Remembered "grades shown" toggle (this device) ────────────────────────────
+
+const EXPANDED_KEY = 'logbookBenchmarkExpanded'
+
+/** Whether the per-grade bars were left open. Collapsed by default. */
+export function loadExpanded(): boolean {
+  try {
+    return localStorage.getItem(EXPANDED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function saveExpanded(expanded: boolean): void {
+  try {
+    if (expanded) localStorage.setItem(EXPANDED_KEY, '1')
+    else localStorage.removeItem(EXPANDED_KEY)
+  } catch {
+    /* best-effort */
+  }
+}

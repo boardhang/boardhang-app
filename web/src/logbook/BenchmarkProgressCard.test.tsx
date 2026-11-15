@@ -63,6 +63,9 @@ describe('BenchmarkProgressCard', () => {
 
     expect(await screen.findByText('2 of 4 sent')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: '50% of benchmarks sent' })).toBeInTheDocument()
+    // The per-grade bars are collapsed until asked for.
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Show grades' }))
     const rows = screen.getAllByRole('listitem').map((li) => li.textContent)
     expect(rows).toEqual(['7B0/1', '7A1/1', '6C1/2'])
   })
@@ -92,12 +95,37 @@ describe('BenchmarkProgressCard', () => {
     expect(document.getElementById(sliderId)).toBeNull()
   })
 
+  it('remembers that the grades were left open', async () => {
+    slab = SLAB
+    const first = render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
+    first.unmount()
+
+    render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
+    expect(await screen.findByRole('button', { name: 'Hide grades' })).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+  })
+
+  it('shows the range as grade badges beside the slider, like the catalog filter', async () => {
+    slab = SLAB
+    saveRange(board.layoutId, [ord('7A'), ord('7B')])
+    render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
+
+    const button = await screen.findByRole('button', { name: 'Filter grades' })
+    fireEvent.click(button)
+    // Let the slider thumbs finish mounting.
+    await act(async () => {})
+    const panel = document.getElementById(button.getAttribute('aria-controls')!)!
+    expect(panel).toHaveTextContent('Grade7Ato7B')
+  })
+
   it('applies the remembered range to the count, the rows and the button', async () => {
     slab = SLAB
     saveRange(board.layoutId, [ord('7A'), ord('7B')])
     render(<BenchmarkProgressCard board={board} sentIds={new Set(['a', 'c'])} />)
 
     expect(await screen.findByText('1 of 2 sent · 7A to 7B')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show grades' }))
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
     expect(screen.getByTestId('grade-filter-active')).toBeInTheDocument()
   })
@@ -106,7 +134,8 @@ describe('BenchmarkProgressCard', () => {
     slab = SLAB
     render(<BenchmarkProgressCard board={board} sentIds={new Set()} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: /^6C: 0 of 2 sent/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Show grades' }))
+    fireEvent.click(screen.getByRole('button', { name: /^6C: 0 of 2 sent/ }))
 
     expect(navigate).toHaveBeenCalledTimes(1)
     const target = navigate.mock.calls[0][0]

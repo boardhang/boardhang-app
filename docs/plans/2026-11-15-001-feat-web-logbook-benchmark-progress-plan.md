@@ -23,6 +23,10 @@ only; no schema, no BLE, no geometry).
 - **Grade filter**: a funnel icon button in the card's top right toggles a two-thumb slider. The
   slider is hidden by default. When a range is set the button shows a dot and the range is
   appended to the count line. The ring and count are computed over the selected range only.
+- **Revised after the first preview (2026-11-15)**: the per-grade bars are collapsed behind a
+  "Show grades" toggle (remembered per device) so the card is one row tall by default, and the
+  slider uses the catalog filter's look (a "Grade" label, min/max badges, blue range) via the
+  shared `web/src/board/gradeBadge.ts` style.
 - **The range is remembered per board** (localStorage), clamped to the grades that have
   benchmarks.
 - **Existing sends pyramid stays** below the card, unchanged.
