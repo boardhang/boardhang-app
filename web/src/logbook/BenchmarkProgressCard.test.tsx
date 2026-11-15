@@ -189,6 +189,14 @@ describe('BenchmarkProgressCard', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('renders nothing for a board and angle with no benchmarks', async () => {
+    // e.g. MoonBoard 2016 at 25°: problems, but none of them benchmarks.
+    slab = [problem('x', '6C', false), problem('y', '7A', false)]
+    const { container } = render(<BenchmarkProgressCard board={board} sentIds={new Set(['x'])} />)
+    await act(async () => {})
+    expect(container).toBeEmptyDOMElement()
+  })
+
   it('opens the catalog on the unsent benchmarks of a tapped grade', async () => {
     await renderExpanded()
 
