@@ -1,0 +1,27 @@
+{
+  "retired_ids": [
+    "1ef3a8c1-a0c7-5e7b-aade-3a40ffd3fad3",
+    "487132f6-1761-52e9-9591-2753d4ba6741",
+    "726d5454-a8a3-59bc-aced-5e52d8d96d80"
+  ],
+  "entries": [
+    {
+      "action": "pin",
+      "layout_id": 5,
+      "angle": 40,
+      "id": "ac7d98a1-51b6-5048-8e97-7651c5024a2d",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "THE WARM UP PROBLEM (6A+): a genuine benchmark boardsesh's flag misses; was a hard-coded override in the fetch script"
+    },
+    {
+      "action": "pin",
+      "layout_id": 5,
+      "angle": 40,
+      "id": "8fe54ddb-c8c1-51fe-8418-45e3da379a07",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "FULL SWINGS (7A+): a genuine benchmark boardsesh's flag misses; was a hard-coded override in the fetch script"
+    }
+  ]
+}
