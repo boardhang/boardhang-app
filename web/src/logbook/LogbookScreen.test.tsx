@@ -92,6 +92,11 @@ vi.mock('../catalog/catalogSync', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../catalog/catalogSync')>()
   return { ...actual, getCatalogProblemsByIds: vi.fn(async () => catalogMap) }
 })
+// The benchmark progress card reads the board store and the catalog cache on its own; it has
+// its own tests, so stub it out here.
+vi.mock('./BenchmarkProgressCard', () => ({
+  BenchmarkProgressCard: () => null,
+}))
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
   useRouter: () => ({ history: { back } }),

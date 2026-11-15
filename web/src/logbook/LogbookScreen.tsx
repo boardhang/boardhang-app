@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { useEnsureAscentsLoaded, type Ascent } from './ascents'
 import { AscentRow } from './AscentRow'
+import { BenchmarkProgressCard } from './BenchmarkProgressCard'
 import { GradePyramid } from './GradePyramid'
 import { LogAscentSheet, type LogTarget } from './LogAscentSheet'
 import { MoonBoardImportBanner } from './MoonBoardImportBanner'
@@ -217,6 +218,8 @@ export function LogbookScreen() {
       {header}
 
       <MoonBoardImportBanner />
+
+      <BenchmarkProgressCard key={activeBoard.layoutId} board={activeBoard} sentIds={sentIds} />
 
       {hasSends && (
         <section className="mb-4 rounded-lg border border-border p-3">
