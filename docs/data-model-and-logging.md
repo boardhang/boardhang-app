@@ -145,16 +145,16 @@ in the flash bucket.
   groups by `problemGrade` (consensus, not the vote), and stacks by try bucket (flash / 2nd / 3rd /
   4+, see `TryBadge.swift`).
 - **Benchmark progress** (web only, `web/src/logbook/BenchmarkProgressCard.tsx`) sits above the
-  pyramid: a ring and count of sent / total benchmarks on the active board at its current angle,
-  over a grade range. A chevron expands a three-way choice of range and one bar per grade; the
-  ring, count and bars all follow the range. The choices are "To my hardest" (default: easiest
-  grade up to the hardest send, keeping a grade with no sends below it), "All grades", and
-  "Custom" (a grade slider with the catalog filter's look). The choice
-  (`logbookBenchmarkRange`) and the expanded state (`logbookBenchmarkExpanded`) are remembered
-  per device, the custom range per board (`logbookBenchmarkGrades_<layoutId>`), all in
-  localStorage. Totals come from the cached catalog slab (no download is started; no cache → no
-  card) and count only benchmarks climbable with the installed hold sets. Tapping a grade opens
-  the catalog on that grade's benchmarks not yet sent.
+  pyramid: a ring and count of sent / total benchmarks on the active board at its current angle.
+  A chevron expands a two-way switch and one bar per grade. "All grades" (default): the ring and
+  count cover every benchmark, while the bars stop at the user's hardest send (a grade with no
+  sends below it keeps its bar). "Custom": a grade slider with the catalog filter's look sets a
+  range, and the ring, count and bars all follow it. The mode (`logbookBenchmarkRange`) and the
+  expanded state (`logbookBenchmarkExpanded`) are remembered per device, the custom range per
+  board (`logbookBenchmarkGrades_<layoutId>`), all in localStorage. Totals come from the cached
+  catalog slab (no download is started; no cache → no card) and count only benchmarks climbable
+  with the installed hold sets. Tapping a grade opens the catalog on that grade's benchmarks not
+  yet sent.
 
 ## Settings live in `@AppStorage`, not SwiftData
 

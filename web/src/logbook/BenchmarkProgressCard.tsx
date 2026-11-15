@@ -2,10 +2,11 @@
 // the user has sent. "Show grades" expands one bar per grade (sent of total), hardest
 // grade on top; collapsed by default so the Logbook's ascents stay near the top.
 //
-// The card covers a grade range: the ring, the count and the bars all follow it. The
-// expanded area offers three ways to set it: up to the user's hardest send (the default),
-// every grade, or a custom range set with a slider that looks like the catalog filter's.
-// The choice and the expanded state are remembered per device, the custom range per board.
+// Expanded, the card has two modes. "All grades" (the default): the ring and count cover
+// every benchmark on the board, while the bars stop at the user's hardest send — the grades
+// above it are all empty and would only make the card long. "Custom": a slider that looks
+// like the catalog filter's sets a grade range, and the ring, count and bars all follow it.
+// The mode and the expanded state are remembered per device, the custom range per board.
 //
 // Totals come from the cached catalog slab for the board's current angle — a cache read
 // only, the Logbook never starts a slab download. With no cached slab (or no benchmarks)
@@ -55,7 +56,6 @@ interface Props {
 }
 
 const MODES: { value: RangeMode; label: string }[] = [
-  { value: 'hardest', label: 'To my hardest' },
   { value: 'all', label: 'All grades' },
   { value: 'custom', label: 'Custom' },
 ]
@@ -101,18 +101,19 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
 
   // A custom range starts out as "up to my hardest send" until the slider is moved.
   const custom = clampRange(picked, span) ?? upToHardest
-  const range = mode === 'all' ? span : mode === 'custom' ? custom : upToHardest
-  const rows = rowsInRange(allRows, range)
-  const summary = summarize(rows)
-  const wholeBoard = range[0] === span[0] && range[1] === span[1]
+  const isCustom = mode === 'custom'
+  // The bars: the custom range, or only up to the hardest send.
+  const rows = rowsInRange(allRows, isCustom ? custom : upToHardest)
+  const maxTotal = summarize(rows).maxTotal
+  // The ring and count: the custom range, or the whole board.
+  const summary = summarize(isCustom ? rows : allRows)
   // Say what a smaller total covers, so it isn't mistaken for the whole board.
-  const rangeNote = wholeBoard
-    ? ''
-    : mode === 'hardest'
-      ? ` · up to ${FONT_GRADES[range[1]]}`
-      : range[0] === range[1]
-        ? ` · ${FONT_GRADES[range[0]]}`
-        : ` · ${FONT_GRADES[range[0]]} to ${FONT_GRADES[range[1]]}`
+  const rangeNote =
+    !isCustom || (custom[0] === span[0] && custom[1] === span[1])
+      ? ''
+      : custom[0] === custom[1]
+        ? ` · ${FONT_GRADES[custom[0]]}`
+        : ` · ${FONT_GRADES[custom[0]]} to ${FONT_GRADES[custom[1]]}`
 
   function toggleExpanded() {
     saveExpanded(!expanded)
@@ -225,16 +226,16 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
               </ToggleGroup>
 
               {/* Custom: same look as the catalog filter's grade slider. */}
-              {mode === 'custom' && (
+              {isCustom && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-muted-foreground">Grade</span>
                     <div className="ml-auto flex items-center gap-1.5">
-                      <span className={gradeBadgeCls}>{FONT_GRADES[range[0]]}</span>
-                      {range[1] !== range[0] && (
+                      <span className={gradeBadgeCls}>{FONT_GRADES[custom[0]]}</span>
+                      {custom[1] !== custom[0] && (
                         <>
                           <span className="text-xs text-muted-foreground">to</span>
-                          <span className={gradeBadgeCls}>{FONT_GRADES[range[1]]}</span>
+                          <span className={gradeBadgeCls}>{FONT_GRADES[custom[1]]}</span>
                         </>
                       )}
                     </div>
@@ -245,7 +246,7 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
                       min={span[0]}
                       max={span[1]}
                       step={1}
-                      value={range}
+                      value={custom}
                       onValueChange={(value) => {
                         const [lo, hi] = value as number[]
                         changeRange([lo, hi])
@@ -271,7 +272,7 @@ export function BenchmarkProgressCard({ board, sentIds }: Props) {
                   <span className="block">
                     <span
                       className="block h-2 overflow-hidden rounded-full bg-muted"
-                      style={{ width: `${Math.max((row.total / summary.maxTotal) * 100, MIN_TRACK)}%` }}
+                      style={{ width: `${Math.max((row.total / maxTotal) * 100, MIN_TRACK)}%` }}
                     >
                       <span
                         className="block h-full rounded-full bg-primary"

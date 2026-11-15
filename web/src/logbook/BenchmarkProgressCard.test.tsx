@@ -99,34 +99,25 @@ afterEach(() => {
 })
 
 describe('BenchmarkProgressCard', () => {
-  it('counts the grades up to the hardest send and starts collapsed', async () => {
+  it('counts the whole board and starts collapsed', async () => {
     slab = SLAB
     render(<BenchmarkProgressCard board={board} sentIds={SENT} />)
 
-    // 7B (above the hardest send) is left out of the total: 2 of 4, not 2 of 5.
-    expect(await screen.findByText('2 of 4 sent · up to 7A')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: '50% of benchmarks sent' })).toBeInTheDocument()
+    // Every benchmark counts, including 7B above the hardest send: 2 of 5.
+    expect(await screen.findByText('2 of 5 sent')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '40% of benchmarks sent' })).toBeInTheDocument()
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
   })
 
-  it('expands to a row per grade, hardest first, keeping gaps below the hardest send', async () => {
+  it('expands to bars up to the hardest send, hardest first, keeping gaps below it', async () => {
     await renderExpanded()
 
+    // 7B is counted in the headline but gets no bar; 6C+ (a gap below 7A) does.
     expect(rowTexts()).toEqual(['7A1/1', '6C+0/1', '6C1/2'])
-    // "To my hardest" is the selected mode, and it shows no slider.
-    expect(screen.getByRole('button', { name: 'To my hardest' })).toHaveAttribute('aria-pressed', 'true')
-    expect(sliders()).toHaveLength(0)
-  })
-
-  it('"All grades" covers and counts every grade', async () => {
-    await renderExpanded()
-
-    fireEvent.click(screen.getByRole('button', { name: 'All grades' }))
-
-    expect(rowTexts()).toEqual(['7B0/1', '7A1/1', '6C+0/1', '6C1/2'])
     expect(screen.getByText('2 of 5 sent')).toBeInTheDocument()
+    // "All grades" is the selected mode, and it shows no slider.
+    expect(screen.getByRole('button', { name: 'All grades' })).toHaveAttribute('aria-pressed', 'true')
     expect(sliders()).toHaveLength(0)
-    expect(loadMode()).toBe('all')
   })
 
   it('"Custom" shows the grade slider, starting from the up-to-hardest range', async () => {
@@ -137,6 +128,7 @@ describe('BenchmarkProgressCard', () => {
     // One range input per thumb, and the range as badges beside the "Grade" label.
     expect(sliders()).toHaveLength(2)
     expect(screen.getByText('Grade').parentElement).toHaveTextContent('Grade6Cto7A')
+    // Custom counts only its range: 7B drops out of the total.
     expect(screen.getByText('2 of 4 sent · 6C to 7A')).toBeInTheDocument()
     expect(loadMode()).toBe('custom')
   })
@@ -158,11 +150,12 @@ describe('BenchmarkProgressCard', () => {
     await renderExpanded()
 
     // The stored custom range is not applied until Custom is chosen.
-    expect(screen.getByText('2 of 4 sent · up to 7A')).toBeInTheDocument()
+    expect(screen.getByText('2 of 5 sent')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
     expect(screen.getByText('1 of 2 sent · 7A to 7B')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'To my hardest' }))
-    expect(screen.getByText('2 of 4 sent · up to 7A')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'All grades' }))
+    expect(screen.getByText('2 of 5 sent')).toBeInTheDocument()
+    expect(loadMode()).toBe('all')
     expect(loadRange(board.layoutId)).toEqual([ord('7A'), ord('7B')])
   })
 

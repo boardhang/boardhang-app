@@ -135,14 +135,12 @@ describe('remembered on this device', () => {
     expect(loadRange(7)).toBeNull()
   })
 
-  it('keeps the chosen mode, "up to my hardest send" by default', () => {
-    expect(loadMode()).toBe('hardest')
+  it('keeps the chosen mode, "All grades" by default', () => {
+    expect(loadMode()).toBe('all')
     saveMode('custom')
     expect(loadMode()).toBe('custom')
     saveMode('all')
     expect(loadMode()).toBe('all')
-    saveMode('hardest')
-    expect(loadMode()).toBe('hardest')
   })
 
   it('keeps whether the grades were left open, closed by default', () => {

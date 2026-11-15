@@ -56,7 +56,7 @@ export function gradeSpan(rows: BenchmarkGradeRow[]): GradeRange | null {
 }
 
 /**
- * The "up to my hardest send" range: from the easiest grade up to the hardest grade
+ * The grades worth a bar by default: from the easiest grade up to the hardest grade
  * with a send. Grades above it are the ones the user hasn't reached; a grade with
  * no sends *below* it is a gap worth seeing and stays in. With no sends at all there is
  * nothing to trim by, so it is the whole span.
@@ -129,25 +129,24 @@ export function saveRange(layoutId: number, range: GradeRange | null): void {
   }
 }
 
-/** Which grades the card covers: up to the hardest send, every grade, or a custom range. */
-export type RangeMode = 'hardest' | 'all' | 'custom'
+/** What the card covers: every grade (the default) or a custom grade range. */
+export type RangeMode = 'all' | 'custom'
 
 const MODE_KEY = 'logbookBenchmarkRange'
 
-/** The chosen mode. "Up to my hardest send" until the user picks another. */
+/** The chosen mode. "All grades" until the user picks Custom. */
 export function loadMode(): RangeMode {
   try {
-    const raw = localStorage.getItem(MODE_KEY)
-    return raw === 'all' || raw === 'custom' ? raw : 'hardest'
+    return localStorage.getItem(MODE_KEY) === 'custom' ? 'custom' : 'all'
   } catch {
-    return 'hardest'
+    return 'all'
   }
 }
 
 export function saveMode(mode: RangeMode): void {
   try {
-    if (mode === 'hardest') localStorage.removeItem(MODE_KEY)
-    else localStorage.setItem(MODE_KEY, mode)
+    if (mode === 'custom') localStorage.setItem(MODE_KEY, 'custom')
+    else localStorage.removeItem(MODE_KEY)
   } catch {
     /* best-effort */
   }
