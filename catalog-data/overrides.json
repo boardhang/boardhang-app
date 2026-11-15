@@ -22,6 +22,78 @@
       "field": "isBenchmark",
       "value": true,
       "note": "FULL SWINGS (7A+): a genuine benchmark boardsesh's flag misses; was a hard-coded override in the fetch script"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "c91102b2-3f45-5c24-adc1-0d9f8efb1dc1",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "ADVECTIVE TERM: hand-added benchmark boardsesh lacks; holds the flag if its copy arrives unflagged (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "c91102b2-3f45-5c24-adc1-0d9f8efb1dc1",
+      "field": "grade",
+      "value": "6C",
+      "note": "ADVECTIVE TERM: hand-added benchmark grade; holds it if boardsesh's copy arrives with another (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "42127983-1747-5015-bc94-af776a543c71",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "REDEYE DISASTER: hand-added benchmark boardsesh lacks; holds the flag if its copy arrives unflagged (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "42127983-1747-5015-bc94-af776a543c71",
+      "field": "grade",
+      "value": "6C",
+      "note": "REDEYE DISASTER: hand-added benchmark grade; holds it if boardsesh's copy arrives with another (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "2a93e80b-43be-5e68-bea3-650bd54f02bc",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "SICK AND SOUND: a 6C benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "2a93e80b-43be-5e68-bea3-650bd54f02bc",
+      "field": "grade",
+      "value": "6C",
+      "note": "SICK AND SOUND: benchmark grade; boardsesh says 6B+ (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "2a93e80b-43be-5e68-bea3-650bd54f02bc",
+      "field": "repeats",
+      "value": 2477,
+      "note": "SICK AND SOUND: boardsesh counts 9; drop this pin once its count is real (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "2a93e80b-43be-5e68-bea3-650bd54f02bc",
+      "field": "stars",
+      "value": 5,
+      "note": "SICK AND SOUND: held with the repeat count (official MoonBoard app, 2026-11-15)"
     }
   ]
 }
