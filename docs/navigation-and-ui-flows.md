@@ -128,7 +128,8 @@ catalog shows — browser back/forward works and every meaningful view is deep-l
 /boards                  → MyBoards
 /logbook                 → LogbookScreen
 /settings                → SettingsScreen (global; appearance/theme, climb previews,
-                           catalog cache, logbook export/import, site links)
+                           catalog cache, logbook export/import, site links; plus the
+                           admin-only BLE lab card)
 /board/$layoutId/catalog → CatalogScreen  (search params below)
 ```
 
@@ -151,6 +152,14 @@ rewriting the `theme-color` meta — resolving `system` via `matchMedia` and re-
 OS flips. A pre-paint inline script in `web/index.html` applies the saved theme before the bundle
 loads so there's no flash of the wrong theme (it duplicates the resolve logic — keep the two in
 sync). The light/dark token values live in `web/src/index.css` (`:root` / `.dark`).
+
+**BLE lab (admin only):** `web/src/shell/BleLabSection.tsx` renders at the bottom of Settings
+only when `useAuth().isAdmin` (the Supabase `app_metadata.role = "admin"` claim — see
+[social-accounts-login-SETUP.md](social-accounts-login-SETUP.md) §5b). It drives two device-local
+stores: the lab settings (`ble.lab.v1`: experimental path on/off, device picker, write mode) and
+the Bluetooth diagnostics log (`ble.diag.v1`, written only while the lab is on). Changing a
+setting disconnects the board first. What the lab changes in the Bluetooth client is in
+[ble-hardware.md](ble-hardware.md); nothing else in the app reads these keys.
 
 Guards (route `beforeLoad`): an unknown `layoutId` (not in the board registry) bounces to `/boards`;
 a registry-valid but **un-added** board renders a read-only preview with an "Add this board" CTA

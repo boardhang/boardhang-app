@@ -2,13 +2,17 @@
 // so both the detail drawer and the catalog last-opened bar can reuse it. Connects the
 // board first when disconnected, then sends the mapped hold assignments; tracks the
 // connecting/sending phase and a lit flag. A send failure is surfaced here as a toast
-// (both consumers are too slim for inline error text). `lit` resets whenever the target
-// problem changes (resetKey) or the board disconnects.
+// (both consumers are too slim for inline error text). A connect failure is toasted
+// only while the admin BLE lab is on — with the lab off this stays today's silent
+// behaviour — and the lab flag is read from the settings module, not through useBle,
+// so the consumer tests that mock useBle keep their closed export set. `lit` resets
+// whenever the target problem changes (resetKey) or the board disconnects.
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { bleClient, connectBoard, isConnected, setBleError, useBle } from './useBle'
-import { describeBleError } from './moonboard'
+import { describeBleError, describeConnectFailure } from './moonboard'
+import { getLabSettings } from './labSettings'
 import { getFlipped } from '../board/boardStore'
 import { reportProblemLit } from '../sessions/sessionsStore'
 import type { CatalogBoardDef } from '../board/boards'
@@ -58,9 +62,16 @@ export function useLightUp(board: CatalogBoardDef, resetKey: string): UseLightUp
     const target = resetKey
     if (!isConnected()) {
       setBusy('connecting')
-      await connectBoard()
+      const failure = await connectBoard()
       if (!isConnected()) {
         setBusy(null)
+        // Lab on: show what the stack said, raw value included, because that is the
+        // diagnostic the admin is after (a chooser cancel is deliberately toasted too).
+        // Lab off: silent, as before. A mocked connectBoard resolving to undefined
+        // means there is nothing to show.
+        if (failure && getLabSettings().enabled && targetRef.current === target) {
+          toast.error(describeConnectFailure(failure))
+        }
         return // cancelled or failed
       }
     }

@@ -2,10 +2,14 @@
 
 Run:  python3 scripts/tests/test_seed_beta_videos.py
 """
+import argparse
+import contextlib
+import datetime
 import importlib.util
 import io
 import json
 import pathlib
+import tempfile
 import unittest
 from unittest import mock
 from urllib.error import HTTPError
@@ -105,6 +109,121 @@ class TopUpSpecTest(unittest.TestCase):
         matches = [cand("bad", "the removed clip resurfaces"), cand("v6", "a fresh clip")]
         got = seed.select_new(matches, seen.get("p1", set()), need)
         self.assertEqual([c["video_id"] for c in got], ["v6"])
+
+
+class SearchedRecentlyTest(unittest.TestCase):
+    TODAY = datetime.date(2026, 9, 30)
+
+    def test_never_searched_is_due(self):
+        self.assertFalse(seed.searched_recently(None, self.TODAY, 30))
+
+    def test_inside_the_cooldown_is_skipped(self):
+        self.assertTrue(seed.searched_recently("2026-09-30", self.TODAY, 30))
+        self.assertTrue(seed.searched_recently("2026-09-01", self.TODAY, 30))  # 29 days ago
+
+    def test_due_again_once_the_cooldown_has_passed(self):
+        self.assertFalse(seed.searched_recently("2026-08-31", self.TODAY, 30))  # 30 days ago
+
+    def test_zero_days_ignores_the_log(self):
+        self.assertFalse(seed.searched_recently("2026-09-30", self.TODAY, 0))
+
+
+class RunSeedSearchLogTest(unittest.TestCase):
+    """The stuck-queue bug: below-cap problems with nothing new on YouTube were re-searched at
+    the head of every run, so the daily quota never reached the problems behind them. Drives
+    run_seed over a 3-benchmark catalog with YouTube + Supabase stubbed out."""
+
+    BOARD = "2017"
+    # Most-repeated first, the order run_seed processes them in.
+    PROBLEMS = [
+        {"id": "stale", "name": "Stale Problem", "repeats": 30, "isBenchmark": True},
+        {"id": "fresh", "name": "Fresh Problem", "repeats": 20, "isBenchmark": True},
+        {"id": "third", "name": "Third Problem", "repeats": 10, "isBenchmark": True},
+    ]
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = pathlib.Path(tmp.name)
+        slug, _ = seed.BOARDS[self.BOARD]
+        (self.dir / f"{slug}_40.json").write_text(json.dumps({"problems": self.PROBLEMS}))
+        self.searched = []   # problem names sent to YouTube, in order
+        self.inserted = []   # rows handed to Supabase
+
+    def log(self):
+        path = self.dir / f".beta_searched_{self.BOARD}.json"
+        return json.loads(path.read_text()) if path.exists() else {}
+
+    def run_seed(self, search=None, insert=None, **overrides):
+        def default_search(name, suffix, key):
+            self.searched.append(name)
+            # Only "Fresh Problem" has a clip on YouTube.
+            hits = [{"video_id": "v1", "title": "FRESH PROBLEM moonboard 2017", "channel": "c",
+                     "duration_s": 20, "is_short": True, "views": 1}]
+            return name, hits if name == "Fresh Problem" else []
+
+        def default_insert(base_url, key, rows):
+            self.inserted.extend(rows)
+            return len(rows)
+
+        args = argparse.Namespace(**{
+            "board": self.BOARD, "angle": 40, "dir": str(self.dir), "limit": 100,
+            "cap": seed.PER_PROBLEM_CAP, "dry_run": False,
+            "retry_after_days": seed.RETRY_AFTER_DAYS, **overrides})
+        with mock.patch.object(seed, "seed_state", return_value=({}, {})), \
+                mock.patch.object(seed, "search", search or default_search), \
+                mock.patch.object(seed, "enrich", lambda cands, key: cands), \
+                mock.patch.object(seed, "insert_rows", insert or default_insert), \
+                contextlib.redirect_stdout(io.StringIO()):
+            seed.run_seed(args, "yt", "https://x.supabase.co", "k")
+
+    def test_second_run_moves_past_already_searched_problems(self):
+        self.run_seed(limit=2)
+        self.assertEqual(self.searched, ["Stale Problem", "Fresh Problem"])
+        self.searched.clear()
+        self.run_seed(limit=2)  # without the log this re-searched the same two
+        self.assertEqual(self.searched, ["Third Problem"])
+
+    def test_logs_matched_and_unmatched_searches(self):
+        self.run_seed()
+        self.assertEqual(set(self.log()), {"stale", "fresh", "third"})
+        self.assertEqual([r["video_id"] for r in self.inserted], ["v1"])
+
+    def test_zero_retry_days_researches_everything(self):
+        self.run_seed()
+        self.searched.clear()
+        self.run_seed(retry_after_days=0)
+        self.assertEqual(self.searched, ["Stale Problem", "Fresh Problem", "Third Problem"])
+
+    def test_expired_log_entry_is_searched_again(self):
+        old = (datetime.date.today() - datetime.timedelta(days=seed.RETRY_AFTER_DAYS)).isoformat()
+        (self.dir / f".beta_searched_{self.BOARD}.json").write_text(json.dumps({"stale": old}))
+        self.run_seed(limit=1)
+        self.assertEqual(self.searched, ["Stale Problem"])
+
+    def test_matched_problem_not_logged_when_the_insert_fails(self):
+        # Its clips never reached the DB, so the next run must search it again — not skip it.
+        def failing_insert(base_url, key, rows):
+            raise SystemExit("Insert failed (500)")
+
+        with self.assertRaises(SystemExit):
+            self.run_seed(insert=failing_insert)
+        self.assertEqual(set(self.log()), {"stale", "third"})
+
+    def test_quota_stop_logs_only_the_completed_searches(self):
+        def search(name, suffix, key):
+            if name != "Stale Problem":
+                raise seed.QuotaExhausted("quotaExceeded")
+            self.searched.append(name)
+            return name, []
+
+        self.run_seed(search=search)
+        self.assertEqual(set(self.log()), {"stale"})
+
+    def test_dry_run_honours_the_log_but_never_writes_it(self):
+        self.run_seed(dry_run=True)
+        self.assertEqual(self.log(), {})
+        self.assertEqual(self.searched, [])
 
 
 class _FakeResponse:

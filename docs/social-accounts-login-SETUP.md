@@ -107,6 +107,35 @@ re-verify cross-user denial in the dashboard after applying.
   linking"), so Google + magic link at the **same verified email** resolve to one user
   and one profile. (Not settable from SQL.)
 
+## 5b. Grant the admin claim (owner only, optional)
+
+The web PWA shows owner-only debug surfaces (today: the **BLE lab** card in Settings,
+see [ble-hardware.md](ble-hardware.md)) when the signed-in user's token carries the
+custom claim `app_metadata.role = "admin"`. `app_metadata` can only be written
+server-side, so no user can grant it from the client; `user_metadata` (user-writable)
+never counts. The app reads the claim client-side, so it gates UI only; a future
+server-side admin operation must check the claim itself (in RLS:
+`auth.jwt() -> 'app_metadata' ->> 'role'`). There is no migration — grant it once in
+the Supabase dashboard's
+**SQL editor**, merging into the existing JSON so Supabase's own `provider`/`providers`
+keys survive:
+
+```sql
+update auth.users
+set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
+where email = 'you@example.com';
+```
+
+Check that exactly **one** row was updated. The claim lands on the next access token:
+sign out and back in on the device (a token refresh within the hour also picks it up,
+but signing out is the deterministic way). To revoke:
+
+```sql
+update auth.users
+set raw_app_meta_data = raw_app_meta_data - 'role'
+where email = 'you@example.com';
+```
+
 ## 6. Add the `supabase-swift` Swift package (in Xcode)
 
 1. Open `ios/MoonBoardLED.xcodeproj`.

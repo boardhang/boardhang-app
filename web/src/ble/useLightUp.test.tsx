@@ -20,13 +20,91 @@ vi.mock('./useBle', () => ({
 vi.mock('../sessions/sessionsStore', () => ({ reportProblemLit: vi.fn().mockResolvedValue(undefined) }))
 import { reportProblemLit } from '../sessions/sessionsStore'
 
+// The lab flag is read from the real settings module (jsdom localStorage); reset it
+// between tests with the storage-event idiom.
+import { setLabSettings } from './labSettings'
+
 const board = boardByLayoutId(7)!
 const holds = [{ c: 0, r: 1, t: 'start' as const }]
 
+const FALLBACK = "Couldn't reach the board — make sure it's on and in range, then try again."
+
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
+  window.dispatchEvent(new StorageEvent('storage'))
   vi.mocked(ble.useBle).mockReturnValue({ state: 'disconnected', deviceName: null, error: null })
   vi.mocked(ble.isConnected).mockReturnValue(false)
+})
+
+describe('useLightUp connect failures', () => {
+  it('stays silent with the lab off when the connect fails', async () => {
+    vi.mocked(ble.connectBoard).mockResolvedValueOnce({ message: 'adapter off', raw: 'adapter off' })
+    const { result } = renderHook(() => useLightUp(board, 'a'))
+    await act(async () => {
+      await result.current.lightUp(holds)
+    })
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(result.current.busy).toBeNull()
+    expect(ble.bleClient.send).not.toHaveBeenCalled()
+  })
+
+  it('toasts the message plus the raw value with the lab on when they differ', async () => {
+    setLabSettings({ enabled: true })
+    vi.mocked(ble.connectBoard).mockResolvedValueOnce({ message: FALLBACK, raw: '2' })
+    const { result } = renderHook(() => useLightUp(board, 'a'))
+    await act(async () => {
+      await result.current.lightUp(holds)
+    })
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(`${FALLBACK} [2]`))
+  })
+
+  it('toasts just the message with the lab on when the raw value is the message', async () => {
+    setLabSettings({ enabled: true })
+    vi.mocked(ble.connectBoard).mockResolvedValueOnce({
+      message: 'Bluetooth adapter is off',
+      raw: 'Bluetooth adapter is off',
+    })
+    const { result } = renderHook(() => useLightUp(board, 'a'))
+    await act(async () => {
+      await result.current.lightUp(holds)
+    })
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Bluetooth adapter is off'))
+  })
+
+  it('shows nothing with the lab on when connectBoard resolves to nothing (mocked) and stays disconnected', async () => {
+    setLabSettings({ enabled: true })
+    const { result } = renderHook(() => useLightUp(board, 'a'))
+    await act(async () => {
+      await result.current.lightUp(holds)
+    })
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(result.current.busy).toBeNull()
+  })
+
+  it('does not toast a stale connect failure after the target changed, even with the lab on', async () => {
+    setLabSettings({ enabled: true })
+    let resolveConnect!: () => void
+    vi.mocked(ble.connectBoard).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveConnect = () => resolve({ message: FALLBACK, raw: '2' })
+      }),
+    )
+    const { result, rerender } = renderHook(({ key }) => useLightUp(board, key), {
+      initialProps: { key: 'a' },
+    })
+    let pending!: Promise<void>
+    act(() => {
+      pending = result.current.lightUp(holds)
+    })
+    rerender({ key: 'b' }) // user swiped to another problem while the chooser was up
+    await act(async () => {
+      resolveConnect()
+      await pending
+    })
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(result.current.busy).toBeNull()
+  })
 })
 
 describe('useLightUp', () => {
