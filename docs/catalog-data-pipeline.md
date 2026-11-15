@@ -225,6 +225,28 @@ Each quarantined case prints with a ready-to-paste overrides entry (and an alter
 is one). The loop is: run, read the stanza, record the verdict in `overrides.json`, commit it, run
 again. Exit status 2 on any refusal; `--dry-run` reports without writing.
 
+## Hand-added problems
+
+A problem boardsesh does not carry (a new official benchmark it has not ingested) can be added to
+the snapshot by hand, from the official app. The row is ours like any other:
+
+- **A problem boardsesh lacks entirely:** `id` = `uuid5(NAMESPACE_URL,
+  "https://boardhang.app/catalog/hand-added/<layout>/<angle>/<hold_key>")`, `boardsesh_uuid` = the
+  same id (there is no upstream key yet), `upstream_last_seen` null, holds typed `start` / `right` /
+  `end` like the feed's. Use the official name and setter exactly: when boardsesh later carries the
+  problem, its row has the same holds and matches ours by name or setter, so the merge attaches it
+  to our id as a rename. If neither matches it is quarantined *no evidence* and a `match` verdict
+  settles it.
+- **A problem boardsesh has but that fails curation or is mis-flagged:** use boardsesh's uuid as
+  the `id` and `boardsesh_uuid`, so the next merge updates it by uuid.
+- **Pin what the feed must not undo** in `overrides.json`: `isBenchmark` and `grade` at least, and
+  `repeats`/`stars` when boardsesh's counts are wrong for a row it already returns.
+
+Write the row with `catalog_lib.write_snapshot` (canonical order and `hold_key`), run the tests and
+a merge dry run, and deploy with the import as usual. The 2024 @ 40° slab has three: ADVECTIVE
+TERM and REDEYE DISASTER (hand ids) and SICK AND SOUND (boardsesh's uuid, flag, grade and counts
+pinned), all 6C benchmarks added 2026-11-15.
+
 ## Runbook: refreshing a slab
 
 Everything up to the apply is offline from prod's point of view; the apply is the one write.
