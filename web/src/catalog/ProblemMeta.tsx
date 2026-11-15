@@ -16,7 +16,7 @@ export function MethodChip({ method, className }: { method: string; className?: 
     <Badge
       variant="outline"
       className={cn(
-        'h-[1.125rem] border-foreground/30 px-1.75 text-[0.6875rem] font-normal text-foreground/90',
+        'h-[1.125rem] border-foreground/15 px-1.75 text-[0.6875rem] font-normal text-foreground/70',
         className,
       )}
     >
