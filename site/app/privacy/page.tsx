@@ -4,7 +4,7 @@ import { og } from '@/lib/og'
 import { CONTACT_EMAIL } from '@/lib/urls'
 
 const description =
-  'What Boardhang stores, what stays in your browser, and how to delete your account. No advertising, no analytics, no tracking.'
+  'What Boardhang stores, what stays in your browser, and how to delete your account. No advertising, no cookies for tracking, no selling your data.'
 
 export const metadata: Metadata = {
   title: 'Privacy',
@@ -18,12 +18,23 @@ export default function Privacy() {
     <>
       <h1 className="text-3xl font-semibold">Privacy</h1>
       <p className="mt-2 text-sm text-[var(--muted)]">
-        <time dateTime="2026-07-26">Last updated: July 26, 2026</time>
+        <time dateTime="2026-11-17">Last updated: November 17, 2026</time>
       </p>
 
       <p className="mt-4 text-lg text-[var(--muted)]">
         Boardhang does very little with your data, which makes this page short. There is no
-        advertising, no analytics and no third-party tracking on this site or in the app.
+        advertising and no tracking that follows you across sites, on this site or in the app.
+      </p>
+
+      <h2 className="mt-10 text-xl font-semibold">Page-view counts in the app</h2>
+      <p className="mt-3 text-[var(--muted)]">
+        The app counts page views with{' '}
+        <a href="https://vercel.com/docs/analytics/privacy-policy">Vercel Web Analytics</a>, so
+        we can see which screens get used. It sets no cookies and does not identify you or
+        follow you between visits; we see totals, such as how many visits a screen had and from
+        which country and kind of device. We send only the screen’s address, with your filters,
+        the problem you have open, list ids and session invite codes removed. This content site
+        does not count page views at all.
       </p>
 
       <h2 className="mt-10 text-xl font-semibold">Browsing needs no account</h2>

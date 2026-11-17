@@ -10,6 +10,10 @@ import './App.css'
 import './shell/themeStore'
 import { AuthProvider } from './auth/AuthProvider'
 import { router } from './router'
+import { initAnalytics } from './analytics'
+
+// Before the first render, so the subscription is in place for the initial load.
+initAnalytics(router)
 
 // AuthProvider sits ABOVE the router: it does async session work (Supabase
 // detectSessionInUrl on the OAuth return) that the router's guards may read.
