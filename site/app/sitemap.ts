@@ -9,6 +9,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/about`, lastModified: '2026-07-26' },
     { url: `${base}/guides` },
     { url: `${base}/guides/moonboard-website-not-working`, lastModified: '2026-07-25' },
-    { url: `${base}/privacy`, lastModified: '2026-07-26' },
+    { url: `${base}/privacy`, lastModified: '2026-11-17' },
   ]
 }

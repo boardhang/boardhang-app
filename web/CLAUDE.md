@@ -66,3 +66,19 @@ npx vercel deploy --prod --yes
 
 The deploy prints a `READY` production URL aliased to `https://www.boardhang.app`.
 Verify with `npx vercel inspect <url>` or `npx vercel logs <url>`.
+
+## Analytics
+
+Page views go to **Vercel Web Analytics** (the `boardly` project's Analytics tab), wired in
+`src/analytics.ts`. Enabling it in the Vercel dashboard only makes `/_vercel/insights/*`
+available — nothing is recorded unless the app loads the script, which `initAnalytics` does
+in production builds (previews included, reported under their own environment).
+
+- Page views are reported **from the router**, once per path change, not by the script's
+  own pushState tracking: the app keeps its filters in the URL, so auto-tracking would
+  count every filter change as a view.
+- **Nothing identifying leaves the browser**: query strings and hashes are dropped, and
+  session join tokens and list ids are replaced by their parameter name. A new route with
+  an identifying path segment needs a line in `REDACTIONS` there. The public privacy notice
+  (`site/app/privacy/page.tsx`) describes exactly this — keep the two in step.
+- Speed Insights is switched on for the Vercel project too, but the app does not load it.
