@@ -75,8 +75,11 @@ available — nothing is recorded unless the app loads the script, which `initAn
 in production builds (previews included, reported under their own environment).
 
 - Page views are reported **from the router**, once per path change, not by the script's
-  own pushState tracking: the app keeps its filters in the URL, so auto-tracking would
-  count every filter change as a view.
+  own pushState tracking: the router supplies the route template (all boards' catalogs
+  group as one screen) and reports where a navigation resolved, not the bare `/` it
+  redirected from.
+- The script ignores automated browsers (`navigator.webdriver`, a `Headless` user agent),
+  so a Playwright check sees no `/_vercel/insights/view` request unless both are masked.
 - **Nothing identifying leaves the browser**: query strings and hashes are dropped, and
   session join tokens and list ids are replaced by their parameter name. A new route with
   an identifying path segment needs a line in `REDACTIONS` there. The public privacy notice

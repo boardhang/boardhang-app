@@ -51,9 +51,10 @@ function beforeSend(event: BeforeSendEvent): BeforeSendEvent {
 export function initAnalytics(router: AnyRouter): void {
   if (!import.meta.env.PROD) return
 
-  // The script's own tracking fires on every pushState, and this app keeps its
-  // filters in the URL — so one page view per filter change. Report from the
-  // router instead, once per resolved navigation that changes the path.
+  // Report from the router instead of the script's own pushState tracking: the
+  // router knows the route template (so `/board/7/catalog` and `/board/9/catalog`
+  // group as one screen), and it reports where a navigation resolved — the bare
+  // `/` always redirects, and the script would count that hop as a view of `/`.
   inject({ beforeSend, disableAutoTrack: true })
 
   router.subscribe('onResolved', ({ toLocation, pathChanged }) => {
