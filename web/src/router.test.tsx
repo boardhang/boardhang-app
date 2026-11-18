@@ -111,13 +111,31 @@ describe('bottom bar', () => {
     await screen.findByText('Alpha')
     const nav = () => within(screen.getByRole('navigation', { name: 'Primary' }))
     expect(nav().queryByRole('button', { name: 'Boards' })).toBeNull()
-    for (const name of ['Logbook', 'Lists', 'Settings']) {
-      expect(nav().getByRole('button', { name })).toBeInTheDocument()
-    }
-    fireEvent.click(nav().getByRole('button', { name: 'Settings' }))
-    await screen.findByRole('heading', { name: 'Settings' })
+    fireEvent.click(nav().getByRole('button', { name: 'Logbook' }))
+    await screen.findByRole('heading', { name: 'Logbook' })
     expect(nav().queryByRole('button', { name: 'Boards' })).toBeNull()
     expect(await nav().findByRole('button', { name: 'Search' })).toBeInTheDocument()
+  })
+
+  it('on the catalog shows only the tab last visited, Logbook to begin with', async () => {
+    addBoard(7)
+    const { router } = renderWithRouter('/board/7/catalog')
+    await screen.findByText('Alpha')
+    const nav = () => within(screen.getByRole('navigation', { name: 'Primary' }))
+    const tabs = () =>
+      nav()
+        .getAllByRole('button')
+        .map((b) => b.textContent)
+    const path = (p: string) => waitFor(() => expect(router.state.location.pathname).toBe(p))
+    expect(tabs()).toEqual(['Logbook'])
+
+    fireEvent.click(nav().getByRole('button', { name: 'Logbook' }))
+    await path('/logbook')
+    fireEvent.click(await nav().findByRole('button', { name: 'Settings' }))
+    await path('/settings')
+    fireEvent.click(await nav().findByRole('button', { name: 'Search' }))
+    await path('/board/7/catalog')
+    await waitFor(() => expect(tabs()).toEqual(['Settings']))
   })
 
   it.each(['/boards', '/boards/add', '/boards/add/5', '/session/join/abc'])(
@@ -221,7 +239,7 @@ describe('search field <-> URL sync', () => {
     // Leave the catalog before the debounce fires, then come back. AppLayout is the
     // persistent root, so its field state survives — it must resync to the URL (empty
     // ?q) rather than showing a query the list isn't actually filtered by.
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Logbook' }))
     await screen.findByRole('button', { name: 'Search' })
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
 

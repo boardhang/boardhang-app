@@ -10,6 +10,7 @@
 // router-aware seam (plan §6.4): it owns
 //   • the debounced local-input → `?q` writer (replace, so typing doesn't stack history),
 //   • the URL→input resync (Back / deep-link / board-switch change `?q` under us),
+//   • which tab the collapsed catalog nav shows (origin),
 //   • dropping a pending `?q` write when the board changes, and
 //   • keeping the catalog and the active board in step (useFollowActiveBoard).
 // Navigation itself stays fully prop-driven.
@@ -24,7 +25,7 @@ import { useBoardStore } from '../board/boardStore'
 import { catalogNavTarget } from '../catalog/catalogNav'
 import { BoardsDrawer } from '../boards/BoardsDrawer'
 import { useFollowActiveBoard } from '../boards/useFollowActiveBoard'
-import { Navigation, type NavTarget, type NavView } from './Navigation'
+import { Navigation, type HomeTab, type NavTarget, type NavView } from './Navigation'
 import { Toaster } from '@/components/ui/sonner'
 import { BleBrowserBanner } from './BleBrowserBanner'
 import { InstallBanner } from './InstallBanner'
@@ -101,6 +102,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [bottomSlot, setBottomSlot] = useState<HTMLDivElement | null>(null)
   const [headerFilterSlot, setHeaderFilterSlot] = useState<HTMLDivElement | null>(null)
   const [headerSessionSlot, setHeaderSessionSlot] = useState<HTMLDivElement | null>(null)
+
+  // The tab shown on the collapsed catalog nav — the last of these screens visited.
+  const [origin, setOrigin] = useState<HomeTab>('logbook')
+  useEffect(() => {
+    if (view === 'logbook' || view === 'lists' || view === 'settings') setOrigin(view)
+  }, [view])
 
   // ── Search field: local input + debounced write + resync ────────────────────
   const [field, setField] = useState(urlQuery)
@@ -234,6 +241,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <div ref={setBottomSlot} className="min-w-0 overflow-x-hidden" />
         <Navigation
           view={view}
+          origin={origin}
           disabled={addedBoards.length === 0 ? ['catalog'] : []}
           query={field}
           onQueryChange={onQueryChange}

@@ -138,8 +138,9 @@ catalog shows — browser back/forward works and every meaningful view is deep-l
 
 The bottom bar (`web/src/shell/Navigation.tsx`) has three tabs clustered left (`Logbook`,
 `Lists`, `Settings`) and `Search` pinned rightmost — `[Logbook] [Lists] [Settings] … [Search]`.
-On the catalog the same three tabs sit beside the live search field, which takes the rest of
-the width: `[Logbook] [Lists] [Settings] [search…]`. Boards have no tab. A screen that belongs
+On the catalog the bar collapses to the one tab you came from plus the live search field,
+which takes the rest of the width: `[origin] [search…]`. The origin is the last of Logbook,
+Lists and Settings visited, and Logbook until one has been. Boards have no tab. A screen that belongs
 to no tab (the first-run page, the add and edit pages, the join route, the logbook import)
 highlights none.
 

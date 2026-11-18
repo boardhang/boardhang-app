@@ -20,26 +20,33 @@ describe('Navigation', () => {
     expect(screen.queryByRole('textbox', { name: 'Search problems' })).toBeNull()
   })
 
-  it('on the catalog shows Logbook, Lists and Settings beside the search field', () => {
+  it('on the catalog shows only Logbook beside the search field when no origin is given', () => {
     render(<Navigation {...baseProps} view="catalog" onNavigate={noop} />)
     expect(screen.getByRole('textbox', { name: 'Search problems' })).toBeInTheDocument()
     expect(tab('Logbook')).toBeInTheDocument()
-    expect(tab('Lists')).toBeInTheDocument()
-    expect(tab('Settings')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Boards' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Search' })).toBeNull()
+    for (const name of ['Lists', 'Settings', 'Boards', 'Search']) {
+      expect(screen.queryByRole('button', { name })).toBeNull()
+    }
+  })
+
+  it.each([
+    ['Logbook', 'logbook'],
+    ['Lists', 'lists'],
+    ['Settings', 'settings'],
+  ] as const)('on the catalog shows only the %s tab when it is the origin', (name, origin) => {
+    const onNavigate = vi.fn()
+    render(<Navigation {...baseProps} view="catalog" origin={origin} onNavigate={onNavigate} />)
+    for (const other of ['Logbook', 'Lists', 'Settings']) {
+      if (other !== name) expect(screen.queryByRole('button', { name: other })).toBeNull()
+    }
+    expect(tab(name)).not.toHaveAttribute('aria-current')
+    fireEvent.click(tab(name))
+    expect(onNavigate).toHaveBeenCalledWith(origin)
   })
 
   it('highlights no tab on a screen that belongs to none', () => {
     render(<Navigation {...baseProps} view="none" onNavigate={noop} />)
     for (const name of ['Logbook', 'Lists', 'Settings', 'Search']) {
-      expect(tab(name)).not.toHaveAttribute('aria-current')
-    }
-  })
-
-  it('highlights no tab on the catalog', () => {
-    render(<Navigation {...baseProps} view="catalog" onNavigate={noop} />)
-    for (const name of ['Logbook', 'Lists', 'Settings']) {
       expect(tab(name)).not.toHaveAttribute('aria-current')
     }
   })
@@ -60,14 +67,11 @@ describe('Navigation', () => {
     ['Logbook', 'logbook'],
     ['Lists', 'lists'],
     ['Settings', 'settings'],
-  ] as const)('navigates to %s from the catalog and from another screen', (name, target) => {
-    for (const view of ['catalog', 'none'] as const) {
-      const onNavigate = vi.fn()
-      const { unmount } = render(<Navigation {...baseProps} view={view} onNavigate={onNavigate} />)
-      fireEvent.click(tab(name))
-      expect(onNavigate).toHaveBeenCalledWith(target)
-      unmount()
-    }
+  ] as const)('navigates to %s from a screen off the catalog', (name, target) => {
+    const onNavigate = vi.fn()
+    render(<Navigation {...baseProps} view="none" onNavigate={onNavigate} />)
+    fireEvent.click(tab(name))
+    expect(onNavigate).toHaveBeenCalledWith(target)
   })
 
   it.each([
