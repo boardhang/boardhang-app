@@ -104,7 +104,7 @@ function listWithBoard(id: string, name: string): SavedList {
   }
 }
 
-/** Own these boards — a list only opens for a board that's in My Boards. */
+/** Own these boards — a list only opens for a board the user has added. */
 function ownBoards(ids: number[]): void {
   localStorage.setItem('addedBoards', ids.join('|'))
   window.dispatchEvent(new StorageEvent('storage'))

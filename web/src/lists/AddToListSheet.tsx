@@ -303,7 +303,7 @@ export function AddToListSheet({ open, onOpenChange, problem, board }: AddToList
           </div>
 
           {/* Quick-fill suggestions — a single-select group under the input, built from the
-              same shadcn Toggle as MyBoards' hold-set picker. Tapping a pill fills the input
+              same shadcn Toggle as the board setup's hold-set picker. Tapping a pill fills the input
               (doesn't submit) and presses it; tapping the active pill clears it. Typing a
               custom name leaves every pill unpressed. Pills stay visible regardless of input
               so the group reads as a persistent chooser. */}

@@ -23,6 +23,7 @@ import { RecentsSheet } from './RecentsSheet'
 import { LastOpenedBar } from './LastOpenedBar'
 import { dismissLastOpened } from './lastOpenedStore'
 import { useBottomSlot } from '../shell/bottomSlot'
+import { clearAngleEdited, isAngleEdited } from '../boards/angleEdited'
 import { useHeaderFilterSlot } from '../shell/headerFilterSlot'
 import { useHeaderSessionSlot } from '../shell/headerSessionSlot'
 import { ProblemDetail } from './ProblemDetail'
@@ -80,11 +81,30 @@ export function CatalogScreen() {
   // board's default when the URL omits it or names an angle the board doesn't have.
   const angle = board.angles.includes(search.angle) ? search.angle : defaultAngle(board)
 
-  // Mirror the resolved angle back into boardStore so /boards (which can't read this
-  // route) stays coherent with a deep-linked ?angle. Only writes when it differs.
+  // Mirror the resolved angle back into boardStore so the screens that can't read this
+  // route (the boards drawer, the edit page) stay coherent with a deep-linked ?angle.
+  // Only writes when it differs.
+  //
+  // One exception: an angle just set on the board's edit page beats the URL. Browser
+  // Back from that page lands on a history entry that still carries the old ?angle, and
+  // mirroring it would undo the edit — so move the URL to the stored angle instead (see
+  // boards/angleEdited). The mark is cleared only once the two agree, which keeps this
+  // effect safe to run twice.
   useEffect(() => {
-    if (getAngle(board) !== angle) setAngle(board.layoutId, angle)
-  }, [board, angle])
+    const stored = getAngle(board)
+    if (stored === angle) {
+      clearAngleEdited(board.layoutId)
+      return
+    }
+    if (isAngleEdited(board.layoutId)) {
+      void navigate({
+        search: (prev) => ({ ...prev, angle: stored === defaultAngle(board) ? 0 : stored }),
+        replace: true,
+      })
+      return
+    }
+    setAngle(board.layoutId, angle)
+  }, [board, angle, navigate])
 
   const { problems, loading, degraded, resync } = useSlab(board.layoutId, angle)
   const { favoriteIds } = useFavorites()
@@ -247,7 +267,7 @@ export function CatalogScreen() {
 
   // ── New benchmarks: events store + banner + ?newSince deep-link view ──────────
   // Best-effort fetch when the slab mounts / changes; the store degrades to zero-unseen on
-  // failure (Boards page stays offline-usable). We do NOT block the render on this.
+  // failure (the boards drawer stays offline-usable). We do NOT block the render on this.
   useEffect(() => {
     void refreshBenchmarkNews([{ layoutId: board.layoutId, angle }])
   }, [board.layoutId, angle])

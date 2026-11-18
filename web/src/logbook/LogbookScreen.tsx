@@ -155,7 +155,7 @@ export function LogbookScreen() {
         <EmptyState
           title="Add a board to start your logbook"
           body="Your logbook tracks your ascents on each board. Add a board and your climbing history will show up here."
-          action={<Button onClick={() => void navigate({ to: '/boards' })}>Add a board</Button>}
+          action={<Button onClick={() => void navigate({ to: '/boards/add' })}>Add a board</Button>}
         />
       </div>
     )

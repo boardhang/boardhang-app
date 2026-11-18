@@ -113,7 +113,7 @@ export function visibleSetIds(activeIds: Set<number>, data: MembershipData): Set
 }
 
 /** Everything derived from a board's membership + its installed-set string, in
- *  one place (CatalogScreen filtering, ProblemDetail render, MyBoards config). */
+ *  one place (CatalogScreen filtering, ProblemDetail render, the board setup fields). */
 export interface HoldSetContext {
   membership: MembershipData
   filterable: number[]

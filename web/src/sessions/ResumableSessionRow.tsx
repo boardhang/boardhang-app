@@ -1,4 +1,4 @@
-// Presentational one-row button for a resumable session. Shared by MyBoards (default
+// Presentational one-row button for a resumable session. Shared by the boards drawer (default
 // card chrome) and SessionBar (passes a className override for the slim in-bar chrome
 // via `cn` + tailwind-merge).
 

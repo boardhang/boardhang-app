@@ -361,9 +361,9 @@ export function ScanToJoin({
   )
 }
 
-/** Reusable trigger for a camera/paste join (no host action) — used by the boards overview, which
- *  has no board context to start a session in. Owns the dialog's open state. Spreads through
- *  `Button`'s props so callers can style it. */
+/** Reusable trigger for a camera/paste join (no host action) — used by the boards drawer and
+ *  the first-run page, which have no board context to start a session in. Owns the dialog's
+ *  open state. Spreads through `Button`'s props so callers can style it. */
 export function ScanToJoinButton({
   variant = 'outline',
   children,

@@ -1,32 +1,33 @@
 // Bottom bar — thumb-reachable navigation for a phone at the wall. Search (the catalog)
 // is ALWAYS the rightmost element.
 //
-// • On a home screen (Boards / Logbook / Lists / Settings) the home tabs show clustered on
-//   the left, with a compact Search tab (icon over label, styled like the home tabs) pinned
-//   to the far right: [Boards] [Logbook] [Lists] [Settings] … [Search].
-// • On the catalog, the bar collapses to just the tab you came from plus the live search
-//   field that expands to fill the width: [origin] [search…]. Only the origin (the last
-//   home screen visited before searching) is shown — the other home tabs are hidden until
-//   you leave the catalog. Lists is home-only: it never opens the catalog, so it is never
-//   a search origin and the collapsed bar is unaffected by it.
+// • Off the catalog the tabs cluster on the left, with a compact Search tab (icon over
+//   label, styled like the tabs) pinned to the far right:
+//   [Logbook] [Lists] [Settings] … [Search].
+// • On the catalog the same three tabs sit beside the live search field, which expands
+//   to fill the rest of the width: [Logbook] [Lists] [Settings] [search…].
+//
+// Boards have no tab: the board name in the header opens the boards drawer. A screen
+// that belongs to no tab (the add and edit pages, the first-run page, the join route)
+// passes `view="none"`, and nothing is highlighted.
 //
 // "Detail" is a sub-view of the catalog and keeps the same bar. Fully prop-driven: the
 // search query and its writes are owned by the router-aware AppLayout, not this bar.
 
-import { BookOpen, Bookmark, Layers, Search, Settings, X } from 'lucide-react'
+import { BookOpen, Bookmark, Search, Settings, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
-export type NavView = 'boards' | 'catalog' | 'logbook' | 'lists' | 'settings'
-type HomeView = 'boards' | 'logbook' | 'settings'
+/** A place the bar can go. */
+export type NavTarget = 'catalog' | 'logbook' | 'lists' | 'settings'
+/** The current screen: a target, or `none` for a screen that belongs to no tab. */
+export type NavView = NavTarget | 'none'
 
 interface NavigationProps {
   view: NavView
-  onNavigate: (view: NavView) => void
-  /** On the catalog, the home tab to show on the left — where the user came from. */
-  origin?: HomeView
-  /** Views that can't be reached yet (e.g. Catalog before a board is added). */
-  disabled?: NavView[]
+  onNavigate: (target: NavTarget) => void
+  /** Targets that can't be reached yet (e.g. the catalog before a board is added). */
+  disabled?: NavTarget[]
   /** Current search query (owned by AppLayout). */
   query: string
   onQueryChange: (query: string) => void
@@ -36,7 +37,6 @@ interface NavigationProps {
 export function Navigation({
   view,
   onNavigate,
-  origin = 'boards',
   disabled = [],
   query,
   onQueryChange,
@@ -49,36 +49,24 @@ export function Navigation({
       aria-label="Primary"
       className="border-t border-border bg-background pb-[env(safe-area-inset-bottom)]"
     >
-      <div className="flex items-center gap-2 px-3">
+      {/* Tighter gaps on the catalog: the three tabs share the row with the search
+          field, which needs the width on a 360px phone. */}
+      <div className={cn('flex items-center px-3', view === 'catalog' ? 'gap-1' : 'gap-2')}>
+        <LogbookTab active={view === 'logbook'} onClick={() => onNavigate('logbook')} />
+        <ListsTab active={view === 'lists'} onClick={() => onNavigate('lists')} />
+        <SettingsTab active={view === 'settings'} onClick={() => onNavigate('settings')} />
         {view === 'catalog' ? (
-          // Collapsed: only the origin tab, then the live search field (rightmost).
-          <>
-            {origin === 'boards' ? (
-              <BoardsTab active={false} onClick={() => onNavigate('boards')} />
-            ) : origin === 'logbook' ? (
-              <LogbookTab active={false} onClick={() => onNavigate('logbook')} />
-            ) : (
-              <SettingsTab active={false} onClick={() => onNavigate('settings')} />
-            )}
-            <SearchField query={query} onQueryChange={onQueryChange} onClear={onClear} />
-          </>
+          <SearchField query={query} onQueryChange={onQueryChange} onClear={onClear} />
         ) : (
-          // Home screens: the tabs left-clustered, the compact Search tab pinned right.
-          <>
-            <BoardsTab active={view === 'boards'} onClick={() => onNavigate('boards')} />
-            <LogbookTab active={view === 'logbook'} onClick={() => onNavigate('logbook')} />
-            <ListsTab active={view === 'lists'} onClick={() => onNavigate('lists')} />
-            <SettingsTab active={view === 'settings'} onClick={() => onNavigate('settings')} />
-            <TabButton
-              label="Search"
-              className="ml-auto"
-              active={false}
-              disabled={searchDisabled}
-              title={searchDisabled ? 'Add a board first' : undefined}
-              onClick={() => onNavigate('catalog')}
-              icon={<Search className="size-5" />}
-            />
-          </>
+          <TabButton
+            label="Search"
+            className="ml-auto"
+            active={false}
+            disabled={searchDisabled}
+            title={searchDisabled ? 'Add a board first' : undefined}
+            onClick={() => onNavigate('catalog')}
+            icon={<Search className="size-5" />}
+          />
         )}
       </div>
     </nav>
@@ -95,7 +83,7 @@ function SearchField({
   onClear: () => void
 }) {
   return (
-    <div className="relative flex-1 py-2">
+    <div className="relative min-w-0 flex-1 py-2">
       <Search className="pointer-events-none absolute top-1/2 left-2.5 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="text"
@@ -116,17 +104,6 @@ function SearchField({
         </button>
       )}
     </div>
-  )
-}
-
-function BoardsTab({ active, onClick }: { active: boolean; onClick: () => void }) {
-  return (
-    <TabButton
-      label="Boards"
-      active={active}
-      onClick={onClick}
-      icon={<Layers className={cn('size-5', active && 'stroke-[2.5]')} />}
-    />
   )
 }
 

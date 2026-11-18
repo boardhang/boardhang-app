@@ -125,7 +125,10 @@ catalog shows — browser back/forward works and every meaningful view is deep-l
 ```
 /                        → redirect: no added boards → /boards, else the last-active
                            board's catalog (URL built from the localStorage seed)
-/boards                  → MyBoards
+/boards                  → FirstBoard (first-run page); with a board added → redirect to /
+/boards/add              → AddBoardPick  (add a board, step 1: which board)
+/boards/add/$layoutId    → AddBoardSetup (step 2: angle and hold sets)
+/boards/$layoutId/edit   → EditBoard     (angle, hold sets, remove)
 /logbook                 → LogbookScreen
 /settings                → SettingsScreen (global; appearance/theme, climb previews,
                            catalog cache, logbook export/import, site links; plus the
@@ -133,10 +136,52 @@ catalog shows — browser back/forward works and every meaningful view is deep-l
 /board/$layoutId/catalog → CatalogScreen  (search params below)
 ```
 
-The bottom bar (`web/src/shell/Navigation.tsx`) is four tabs: three home tabs clustered left
-(`Boards`, `Logbook`, `Settings`) and `Search` pinned rightmost — `[Boards] [Logbook] [Settings]
-… [Search]`. On the catalog the bar collapses to just the **origin** (the last home screen
-visited, now including Settings) plus the live search field: e.g. `[Settings] [search…]`.
+The bottom bar (`web/src/shell/Navigation.tsx`) has three tabs clustered left (`Logbook`,
+`Lists`, `Settings`) and `Search` pinned rightmost — `[Logbook] [Lists] [Settings] … [Search]`.
+On the catalog the same three tabs sit beside the live search field, which takes the rest of
+the width: `[Logbook] [Lists] [Settings] [search…]`. Boards have no tab. A screen that belongs
+to no tab (the first-run page, the add and edit pages, the join route, the logbook import)
+highlights none.
+
+**Boards (`web/src/boards/`).** The active board's full name sits at the left of the header on
+every screen (`BoardsDrawer`, mounted in `AppLayout`), and is the one place to switch, add and
+manage boards. It renders nothing while no board is added.
+
+- **The drawer** slides up from the bottom over any screen. It is shell state, not a route, so
+  it never changes the URL and adds no history entry (browser Back leaves the screen behind
+  it). Top to bottom: the "That session has ended." notice, "Resume session" rows, the added
+  boards as picture tiles three per row (`BoardTile`: picture with the board's hold sets, short
+  name, angle), a dashed "Add a board" tile (hidden once every registry board is added), and a
+  "Scan a QR code" row (hidden while a session is active).
+- **Tiles.** Tapping an inactive tile makes that board active and keeps the drawer open;
+  tapping the active tile (outlined, "Browse") closes the drawer and opens its catalog. The
+  pencil in a tile's corner opens that board's edit page. An inactive tile shows a dot when
+  its board has unseen new benchmarks. Tile order is frozen while the drawer is open
+  (activating a board moves it to the front of the stored order) and re-read on the next open.
+- **Closing.** The drawer closes on a route change to anything that is not a catalog, on the
+  active tile, and when a resumed session becomes active. A catalog-to-catalog change keeps
+  it open.
+- **The catalog follows the active board, and the other way round**
+  (`useFollowActiveBoard`). When the active board changes while another board's catalog is
+  showing, the shell replaces the route with the new active board's catalog. When a catalog
+  route shows an added board that is not active (browser Back onto an older entry, a shared
+  problem link, "Add this board" on a preview), that board becomes active. So the header never
+  names a different board than the catalog shows. Two cases are left alone: the preview of a
+  board that is not added (the header keeps naming the active board), and any route that is
+  not a catalog. When the routed board already is the active one nothing happens, which
+  leaves `?problem`, `?q` and the filters untouched.
+- **Adding** is two full pages. `/boards/add` ("Which board?") lists every registry board;
+  one that is already added says "You have this one" and opens its edit page.
+  `/boards/add/$layoutId` ("How is it set up?") holds the angle and hold sets as a draft,
+  starting from the store's values for that board, with an "Add board" bar docked in the
+  shell's bottom slot. Nothing is stored until that button is pressed; it then adds the
+  board, stores the setup, makes the board active and replaces the step with its catalog.
+- **Editing** is `/boards/$layoutId/edit`: the same angle and hold-set controls
+  (`BoardSetupFields`), each change written to `boardStore` at once, with no Save. Editing
+  does not make a board active. "Remove board" asks first on the page itself; confirming
+  removes the board and goes to `/`.
+- **First run.** With no board added, `/` lands on `/boards`: one card with one "Add a board"
+  button, and the scan row. With a board added, `/boards` redirects to `/`.
 
 **Climb previews:** `web/src/catalog/previewsStore.ts` holds four independent per-surface
 toggles (`showClimbPreviews.catalog|logbook|lists|lastOpened` localStorage keys, all default on;
@@ -161,9 +206,12 @@ the Bluetooth diagnostics log (`ble.diag.v1`, written only while the lab is on).
 setting disconnects the board first. What the lab changes in the Bluetooth client is in
 [ble-hardware.md](ble-hardware.md); nothing else in the app reads these keys.
 
-Guards (route `beforeLoad`): an unknown `layoutId` (not in the board registry) bounces to `/boards`;
-a registry-valid but **un-added** board renders a read-only preview with an "Add this board" CTA
-(it does *not* bounce). Auth stays a header modal, not a route.
+Guards (route `beforeLoad`): on the catalog, an unknown `layoutId` (not in the board registry)
+bounces to `/boards`, which lands on the active board's catalog or the first-run page; a
+registry-valid but **un-added** board renders a read-only preview with an "Add this board" CTA
+(it does *not* bounce). `/boards/add/$layoutId` sends an unknown id to `/boards/add` and an
+already-added board to its edit page; `/boards/$layoutId/edit` sends a board that is not added
+to `/boards/add/$layoutId`. Auth stays a header modal, not a route.
 
 **Catalog search params** (`web/src/catalog/catalogSearch.ts`) — the whole catalog view state:
 `q` (search), `grade` (ordinal `min-max` into `FONT_GRADES`, both bounds floored at 6A+ —
@@ -216,7 +264,12 @@ via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fil
   session pill) sits at `z-40` — above in-page floating chrome such as the catalog's
   sticky FAB cluster (`z-30`), below portaled overlays (drawers/dialogs/popovers, `z-50`).
 - **Angle** comes from `?angle` (never a fresh `getAngle()` in render); `CatalogScreen` mirrors the
-  resolved angle back into `boardStore` so `/boards` stays coherent with a deep link.
+  resolved angle back into `boardStore` so the boards drawer and the edit page stay coherent
+  with a deep link. One exception: an angle just set on the board's edit page beats the URL.
+  Browser Back from that page lands on a catalog entry that still carries the old `?angle`,
+  and mirroring it would undo the edit, so the edit page marks the board in memory
+  (`web/src/boards/angleEdited.ts`) and the catalog, finding the mark with a differing URL
+  angle, replaces its URL with the stored angle instead. The mark clears once the two agree.
 - **Problem drawer**: opening pushes history (Back closes it), paging/swiping `replace`s (URL tracks
   the current problem). A deep-linked problem resolves against the **full slab**, so it opens even
   when the active filters exclude it (prev/next then disable). The drawer's beta strip caps at 4
@@ -269,7 +322,7 @@ via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fil
 - **New-benchmark surfaces** (`web/src/catalog/benchmarkNewsStore.ts`) — a public-read events
   table (`benchmark_events`, migration 0018) drives three UI surfaces off the same source:
   the catalog banner ("N new benchmarks — view/dismiss") on the active slab, a small dot on
-  every other added board's `MyBoards` row, and the `?newSince=<iso>` deep-link view that
+  every other added board's tile in the boards drawer, and the `?newSince=<iso>` deep-link view that
   renders only problems promoted after that timestamp. The device-local watermark (one per
   slab, `benchmarkSeen_${layoutId}_${angle}` localStorage) defaults to now-on-first-touch so
   a fresh install / first-ever sync never presents pre-existing benchmarks as new. "View",

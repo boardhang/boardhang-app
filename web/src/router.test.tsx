@@ -1,8 +1,20 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithRouter } from './test/renderWithRouter'
-import { addBoard, getAddedBoardIds, getAngle } from './board/boardStore'
-import { boardByLayoutId } from './board/boards'
+import {
+  activateBoard,
+  addBoard,
+  getActiveBoardId,
+  getActiveHoldSetsRaw,
+  getAddedBoardIds,
+  getAngle,
+  setAngle,
+} from './board/boardStore'
+import { BOARDS, boardByLayoutId } from './board/boards'
+import { resetAngleEdited } from './boards/angleEdited'
+import { navigateToSessionBoard } from './sessions/sessionNav'
+import type { Session } from './sessions/sessionsTypes'
+import { catalogNavTarget } from './catalog/catalogNav'
 import { resetLastOpened } from './catalog/lastOpenedStore'
 import { loadSeed } from './catalog/filterSeed'
 import type { CatalogProblem } from './catalog/catalogSync'
@@ -34,13 +46,28 @@ beforeEach(() => {
   localStorage.clear()
   window.dispatchEvent(new StorageEvent('storage')) // reset the boardStore snapshot
   resetLastOpened() // in-memory session singleton; clear so an open doesn't leak the bar
+  resetAngleEdited()
 })
 
+// `hidden`: while the boards drawer is open the page behind it is hidden from
+// assistive tech, the header's board name included.
+const boardName = () => screen.getByRole('button', { name: /, boards$/, hidden: true })
+const boardsDrawer = () => within(screen.getByRole('dialog', { name: 'Boards' }))
+async function openBoardsDrawer() {
+  fireEvent.click(boardName())
+  await screen.findByRole('dialog', { name: 'Boards' })
+}
+
 describe('bare-/ redirect', () => {
-  it('lands on My Boards when no boards are added', async () => {
-    renderWithRouter('/')
+  it('lands on the first-run page at /boards when no boards are added', async () => {
+    const { router } = renderWithRouter('/')
     expect(await screen.findByText('Add your first board')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards')
     expect(screen.getByRole('button', { name: 'Search' })).toBeDisabled()
+    // No board yet: the header names none, and the page carries the one add button.
+    expect(screen.queryByRole('button', { name: /, boards$/ })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Add a board' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /Scan a QR code/ })).toBeInTheDocument()
   })
 
   it('redirects to the active board catalog once a board is added', async () => {
@@ -50,13 +77,71 @@ describe('bare-/ redirect', () => {
     expect(await screen.findByText('Alpha')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Search problems' })).toBeInTheDocument()
   })
+
+  it('lands on the active board, not the most recently added one', async () => {
+    addBoard(7)
+    addBoard(5) // front of the stored order, but 7 stays active
+    const { router } = renderWithRouter('/')
+    await screen.findByText('Alpha')
+    expect(router.state.location.pathname).toBe('/board/7/catalog')
+  })
+})
+
+describe('/boards', () => {
+  it('redirects to the active board catalog once a board is added', async () => {
+    addBoard(7)
+    const { router } = renderWithRouter('/boards')
+    await screen.findByText('Alpha')
+    expect(router.state.location.pathname).toBe('/board/7/catalog')
+  })
+
+  it('opens the add flow from the first-run button', async () => {
+    const { router } = renderWithRouter('/boards')
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a board' }))
+    expect(await screen.findByRole('heading', { name: 'Which board?' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards/add')
+  })
+})
+
+describe('bottom bar', () => {
+  it('has no Boards tab, on the catalog or off it', async () => {
+    addBoard(7)
+    renderWithRouter('/board/7/catalog')
+    await screen.findByText('Alpha')
+    const nav = () => within(screen.getByRole('navigation', { name: 'Primary' }))
+    expect(nav().queryByRole('button', { name: 'Boards' })).toBeNull()
+    for (const name of ['Logbook', 'Lists', 'Settings']) {
+      expect(nav().getByRole('button', { name })).toBeInTheDocument()
+    }
+    fireEvent.click(nav().getByRole('button', { name: 'Settings' }))
+    await screen.findByRole('heading', { name: 'Settings' })
+    expect(nav().queryByRole('button', { name: 'Boards' })).toBeNull()
+    expect(await nav().findByRole('button', { name: 'Search' })).toBeInTheDocument()
+  })
+
+  it.each(['/boards', '/boards/add', '/boards/add/5', '/session/join/abc'])(
+    'highlights no tab on %s',
+    async (path) => {
+      const { router } = renderWithRouter(path)
+      await waitFor(() => expect(router.state.status).toBe('idle'))
+      const nav = within(screen.getByRole('navigation', { name: 'Primary' }))
+      for (const b of nav.getAllByRole('button')) expect(b).not.toHaveAttribute('aria-current')
+    },
+  )
 })
 
 describe('catalog route guards', () => {
-  it('bounces an unknown board id to My Boards', async () => {
+  it('bounces an unknown board id to the active board catalog', async () => {
     addBoard(7)
-    renderWithRouter('/board/999/catalog')
-    expect(await screen.findByText(/my boards/i)).toBeInTheDocument()
+    const { router } = renderWithRouter('/board/999/catalog')
+    await screen.findByText('Alpha')
+    expect(router.state.location.pathname).toBe('/board/7/catalog')
+  })
+
+  it('bounces an unknown board id to the first-run page when no board is added', async () => {
+    const { router } = renderWithRouter('/board/999/catalog')
+    expect(await screen.findByText('Add your first board')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards')
   })
 
   it('previews a registry-valid but un-added board (does not bounce)', async () => {
@@ -135,7 +220,7 @@ describe('search field <-> URL sync', () => {
     // Leave the catalog before the debounce fires, then come back. AppLayout is the
     // persistent root, so its field state survives — it must resync to the URL (empty
     // ?q) rather than showing a query the list isn't actually filtered by.
-    fireEvent.click(screen.getByRole('button', { name: 'Boards' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
     await screen.findByRole('button', { name: 'Search' })
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
 
@@ -207,5 +292,333 @@ describe('lists routes', () => {
   it('routes /lists while signed out (the screen owns the sign-in prompt)', async () => {
     renderWithRouter('/lists')
     expect(await screen.findByTestId('lists-screen')).toBeInTheDocument()
+  })
+})
+
+// ── Boards: the header name, the drawer, and the add / edit pages ────────────────
+
+const session = (boardLayoutId: number): Session => ({
+  id: 'S1',
+  name: 'Crew',
+  ownerId: 'me',
+  boardLayoutId,
+  createdAt: '2026-07-20T00:00:00Z',
+  updatedAt: '2026-07-20T00:00:00Z',
+  expiresAt: '2026-07-21T00:00:00Z',
+  deleted: false,
+  litProblemId: null,
+  litBy: null,
+  litAt: null,
+})
+
+const tileNames = () =>
+  boardsDrawer()
+    .getAllByRole('button', { name: /^(Browse|Switch to) / })
+    .map((t) => t.getAttribute('aria-label')!.replace(/^(Browse|Switch to) /, ''))
+
+describe('header board name', () => {
+  it('names the active board on every screen, add and edit pages included', async () => {
+    addBoard(3)
+    addBoard(7) // 3 stays active
+    const { router } = renderWithRouter('/settings')
+    await screen.findByRole('heading', { name: 'Settings' })
+    expect(boardName()).toHaveTextContent('MoonBoard 2024')
+
+    await act(() => router.navigate({ to: '/boards/add' }))
+    await screen.findByRole('heading', { name: 'Which board?' })
+    expect(boardName()).toHaveTextContent('MoonBoard 2024')
+
+    // Editing another board: the header still names the active one.
+    await act(() => router.navigate({ to: '/boards/$layoutId/edit', params: { layoutId: '7' } }))
+    await screen.findByRole('heading', { name: 'Edit Mini MoonBoard 2025' })
+    expect(boardName()).toHaveTextContent('MoonBoard 2024')
+  })
+
+  it('keeps naming the active board on the preview of a board that is not added', async () => {
+    addBoard(7)
+    renderWithRouter('/board/5/catalog')
+    await screen.findByText('Add this board')
+    expect(boardName()).toHaveTextContent('Mini MoonBoard 2025')
+    expect(getActiveBoardId()).toBe(7)
+    expect(getAddedBoardIds()).toEqual([7])
+  })
+})
+
+describe('the catalog and the active board stay in step', () => {
+  it('AE1: switching boards from the drawer on a non-catalog screen stays on that screen', async () => {
+    addBoard(3)
+    addBoard(7) // 3 active
+    const { router } = renderWithRouter('/settings')
+    await screen.findByRole('heading', { name: 'Settings' })
+    await openBoardsDrawer()
+    const before = tileNames()
+
+    fireEvent.click(boardsDrawer().getByRole('button', { name: 'Switch to Mini MoonBoard 2025' }))
+
+    expect(
+      boardsDrawer().getByRole('button', { name: 'Browse Mini MoonBoard 2025' }),
+    ).toHaveAttribute('aria-current', 'true')
+    expect(boardName()).toHaveTextContent('Mini MoonBoard 2025')
+    expect(tileNames()).toEqual(before)
+    await waitFor(() => expect(router.state.status).toBe('idle'))
+    expect(router.state.location.pathname).toBe('/settings')
+    expect(screen.getByRole('dialog', { name: 'Boards' })).toBeInTheDocument()
+  })
+
+  it('AE2: switching boards from the drawer on a catalog swaps the catalog behind it', async () => {
+    addBoard(3)
+    addBoard(7) // 3 active
+    const { router, history } = renderWithRouter('/board/3/catalog')
+    await screen.findByText('Alpha')
+    const entries = history.length
+    await openBoardsDrawer()
+
+    fireEvent.click(boardsDrawer().getByRole('button', { name: 'Switch to Mini MoonBoard 2025' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/7/catalog'))
+    expect(history.length).toBe(entries) // the entry was swapped, none added
+    expect(screen.getByRole('dialog', { name: 'Boards' })).toBeInTheDocument() // still open
+    expect(getActiveBoardId()).toBe(7)
+  })
+
+  it('tapping the active tile closes the drawer and shows its catalog', async () => {
+    addBoard(3)
+    const { router } = renderWithRouter('/settings')
+    await screen.findByRole('heading', { name: 'Settings' })
+    await openBoardsDrawer()
+    fireEvent.click(boardsDrawer().getByRole('button', { name: 'Browse MoonBoard 2024' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/3/catalog'))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Boards' })).toBeNull())
+  })
+
+  it('a catalog URL for an added, inactive board makes that board active', async () => {
+    addBoard(7)
+    addBoard(5) // 7 active
+    const { router } = renderWithRouter('/board/5/catalog?problem=b')
+    await screen.findByRole('heading', { name: 'Bravo' })
+    await waitFor(() => expect(getActiveBoardId()).toBe(5))
+    expect(boardName()).toHaveTextContent('MoonBoard Masters 2019')
+    // The link is left as it was: same board, same open problem.
+    expect(router.state.location.pathname).toBe('/board/5/catalog')
+    expect(router.state.location.search).toMatchObject({ problem: 'b' })
+  })
+
+  it('browser Back onto another board’s catalog makes that board active', async () => {
+    addBoard(3)
+    addBoard(7) // 3 active
+    const { router } = renderWithRouter('/board/3/catalog')
+    await screen.findByText('Alpha')
+    await act(() => router.navigate(catalogNavTarget(boardByLayoutId(7)!)))
+    await waitFor(() => expect(getActiveBoardId()).toBe(7))
+
+    act(() => router.history.back())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/3/catalog'))
+    await waitFor(() => expect(getActiveBoardId()).toBe(3))
+    expect(boardName()).toHaveTextContent('MoonBoard 2024')
+  })
+
+  it('adding the previewed board as the first board keeps the URL’s search params', async () => {
+    const { router } = renderWithRouter('/board/5/catalog?q=crimp&problem=b')
+    // `hidden`: the open problem drawer hides the page behind it from assistive tech.
+    fireEvent.click(await screen.findByRole('button', { name: 'Add this board', hidden: true }))
+    await waitFor(() => expect(getActiveBoardId()).toBe(5))
+    await waitFor(() => expect(boardName()).toHaveTextContent('MoonBoard Masters 2019'))
+    await waitFor(() => expect(router.state.status).toBe('idle'))
+    expect(router.state.location.pathname).toBe('/board/5/catalog')
+    expect(router.state.location.search).toMatchObject({ q: 'crimp', problem: 'b' })
+  })
+
+  it('adding the previewed board beside another makes it active and keeps the params', async () => {
+    addBoard(7)
+    const { router } = renderWithRouter('/board/5/catalog?q=crimp')
+    fireEvent.click(await screen.findByRole('button', { name: 'Add this board' }))
+    await waitFor(() => expect(getActiveBoardId()).toBe(5))
+    await waitFor(() => expect(router.state.status).toBe('idle'))
+    expect(router.state.location.pathname).toBe('/board/5/catalog')
+    expect(router.state.location.search).toMatchObject({ q: 'crimp' })
+  })
+
+  it('resuming a session from another board’s catalog produces one navigation', async () => {
+    addBoard(3)
+    addBoard(7) // 3 active
+    const { router, history } = renderWithRouter('/board/3/catalog')
+    await screen.findByText('Alpha')
+    const entries = history.length
+
+    // What a resume does: activate the session's board and navigate to its catalog.
+    act(() => navigateToSessionBoard(router.navigate, session(7)))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/7/catalog'))
+    await waitFor(() => expect(router.state.status).toBe('idle'))
+    expect(history.length).toBe(entries + 1) // exactly one new entry
+    act(() => router.history.back())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/3/catalog'))
+  })
+
+  it('does not navigate when the active board changes off the catalog', async () => {
+    addBoard(3)
+    addBoard(7)
+    const { router } = renderWithRouter('/settings')
+    await screen.findByRole('heading', { name: 'Settings' })
+    act(() => activateBoard(7))
+    await waitFor(() => expect(router.state.status).toBe('idle'))
+    expect(router.state.location.pathname).toBe('/settings')
+  })
+})
+
+describe('adding a board', () => {
+  it('adds a board end to end and lands on its catalog', async () => {
+    addBoard(7)
+    const { router } = renderWithRouter('/boards/add')
+    fireEvent.click((await screen.findByText('MoonBoard Masters 2019')).closest('button')!)
+    expect(await screen.findByRole('heading', { name: 'How is it set up?' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards/add/5')
+
+    fireEvent.click(screen.getByRole('button', { name: '25°' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Hold Set A' }))
+    expect(screen.getByText('25° · 5 of 6 hold sets')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add board' }))
+
+    await screen.findByText('Alpha')
+    expect(router.state.location.pathname).toBe('/board/5/catalog')
+    expect(router.state.location.search).toMatchObject({ angle: 25 })
+    expect(getAddedBoardIds()).toEqual([5, 7])
+    expect(getActiveBoardId()).toBe(5)
+    expect(getAngle(boardByLayoutId(5)!)).toBe(25)
+    expect(getActiveHoldSetsRaw(5)).toBe('18|19|21|22|23')
+    expect(boardName()).toHaveTextContent('MoonBoard Masters 2019')
+    // The docked bar belongs to step 2 only.
+    expect(screen.queryByRole('button', { name: 'Add board' })).toBeNull()
+
+    // Back from the catalog does not re-enter the finished step 2.
+    act(() => router.history.back())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/boards/add'))
+  })
+
+  it('AE3: tapping an added board in step 1 opens its edit page, adding no second copy', async () => {
+    addBoard(3)
+    const { router } = renderWithRouter('/boards/add')
+    fireEvent.click((await screen.findByText('You have this one')).closest('button')!)
+    expect(await screen.findByRole('heading', { name: 'Edit MoonBoard 2024' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards/3/edit')
+    expect(getAddedBoardIds()).toEqual([3])
+  })
+
+  it('AE4: going back from step 2 returns to step 1 and adds nothing', async () => {
+    addBoard(7)
+    const { router } = renderWithRouter('/boards/add')
+    fireEvent.click((await screen.findByText('MoonBoard Masters 2019')).closest('button')!)
+    await screen.findByRole('heading', { name: 'How is it set up?' })
+    fireEvent.click(screen.getByRole('button', { name: '25°' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(await screen.findByRole('heading', { name: 'Which board?' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards/add')
+
+    await openBoardsDrawer()
+    expect(tileNames()).toEqual(['Mini MoonBoard 2025'])
+    expect(getAddedBoardIds()).toEqual([7])
+    expect(getAngle(boardByLayoutId(5)!)).toBe(40)
+  })
+
+  it('redirects an unknown layout id in the step-2 URL to step 1', async () => {
+    const { router } = renderWithRouter('/boards/add/999')
+    expect(await screen.findByRole('heading', { name: 'Which board?' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards/add')
+  })
+
+  it('redirects step 2 for an already-added board to its edit page', async () => {
+    addBoard(3)
+    const { router } = renderWithRouter('/boards/add/3')
+    expect(await screen.findByRole('heading', { name: 'Edit MoonBoard 2024' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards/3/edit')
+  })
+
+  it('AE6: with every registry board added the drawer has no add tile', async () => {
+    for (const b of BOARDS) addBoard(b.layoutId)
+    renderWithRouter('/settings')
+    await screen.findByRole('heading', { name: 'Settings' })
+    await openBoardsDrawer()
+    expect(tileNames()).toHaveLength(6)
+    expect(boardsDrawer().queryByRole('button', { name: 'Add a board' })).toBeNull()
+  })
+})
+
+describe('editing and removing a board', () => {
+  it('redirects the edit page of a board that is not added to its add step', async () => {
+    addBoard(7)
+    const { router } = renderWithRouter('/boards/5/edit')
+    expect(await screen.findByRole('heading', { name: 'How is it set up?' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards/add/5')
+  })
+
+  it('redirects the edit page of an unknown board to step 1', async () => {
+    const { router } = renderWithRouter('/boards/999/edit')
+    expect(await screen.findByRole('heading', { name: 'Which board?' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards/add')
+  })
+
+  it('AE7: an angle set on the edit page survives browser Back onto the catalog', async () => {
+    addBoard(3) // MoonBoard 2024: 40° and 25°
+    const { router } = renderWithRouter('/board/3/catalog')
+    await screen.findByText('Alpha')
+    expect(getAngle(boardByLayoutId(3)!)).toBe(40)
+
+    await openBoardsDrawer()
+    fireEvent.click(boardsDrawer().getByRole('button', { name: 'Edit MoonBoard 2024' }))
+    await screen.findByRole('heading', { name: 'Edit MoonBoard 2024' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Boards' })).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: '25°' }))
+    expect(getAngle(boardByLayoutId(3)!)).toBe(25)
+
+    act(() => router.history.back()) // onto the catalog entry that still says 40°
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/3/catalog'))
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ angle: 25 }))
+    expect(getAngle(boardByLayoutId(3)!)).toBe(25)
+  })
+
+  it('a deep-linked ?angle still wins when the angle was not just edited', async () => {
+    addBoard(3)
+    setAngle(3, 25)
+    const { router } = renderWithRouter('/board/3/catalog?angle=40')
+    await screen.findByText('Alpha')
+    await waitFor(() => expect(getAngle(boardByLayoutId(3)!)).toBe(40))
+    expect(router.state.location.pathname).toBe('/board/3/catalog')
+  })
+
+  it('removing one of two boards lands on the other board’s catalog', async () => {
+    addBoard(7)
+    addBoard(5) // 7 active
+    const { router } = renderWithRouter('/boards/5/edit')
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    await screen.findByText('Alpha')
+    expect(router.state.location.pathname).toBe('/board/7/catalog')
+    expect(getAddedBoardIds()).toEqual([7])
+  })
+
+  it('AE5: removing the last board shows the first-run page', async () => {
+    addBoard(7)
+    const { router } = renderWithRouter('/boards/7/edit')
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove board' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove board' }))
+    expect(await screen.findByText('Add your first board')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/boards')
+    expect(getAddedBoardIds()).toEqual([])
+    expect(screen.queryByRole('button', { name: /, boards$/ })).toBeNull()
+  })
+
+  it('the remove confirm resets when the page is opened again', async () => {
+    addBoard(7)
+    const { router } = renderWithRouter('/boards/7/edit')
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove board' }))
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+
+    await act(() => router.navigate({ to: '/settings' }))
+    await screen.findByRole('heading', { name: 'Settings' })
+    await act(() => router.navigate({ to: '/boards/$layoutId/edit', params: { layoutId: '7' } }))
+    await screen.findByRole('heading', { name: 'Edit Mini MoonBoard 2025' })
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+    expect(getAddedBoardIds()).toEqual([7])
   })
 })

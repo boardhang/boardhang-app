@@ -61,7 +61,7 @@ function savedList(id: string, name: string, createdAt: string): SavedList {
   }
 }
 
-/** Own the Mini 2025 (layout 7) — lists are only shown for boards in My Boards. */
+/** Own the Mini 2025 (layout 7) — lists are only shown for boards the user has added. */
 function ownBoards(ids: number[]): void {
   localStorage.setItem('addedBoards', ids.join('|'))
   // boardStore caches its snapshot; a storage event makes it re-read (it listens for
@@ -114,7 +114,7 @@ describe('ListsScreen', () => {
     expect(await screen.findByText('Create your first list')).toBeInTheDocument()
   })
 
-  it('hides lists whose board is not in My Boards, and keeps the ones that are', async () => {
+  it('hides lists whose board is not added, and keeps the ones that are', async () => {
     ownBoards([5]) // Mini 2025 (7) removed; another board still owned.
     storeState = {
       status: 'loaded',
@@ -143,7 +143,7 @@ describe('ListsScreen', () => {
     expect(screen.getByText('Your list is on a board you removed')).toBeInTheDocument()
     expect(screen.queryByText('Create your first list')).toBeNull()
     // Not a deletion — the list comes back with the board.
-    expect(screen.getByRole('link', { name: 'My Boards' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Add a board' })).toHaveAttribute('href', '/boards/add')
   })
 
   it('says it in the plural when several lists are hidden', async () => {
@@ -176,7 +176,7 @@ describe('ListsScreen', () => {
     expect(await screen.findByText('Mini projects')).toBeInTheDocument()
   })
 
-  it('no boards added: hides the create form and points at My Boards', async () => {
+  it('no boards added: hides the create form and points at the add flow', async () => {
     ownBoards([])
     storeState = { status: 'loaded', lists: [], error: null }
     renderWithRouter('/lists')
