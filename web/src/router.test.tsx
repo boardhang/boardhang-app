@@ -637,6 +637,41 @@ describe('editing and removing a board', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/board/3/catalog'))
     await waitFor(() => expect(router.state.location.search).toMatchObject({ angle: 25 }))
     expect(getAngle(boardByLayoutId(3)!)).toBe(25)
+    // Back returns to the drawer the edit page was opened from, not the bare catalog.
+    expect(await screen.findByRole('dialog', { name: 'Boards' })).toBeInTheDocument()
+  })
+
+  it('Back from the add flow reopens the drawer it was opened from, off the catalog too', async () => {
+    addBoard(3)
+    const { router } = renderWithRouter('/logbook')
+    await waitFor(() => expect(router.state.status).toBe('idle'))
+    await openBoardsDrawer()
+    fireEvent.click(boardsDrawer().getByRole('button', { name: 'Add a board' }))
+    await screen.findByRole('heading', { name: 'Which board?' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Boards' })).toBeNull())
+
+    act(() => router.history.back())
+
+    expect(await screen.findByRole('dialog', { name: 'Boards' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/logbook')
+  })
+
+  it('does not reopen the drawer once the add flow ended by adding a board', async () => {
+    addBoard(3)
+    const { router } = renderWithRouter('/logbook')
+    await waitFor(() => expect(router.state.status).toBe('idle'))
+    await openBoardsDrawer()
+    fireEvent.click(boardsDrawer().getByRole('button', { name: 'Add a board' }))
+    await screen.findByRole('heading', { name: 'Which board?' })
+    await act(() => router.navigate({ to: '/boards/add/$layoutId', params: { layoutId: '7' } }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add board' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/7/catalog'))
+
+    act(() => router.history.back()) // "Which board?"
+    await waitFor(() => expect(router.state.location.pathname).toBe('/boards/add'))
+    act(() => router.history.back()) // the Logbook the drawer was opened on
+    await waitFor(() => expect(router.state.location.pathname).toBe('/logbook'))
+    expect(screen.queryByRole('dialog', { name: 'Boards' })).toBeNull()
   })
 
   it('an angle set on the edit page survives Back past several older catalog entries', async () => {

@@ -30,13 +30,30 @@ export function BoardsDrawer() {
   const { addedBoards, activeBoard } = useBoardStore()
   const [open, setOpen] = useState(false)
 
-  // Leaving for any screen that is not a catalog closes the drawer (the edit page, the
-  // add flow, the join route). A catalog-to-catalog change does not: switching boards
-  // from the drawer swaps the catalog behind it and the drawer stays open.
+  // The history entry the drawer was on when it sent the user to the add flow or an edit
+  // page. Coming Back to that entry reopens the drawer, so Back from those pages returns
+  // to where the user was: the drawer, not the screen under it.
+  const returnKey = useRef<string | null>(null)
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const entryKey = useRouterState({ select: (s) => s.location.state?.__TSR_key ?? null })
+  const rememberEntry = () => {
+    returnKey.current = entryKey
+  }
+
   useEffect(() => {
+    if (returnKey.current !== null && entryKey === returnKey.current) {
+      returnKey.current = null
+      setOpen(true)
+      return
+    }
+    // Landing anywhere outside the add and edit pages means that flow ended some other
+    // way (a board was added or removed, a tab was tapped), so Back no longer reopens.
+    if (!pathname.startsWith('/boards/')) returnKey.current = null
+    // Leaving for any screen that is not a catalog closes the drawer (the edit page, the
+    // add flow, the join route). A catalog-to-catalog change does not: switching boards
+    // from the drawer swaps the catalog behind it and the drawer stays open.
     if (catalogLayoutId(pathname) === null) setOpen(false)
-  }, [pathname])
+  }, [pathname, entryKey])
 
   if (addedBoards.length === 0) return null
 
@@ -53,7 +70,7 @@ export function BoardsDrawer() {
         <DrawerTitle className="sr-only">Boards</DrawerTitle>
         {/* The drawer's own content element clips overflow, so the scroll lives here. */}
         <div className="max-h-[75dvh] overflow-y-auto px-4 pt-2 pb-6">
-          <BoardsDrawerBody onClose={() => setOpen(false)} />
+          <BoardsDrawerBody onClose={() => setOpen(false)} onOpenPage={rememberEntry} />
         </div>
       </DrawerContent>
     </Drawer>
@@ -64,7 +81,14 @@ const sectionTitle = 'text-xs font-semibold uppercase tracking-wide text-muted-f
 
 /** The drawer's content. Mounts when the drawer opens, so everything it reads once
  *  (tile order, resumable sessions, benchmark news) is fresh per open. */
-function BoardsDrawerBody({ onClose }: { onClose: () => void }) {
+function BoardsDrawerBody({
+  onClose,
+  onOpenPage,
+}: {
+  onClose: () => void
+  /** Called just before the drawer sends the user to the add flow or an edit page. */
+  onOpenPage: () => void
+}) {
   const navigate = useNavigate()
   const { addedBoards, activeBoard, activateBoard } = useBoardStore()
   // Joining a session is a no-session action, so the scan row hides once one is active.
@@ -181,6 +205,7 @@ function BoardsDrawerBody({ onClose }: { onClose: () => void }) {
                   icon: <Pencil />,
                   label: `Edit ${board.name}`,
                   onClick: () => {
+                    onOpenPage()
                     onClose()
                     void navigate({
                       to: '/boards/$layoutId/edit',
@@ -196,6 +221,7 @@ function BoardsDrawerBody({ onClose }: { onClose: () => void }) {
               type="button"
               className="flex min-h-28 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
               onClick={() => {
+                onOpenPage()
                 onClose()
                 void navigate({ to: '/boards/add' })
               }}

@@ -162,6 +162,10 @@ manage boards. It renders nothing while no board is added.
 - **Closing.** The drawer closes on a route change to anything that is not a catalog, on the
   active tile, and when a resumed session becomes active. A catalog-to-catalog change keeps
   it open.
+- **Back reopens it.** The drawer remembers the history entry it was on when its add tile or
+  a pencil sent the user away. Coming Back to that entry reopens the drawer. The memory is
+  dropped once the user lands anywhere outside `/boards/…` (a board was added or removed, a
+  tab was tapped), so a later Back onto that entry shows the bare screen.
 - **The catalog follows the active board, and the other way round**
   (`useFollowActiveBoard`). When the active board changes while another board's catalog is
   showing, the shell replaces the route with the new active board's catalog. When a catalog
