@@ -23,7 +23,7 @@ import { RecentsSheet } from './RecentsSheet'
 import { LastOpenedBar } from './LastOpenedBar'
 import { dismissLastOpened } from './lastOpenedStore'
 import { useBottomSlot } from '../shell/bottomSlot'
-import { clearAngleEdited, isAngleEdited } from '../boards/angleEdited'
+import { isAngleEdited } from '../boards/angleEdited'
 import { useHeaderFilterSlot } from '../shell/headerFilterSlot'
 import { useHeaderSessionSlot } from '../shell/headerSessionSlot'
 import { ProblemDetail } from './ProblemDetail'
@@ -88,14 +88,10 @@ export function CatalogScreen() {
   // One exception: an angle just set on the board's edit page beats the URL. Browser
   // Back from that page lands on a history entry that still carries the old ?angle, and
   // mirroring it would undo the edit — so move the URL to the stored angle instead (see
-  // boards/angleEdited). The mark is cleared only once the two agree, which keeps this
-  // effect safe to run twice.
+  // boards/angleEdited). Safe to run twice: it navigates only while the two differ.
   useEffect(() => {
     const stored = getAngle(board)
-    if (stored === angle) {
-      clearAngleEdited(board.layoutId)
-      return
-    }
+    if (stored === angle) return
     if (isAngleEdited(board.layoutId)) {
       void navigate({
         search: (prev) => ({ ...prev, angle: stored === defaultAngle(board) ? 0 : stored }),

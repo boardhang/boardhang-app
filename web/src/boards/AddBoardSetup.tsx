@@ -7,7 +7,7 @@
 
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useCanGoBack, useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import type { CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { holdSetContext } from '../board/holdSetMembership'
@@ -17,11 +17,12 @@ import { Button } from '@/components/ui/button'
 import { AddBoardHeader } from './AddBoardHeader'
 import { BoardSetupFields } from './BoardSetupFields'
 import { setupSummary } from './boardDisplay'
+import { useGoBack } from './useGoBack'
 
 export function AddBoardSetup({ board }: { board: CatalogBoardDef }) {
   const navigate = useNavigate()
-  const router = useRouter()
-  const canGoBack = useCanGoBack()
+  // Step 1 is the entry behind this one; a deep link has none, so go there directly.
+  const back = useGoBack('/boards/add')
   const bottomSlot = useBottomSlot()
   const { addBoard, setAngle, setActiveHoldSetsRaw, activateBoard } = useBoardStore()
   const [angle, setDraftAngle] = useState(() => getAngle(board))
@@ -45,11 +46,7 @@ export function AddBoardSetup({ board }: { board: CatalogBoardDef }) {
       <AddBoardHeader
         step={2}
         title="How is it set up?"
-        // Step 1 is the entry behind this one; a deep link has none, so go there directly.
-        onBack={() => {
-          if (canGoBack) router.history.back()
-          else void navigate({ to: '/boards/add', replace: true })
-        }}
+        onBack={back}
       />
       <BoardSetupFields
         board={board}

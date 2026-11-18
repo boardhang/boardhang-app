@@ -153,6 +153,11 @@ function buildRouteTree() {
     path: '/board/$layoutId/catalog',
     validateSearch: validateCatalogSearch,
     search: { middlewares: [stripSearchParams(CATALOG_SEARCH_DEFAULTS)] },
+    // A different board or angle is a different slab, so the screen starts fresh. Without
+    // this an in-place switch (a tile tapped in the boards drawer, browser Back between
+    // two boards' catalogs) renders once with the previous slab's loaded problems under
+    // the new board, and effects that wait for "loaded" act on the wrong data.
+    remountDeps: ({ params, search }) => ({ layoutId: params.layoutId, angle: search.angle }),
     beforeLoad: ({ params }) => {
       // Unknown board (not in the registry) → bounce to /boards, which lands on the
       // active board's catalog or the first-run page. A registry-valid

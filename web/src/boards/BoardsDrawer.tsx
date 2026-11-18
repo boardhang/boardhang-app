@@ -11,7 +11,7 @@ import { ChevronsUpDown, Pencil, Plus } from 'lucide-react'
 import { BOARDS, type CatalogBoardDef } from '../board/boards'
 import { getActiveHoldSetsRaw, getAngle, useBoardStore } from '../board/boardStore'
 import { holdSetContext } from '../board/holdSetMembership'
-import { catalogNavTarget } from '../catalog/catalogNav'
+import { catalogLayoutId, catalogNavTarget } from '../catalog/catalogNav'
 import {
   refreshBenchmarkNews,
   unseenCount,
@@ -24,7 +24,6 @@ import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '@/components/
 import { BoardTile } from './BoardTile'
 import { shortBoardName } from './boardDisplay'
 import { ScanQrRow } from './ScanQrRow'
-import { catalogLayoutId } from './useFollowActiveBoard'
 
 /** The header's board name. Renders nothing until a board is added. */
 export function BoardsDrawer() {

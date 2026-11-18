@@ -5,7 +5,14 @@
 // catalog history entry that still carries the old angle: the mirror would silently
 // undo the edit. So the edit page marks the board here, and the catalog, finding the
 // mark with a URL angle that differs from the stored one, moves its URL to the stored
-// angle instead. The mark is cleared once the two agree.
+// angle instead.
+//
+// The mark lasts for the page load and is never cleared: there can be several older
+// catalog entries for the board in history, and each one is corrected as Back reaches
+// it. That is safe because no link inside the app carries an angle other than the
+// stored one, so within a page load a differing `?angle` on a marked board can only be
+// a stale history entry. A pasted or shared link is a fresh page load with no marks,
+// so its `?angle` still wins.
 //
 // Module state on purpose: it is about this page load's history entries, so it must
 // not outlive them in localStorage.
@@ -17,14 +24,9 @@ export function markAngleEdited(layoutId: number): void {
   edited.add(layoutId)
 }
 
-/** Whether the board's stored angle was set on the edit page and not yet seen by its catalog. */
+/** Whether the board's stored angle was set on the edit page during this page load. */
 export function isAngleEdited(layoutId: number): boolean {
   return edited.has(layoutId)
-}
-
-/** The catalog shows the stored angle; the mark has done its job. */
-export function clearAngleEdited(layoutId: number): void {
-  edited.delete(layoutId)
 }
 
 /** Test-only: forget every mark. */

@@ -8,6 +8,7 @@ import {
   getActiveHoldSetsRaw,
   getAddedBoardIds,
   getAngle,
+  removeBoard,
   setAngle,
 } from './board/boardStore'
 import { BOARDS, boardByLayoutId } from './board/boards'
@@ -455,6 +456,49 @@ describe('the catalog and the active board stay in step', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/board/3/catalog'))
   })
 
+  it('removing the active board while on its catalog moves to the next board’s catalog', async () => {
+    addBoard(7)
+    addBoard(3)
+    activateBoard(3)
+    const { router, history } = renderWithRouter('/board/3/catalog')
+    await screen.findByText('Alpha')
+    const entries = history.length
+
+    act(() => removeBoard(3)) // as another tab would
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/7/catalog'))
+    expect(history.length).toBe(entries)
+    expect(boardName()).toHaveTextContent('Mini MoonBoard 2025')
+  })
+
+  it('switching boards while previewing an un-added board moves to the new active board', async () => {
+    addBoard(3)
+    addBoard(7) // 3 active
+    const { router } = renderWithRouter('/board/5/catalog')
+    await screen.findByText('Add this board')
+    expect(getActiveBoardId()).toBe(3) // showing a preview activates nothing
+
+    act(() => activateBoard(7))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/7/catalog'))
+    expect(getAddedBoardIds()).not.toContain(5)
+  })
+
+  it('starts the catalog screen fresh when the board changes in place', async () => {
+    addBoard(3)
+    addBoard(7) // 3 active
+    renderWithRouter('/board/3/catalog')
+    await screen.findByText('Alpha')
+    // Screen-local state: the open filter sheet.
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
+    await screen.findByRole('dialog')
+
+    act(() => activateBoard(7))
+
+    // A remount drops it; a reused screen would carry it (and the old slab) over.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
   it('does not navigate when the active board changes off the catalog', async () => {
     addBoard(3)
     addBoard(7)
@@ -575,6 +619,45 @@ describe('editing and removing a board', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/board/3/catalog'))
     await waitFor(() => expect(router.state.location.search).toMatchObject({ angle: 25 }))
     expect(getAngle(boardByLayoutId(3)!)).toBe(25)
+  })
+
+  it('an angle set on the edit page survives Back past several older catalog entries', async () => {
+    addBoard(3)
+    const { router } = renderWithRouter('/board/3/catalog')
+    await screen.findByText('Alpha')
+    // A second catalog entry for the same board, both at 40°.
+    await act(() => router.navigate({ to: '/settings' }))
+    await screen.findByRole('heading', { name: 'Settings' })
+    await act(() => router.navigate(catalogNavTarget(boardByLayoutId(3)!)))
+    await screen.findByText('Alpha')
+
+    await act(() => router.navigate({ to: '/boards/$layoutId/edit', params: { layoutId: '3' } }))
+    fireEvent.click(await screen.findByRole('button', { name: '25°' }))
+
+    act(() => router.history.back()) // newest catalog entry
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ angle: 25 }))
+    act(() => router.history.back()) // settings
+    await screen.findByRole('heading', { name: 'Settings' })
+    act(() => router.history.back()) // oldest catalog entry, still 40° in its URL
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/3/catalog'))
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ angle: 25 }))
+    expect(getAngle(boardByLayoutId(3)!)).toBe(25)
+  })
+
+  it('an edit back to the default angle survives Back onto an entry with the old angle', async () => {
+    addBoard(3)
+    setAngle(3, 25)
+    const { router } = renderWithRouter('/board/3/catalog?angle=25')
+    await screen.findByText('Alpha')
+
+    await act(() => router.navigate({ to: '/boards/$layoutId/edit', params: { layoutId: '3' } }))
+    fireEvent.click(await screen.findByRole('button', { name: '40°' }))
+
+    act(() => router.history.back())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/board/3/catalog'))
+    // 40° is the default, which the URL leaves out.
+    await waitFor(() => expect(router.state.location.search).not.toHaveProperty('angle'))
+    expect(getAngle(boardByLayoutId(3)!)).toBe(40)
   })
 
   it('a deep-linked ?angle still wins when the angle was not just edited', async () => {

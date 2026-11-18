@@ -167,8 +167,9 @@ manage boards. It renders nothing while no board is added.
   route shows an added board that is not active (browser Back onto an older entry, a shared
   problem link, "Add this board" on a preview), that board becomes active. So the header never
   names a different board than the catalog shows. Two cases are left alone: the preview of a
-  board that is not added (the header keeps naming the active board), and any route that is
-  not a catalog. When the routed board already is the active one nothing happens, which
+  board that is not added never becomes active by being shown (the header keeps naming the
+  active board), and nothing happens on a route that is not a catalog. The active board is one
+  value per browser profile, so a switch made in another tab also moves this tab's catalog. When the routed board already is the active one nothing happens, which
   leaves `?problem`, `?q` and the filters untouched.
 - **Adding** is two full pages. `/boards/add` ("Which board?") lists every registry board;
   one that is already added says "You have this one" and opens its edit page.
@@ -269,7 +270,11 @@ via a `stripSearchParams` middleware so URLs stay clean; `validateSearch` re-fil
   Browser Back from that page lands on a catalog entry that still carries the old `?angle`,
   and mirroring it would undo the edit, so the edit page marks the board in memory
   (`web/src/boards/angleEdited.ts`) and the catalog, finding the mark with a differing URL
-  angle, replaces its URL with the stored angle instead. The mark clears once the two agree.
+  angle, replaces its URL with the stored angle instead. The mark lasts for the page load, so
+  every older catalog entry for that board is corrected as Back reaches it; a pasted or shared
+  link is a fresh page load and its `?angle` still wins. The catalog route remounts when its
+  board or angle changes (`remountDeps`), so a switch never renders one slab's problems under
+  another.
 - **Problem drawer**: opening pushes history (Back closes it), paging/swiping `replace`s (URL tracks
   the current problem). A deep-linked problem resolves against the **full slab**, so it opens even
   when the active filters exclude it (prev/next then disable). The drawer's beta strip caps at 4

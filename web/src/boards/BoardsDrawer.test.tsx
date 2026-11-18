@@ -416,6 +416,25 @@ describe('BoardsDrawer — resume session', () => {
     expect(drawer().queryByText('That session has ended.')).toBeNull()
   })
 
+  it('does not resurrect the ended notice after a repopulate-then-empty refetch cycle', async () => {
+    h.liveSessions = [{ id: 'S9', name: 'Tuesday crew', boardLayoutId: 7 }]
+    h.resumeResult = { live: false }
+    addBoard(3)
+    await openDrawer()
+    fireEvent.click(await drawer().findByText('Tuesday crew'))
+    expect(await drawer().findByText('That session has ended.')).toBeInTheDocument()
+    // A refetch surfaces a new session: the stale notice is cleared, not just masked.
+    h.liveSessions = [{ id: 'S10', name: 'Wednesday crew', boardLayoutId: 7 }]
+    window.dispatchEvent(new Event('online'))
+    expect(await drawer().findByText('Wednesday crew')).toBeInTheDocument()
+    // That session then ends elsewhere and the list empties again: the notice must NOT
+    // reappear, because the user never tapped it.
+    h.liveSessions = []
+    window.dispatchEvent(new Event('online'))
+    await waitFor(() => expect(drawer().queryByText('Wednesday crew')).toBeNull())
+    expect(drawer().queryByText('That session has ended.')).toBeNull()
+  })
+
   it('refetches resumable sessions on foreground and reconnect while open', async () => {
     addBoard(3)
     await openDrawer()

@@ -92,7 +92,7 @@ export function JoinSession() {
         <p className="text-sm text-muted-foreground">
           {error ?? 'This session has expired or could not be found.'}
         </p>
-        <Button onClick={leave}>Go to my boards</Button>
+        <Button onClick={leave}>Back to the app</Button>
       </div>
     )
   }

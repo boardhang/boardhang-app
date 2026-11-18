@@ -237,7 +237,7 @@ and the join RPC unchanged.
   a QR code" row (`boards/ScanQrRow.tsx`, via `ScanToJoinButton`, shown in the boards drawer and
   on the first-run page) omits it and is join-only, since there's no board context to host in.
   The row is hidden while a session is active. In the drawer the scan dialog opens over the
-  open drawer, which closes when the scan navigates to the join route. Joining works signed-out (`JoinSession`
+  open drawer. Joining works signed-out (`JoinSession`
   owns sign-in); only hosting needs an account.
 - **`sessions/qrDecoder.ts`** is the dynamic-import boundary: the `@yudiel/react-qr-scanner`
   wrapper and the ~433 kB `zxing-wasm` reader load only when the dialog opens (the app's first
@@ -309,8 +309,9 @@ Backend: [`supabase/migrations/0016_session_resume.sql`](../supabase/migrations/
 - **`boards/BoardsDrawer.tsx`** — the **"Resume session"** list across ALL boards, at the top of
   the boards drawer, rendered only when signed-in with no active session. Consumes
   `useResumableSessions()` with no filter; the drawer's content mounts when it opens, so the
-  list is fetched per open. Ended notice is a card-style block above the list. The drawer
-  closes once the resumed session is active.
+  list is fetched per open. The ended notice is a card-style block shown in place of the
+  list, only when nothing is left to resume. When the drawer closes is in
+  [navigation-and-ui-flows.md](navigation-and-ui-flows.md#web-pwa-routing).
 - **`catalog/SessionBar.tsx`** — in-context Resume for **this board**: when idle on a catalog and a
   live session exists on the server for that same board (e.g. started on another device), stacks the
   Resume row(s) above the StartBar in the same slim chrome family. Consumes

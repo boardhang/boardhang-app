@@ -8,23 +8,16 @@
 //    catalog entry, a shared problem link, "Add this board" on a preview) → make that
 //    board active.
 //
-// Nothing happens off the catalog, on the preview of a board that is not added (the
-// header keeps naming the active board there), or when the routed board already is
-// the active one — which is what leaves `?problem`, `?q` and the filters alone when
-// the board on screen is the one being activated.
+// Nothing happens off the catalog, or when the routed board already is the active one —
+// which is what leaves `?problem`, `?q` and the filters alone when the board on screen is
+// the one being activated. The preview of a board that is not added never becomes active
+// by being shown (the header keeps naming the active board there); switching boards
+// while on a preview still moves to the new active board's catalog.
 
 import { useEffect, useRef } from 'react'
 import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
 import { useBoardStore } from '../board/boardStore'
-import { catalogNavTarget } from '../catalog/catalogNav'
-
-const CATALOG_PATH = /^\/board\/(\d+)\/catalog\/?$/
-
-/** The layout id of the catalog a pathname points at, or null for any other route. */
-export function catalogLayoutId(pathname: string): number | null {
-  const match = CATALOG_PATH.exec(pathname)
-  return match ? Number(match[1]) : null
-}
+import { catalogLayoutId, catalogNavTarget } from '../catalog/catalogNav'
 
 export function useFollowActiveBoard(): void {
   const router = useRouter()
