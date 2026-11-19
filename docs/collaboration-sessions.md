@@ -234,10 +234,9 @@ and the join RPC unchanged.
   camera is denied or the decoder can't load offline (scanning drops back to the chooser, which
   explains what failed). "Start your own session" sits below an "or" divider. `ScanToJoin`
   takes an optional `onStart`/`starting`/`canStart`: the catalog's `+` button passes it; the "Scan
-  a QR code" row (`boards/ScanQrRow.tsx`, via `ScanToJoinButton`, shown in the boards drawer and
-  on the first-run page) omits it and is join-only, since there's no board context to host in.
-  The row is hidden while a session is active. In the drawer the scan dialog opens over the
-  open drawer. Joining works signed-out (`JoinSession`
+  a QR code" row (`boards/ScanQrRow.tsx`, via `ScanToJoinButton`, shown on the first-run page)
+  omits it and is join-only, since there's no board context to host in.
+  The row is hidden while a session is active. Joining works signed-out (`JoinSession`
   owns sign-in); only hosting needs an account.
 - **`sessions/qrDecoder.ts`** is the dynamic-import boundary: the `@yudiel/react-qr-scanner`
   wrapper and the ~433 kB `zxing-wasm` reader load only when the dialog opens (the app's first

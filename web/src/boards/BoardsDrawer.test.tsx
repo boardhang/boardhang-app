@@ -31,21 +31,6 @@ vi.mock('../sessions/sessionsStore', () => ({
 vi.mock('../sessions/sessionNav', () => ({
   navigateToSessionBoard: (...a: unknown[]) => h.navigateToSessionBoard(...a),
 }))
-// The real button owns the scan dialog; a marker stands in for the open dialog.
-vi.mock('../sessions/ScanToJoin', async () => {
-  const { useState } = await import('react')
-  return {
-    ScanToJoinButton: (p: { children: React.ReactNode }) => {
-      const [open, setOpen] = useState(false)
-      return (
-        <>
-          <button onClick={() => setOpen(true)}>{p.children}</button>
-          {open && <div role="dialog" aria-label="Scan to join" />}
-        </>
-      )
-    },
-  }
-})
 vi.mock('../catalog/benchmarkNewsStore', () => ({
   refreshBenchmarkNews: (...a: unknown[]) => h.refreshBenchmarkNews(...a),
   unseenCount: (layoutId: number, angle: number) => h.unseen[`${layoutId}:${angle}`] ?? 0,
@@ -284,35 +269,11 @@ describe('BoardsDrawer — new-benchmark dots', () => {
   })
 })
 
-describe('BoardsDrawer — scan row', () => {
-  it('offers "Scan a QR code" with its explanation when no session is active', async () => {
-    addBoard(3)
-    await openDrawer()
-    expect(drawer().getByRole('button', { name: /Scan a QR code/ })).toHaveTextContent(
-      'Join a session a friend started',
-    )
-  })
-
-  it('still offers it when signed out', async () => {
-    h.status = 'signedOut'
-    addBoard(3)
-    await openDrawer()
-    expect(drawer().getByRole('button', { name: /Scan a QR code/ })).toBeInTheDocument()
-  })
-
-  it('hides it while a session is active', async () => {
-    h.activeSession = { id: 'S1', boardLayoutId: 3 }
+describe('BoardsDrawer — no join entry', () => {
+  it('has no "Scan a QR code" row', async () => {
     addBoard(3)
     await openDrawer()
     expect(drawer().queryByRole('button', { name: /Scan a QR code/ })).toBeNull()
-  })
-
-  it('opens the scan dialog with the drawer still mounted', async () => {
-    addBoard(3)
-    await openDrawer()
-    fireEvent.click(drawer().getByRole('button', { name: /Scan a QR code/ }))
-    expect(screen.getByRole('dialog', { name: 'Scan to join' })).toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: 'Boards' })).toBeInTheDocument()
   })
 })
 

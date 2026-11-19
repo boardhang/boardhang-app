@@ -3,7 +3,7 @@
 // without changing the URL.
 //
 // Top to bottom: the "That session has ended." notice, sessions to resume, the added
-// boards as picture tiles with an add tile, and the "Scan a QR code" row.
+// boards as picture tiles with an add tile.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
@@ -23,7 +23,6 @@ import { ResumableSessionRow } from '../sessions/ResumableSessionRow'
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { BoardTile } from './BoardTile'
 import { shortBoardName } from './boardDisplay'
-import { ScanQrRow } from './ScanQrRow'
 
 /** The header's board name. Renders nothing until a board is added. */
 export function BoardsDrawer() {
@@ -91,8 +90,6 @@ function BoardsDrawerBody({
 }) {
   const navigate = useNavigate()
   const { addedBoards, activeBoard, activateBoard } = useBoardStore()
-  // Joining a session is a no-session action, so the scan row hides once one is active.
-  // Signed-out users still see it: the join route owns sign-in.
   const { activeSession } = useSessions()
   // Cross-device resume: this user's live sessions across all boards. The hook owns the
   // fetch, the self-heal and the adopt-and-navigate; the drawer renders the section.
@@ -232,7 +229,6 @@ function BoardsDrawerBody({
           )}
         </div>
       </section>
-      {!activeSession && <ScanQrRow />}
     </div>
   )
 }

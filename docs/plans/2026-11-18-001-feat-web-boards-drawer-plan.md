@@ -44,7 +44,7 @@ This is phase 1 of the "gyms, shared boards and the live wall" effort (GitHub ma
 - R7. Each tile has a pencil button in its top-right corner that opens that board's edit page.
 - R8. An inactive tile shows a dot in its top-left corner when that board has unseen new benchmarks.
 - R9. The last tile is a dashed "Add a board" tile that opens the add flow. It is hidden when every board in the registry is already added.
-- R10. Below the tiles is a "Scan a QR code" row with the line "Join a session a friend started". It is hidden while a session is active.
+- R10. Removed by the owner on 2026-11-19: the drawer has no "Scan a QR code" row. Joining a session stays on the catalog's `+` button and on the first-run page (R15). Later mentions of the drawer's scan row in this plan no longer apply.
 - R11. Above the tiles the drawer shows a "Resume session" section when there are sessions to resume, and the notice "That session has ended." under the same conditions as today.
 
 **Bottom bar and landing**

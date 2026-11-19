@@ -152,8 +152,7 @@ manage boards. It renders nothing while no board is added.
   it never changes the URL and adds no history entry (browser Back leaves the screen behind
   it). Top to bottom: the "That session has ended." notice, "Resume session" rows, the added
   boards as picture tiles three per row (`BoardTile`: picture with the board's hold sets, short
-  name, angle), a dashed "Add a board" tile (hidden once every registry board is added), and a
-  "Scan a QR code" row (hidden while a session is active).
+  name, angle), and a dashed "Add a board" tile (hidden once every registry board is added).
 - **Tiles.** Tapping an inactive tile makes that board active and keeps the drawer open;
   tapping the active tile (outlined, "Browse") closes the drawer and opens its catalog. The
   pencil in a tile's corner opens that board's edit page. An inactive tile shows a dot when
