@@ -1,6 +1,6 @@
 // The persistent app shell — the root route's chrome, rendered for every route:
-// a pinned three-slot header (environment-banner slot / navbar with the account
-// menu / optional SessionPill slot), the routed <Outlet/>, and the bottom
+// a pinned three-slot header (environment-banner slot / navbar with the board name
+// and the account menu / optional SessionPill slot), the routed <Outlet/>, and the bottom
 // Navigation. The header is a frosted `position: sticky` bar at the top of the
 // scroll region, so content scrolls under it and blurs through; it lifts a shadow
 // once scrolled.
@@ -10,8 +10,9 @@
 // router-aware seam (plan §6.4): it owns
 //   • the debounced local-input → `?q` writer (replace, so typing doesn't stack history),
 //   • the URL→input resync (Back / deep-link / board-switch change `?q` under us),
-//   • which home tab the collapsed catalog nav shows (origin), and
-//   • dropping a pending `?q` write when the board changes.
+//   • which tab the collapsed catalog nav shows (origin),
+//   • dropping a pending `?q` write when the board changes, and
+//   • keeping the catalog and the active board in step (useFollowActiveBoard).
 // Navigation itself stays fully prop-driven.
 
 import { useEffect, useRef, useState, type ReactNode, type UIEvent } from 'react'
@@ -22,7 +23,9 @@ import { HeaderFilterSlotContext } from './headerFilterSlot'
 import { HeaderSessionSlotContext } from './headerSessionSlot'
 import { useBoardStore } from '../board/boardStore'
 import { catalogNavTarget } from '../catalog/catalogNav'
-import { Navigation, type NavView } from './Navigation'
+import { BoardsDrawer } from '../boards/BoardsDrawer'
+import { useFollowActiveBoard } from '../boards/useFollowActiveBoard'
+import { Navigation, type HomeTab, type NavTarget, type NavView } from './Navigation'
 import { Toaster } from '@/components/ui/sonner'
 import { BleBrowserBanner } from './BleBrowserBanner'
 import { InstallBanner } from './InstallBanner'
@@ -52,6 +55,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const urlQuery = onCatalog ? (search.q ?? '') : ''
 
   const onLists = matchRoute({ to: '/lists' }) !== false || matchRoute({ to: '/lists/$listId' }) !== false
+  // Every other route (the first-run page, add and edit, join, the logbook import)
+  // belongs to no tab.
   const view: NavView = onCatalog
     ? 'catalog'
     : matchRoute({ to: '/logbook' })
@@ -60,7 +65,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
         ? 'settings'
         : onLists
           ? 'lists'
-          : 'boards'
+          : 'none'
+
+  useFollowActiveBoard()
 
   // Rehydrate any active collaboration session once on app start (R11): restores the pill +
   // per-member chip selections from localStorage, retiring a locally-expired one (KTD-12).
@@ -96,10 +103,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [headerFilterSlot, setHeaderFilterSlot] = useState<HTMLDivElement | null>(null)
   const [headerSessionSlot, setHeaderSessionSlot] = useState<HTMLDivElement | null>(null)
 
-  // The home tab shown on the collapsed catalog nav — the last home screen visited.
-  const [origin, setOrigin] = useState<'boards' | 'logbook' | 'settings'>('boards')
+  // The tab shown on the collapsed catalog nav — the last of these screens visited.
+  const [origin, setOrigin] = useState<HomeTab>('logbook')
   useEffect(() => {
-    if (view === 'boards' || view === 'logbook' || view === 'settings') setOrigin(view)
+    if (view === 'logbook' || view === 'lists' || view === 'settings') setOrigin(view)
   }, [view])
 
   // ── Search field: local input + debounced write + resync ────────────────────
@@ -162,9 +169,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
     setScrolled((prev) => (prev === next ? prev : next))
   }
 
-  const go = (next: NavView) => {
-    if (next === 'boards') void navigate({ to: '/boards' })
-    else if (next === 'logbook') void navigate({ to: '/logbook' })
+  const go = (next: NavTarget) => {
+    if (next === 'logbook') void navigate({ to: '/logbook' })
     else if (next === 'settings') void navigate({ to: '/settings' })
     else if (next === 'lists') void navigate({ to: '/lists' })
     else {
@@ -200,9 +206,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <InstallBanner />
               <FullscreenTipBanner />
             </div>
-            {/* Navbar — avatar / login, right-aligned. */}
-            <div className="flex items-center justify-end gap-2">
-              <AccountMenu />
+            {/* Navbar — the active board's name (opens the boards drawer) on the left,
+                avatar / login on the right. The name truncates; the account button
+                never shrinks. With no board added the left side is empty. */}
+            <div className="flex items-center justify-between gap-2">
+              <BoardsDrawer />
+              <div className="ml-auto shrink-0">
+                <AccountMenu />
+              </div>
             </div>
             {/* Bottom slot — the collab SessionPill when a session is active, except
                 on the catalog where SessionBar owns that surface. Collapses when empty. */}

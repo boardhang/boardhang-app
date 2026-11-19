@@ -12,7 +12,7 @@
 //     dot along with the push (KTD1); `notified_at` is IGNORED by the client so banners survive
 //     the drain and don't require the sender to have run.
 //   • Fetch is best-effort and per-added-board: null supabase client, offline, or a
-//     server-side failure degrades to "no unseen" — the Boards page stays fully-offline usable.
+//     server-side failure degrades to "no unseen" — the boards drawer stays fully-offline usable.
 //   • Advancing the watermark to `now()` also drops the in-memory cache so the banner and dot
 //     clear in the same frame.
 
@@ -102,7 +102,7 @@ const cache = new Map<string, BenchmarkNewsSnapshot>()
 // Monotonic version bumped on every mutation. useSyncExternalStore's getSnapshot must return a
 // referentially-stable value between mutations — a number is; a freshly-built Map is not (a
 // naive Map return causes an infinite render loop). Callers that need derived data (like the
-// per-slab count map on the Boards page) subscribe on this and useMemo their own derivation.
+// per-slab dot map in the boards drawer) subscribe on this and useMemo their own derivation.
 let version = 0
 
 // Per-slab generation counter. `markSeen` (and any future mutation that should invalidate an
@@ -139,7 +139,7 @@ function snapshotFor(layoutId: number, angle: number): BenchmarkNewsSnapshot {
 
 /** Load the unseen events for `slabs` from the server and cache them. Best-effort: an offline
  *  client, an unconfigured build, or a network/PostgREST error resolves to an empty snapshot
- *  for each slab rather than throwing (Boards page must stay usable offline). */
+ *  for each slab rather than throwing (the boards drawer must stay usable offline). */
 export async function refreshBenchmarkNews(slabs: Array<{ layoutId: number; angle: number }>): Promise<void> {
   if (!supabase || slabs.length === 0) return
   // Snapshot the per-slab generation counter alongside the watermark BEFORE issuing the fetch —

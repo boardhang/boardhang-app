@@ -144,7 +144,7 @@ describe('LogbookScreen — no board added', () => {
     render(<LogbookScreen />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Add a board' }))
-    expect(navigate).toHaveBeenCalledWith({ to: '/boards' })
+    expect(navigate).toHaveBeenCalledWith({ to: '/boards/add' })
   })
 
   it('the guard beats cloud ascents on the default board', () => {

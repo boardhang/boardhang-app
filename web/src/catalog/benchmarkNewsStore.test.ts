@@ -160,7 +160,7 @@ describe('refreshBenchmarkNews query shape', () => {
     expect(filterNewsIds(7, 40, () => true)).toEqual(['fresh', 'older'])
   })
 
-  it('degrades to zero unseen on a server error (Boards page stays offline-usable)', async () => {
+  it('degrades to zero unseen on a server error (boards drawer stays offline-usable)', async () => {
     localStorage.setItem('benchmarkSeen_7_40', '2026-01-01T00:00:00.000Z')
     h.errorOnce = true
     await refreshBenchmarkNews([{ layoutId: 7, angle: 40 }])

@@ -12,6 +12,14 @@ import { CATALOG_SEARCH_DEFAULTS, filtersToSearch } from './catalogSearch'
 
 export { boardByLayoutId }
 
+const CATALOG_PATH = /^\/board\/(\d+)\/catalog\/?$/
+
+/** The layout id of the catalog a pathname points at, or null for any other route. */
+export function catalogLayoutId(pathname: string): number | null {
+  const match = CATALOG_PATH.exec(pathname)
+  return match ? Number(match[1]) : null
+}
+
 /** A `navigate`/`redirect` target for a board's catalog. Default params are left
  *  in — the route's strip middleware removes them, keeping the URL clean. */
 export function catalogNavTarget(board: CatalogBoardDef) {

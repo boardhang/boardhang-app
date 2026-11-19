@@ -4,7 +4,7 @@
 // The list_problems counts come from the offline cache (countListProblems); the store
 // is cached-first, so a warm cache paints instantly and only an explicit refresh pulls.
 //
-// Only lists for boards in My Boards are shown. Removing a board is a local, reversible
+// Only lists for boards the user has added are shown. Removing a board is a local, reversible
 // "I don't have this wall anymore" — it never deletes list rows (they stay in Supabase
 // and keep syncing), so the lists reappear intact when the board is added back.
 
@@ -221,11 +221,11 @@ export function ListsScreen() {
                 {hiddenCount === 1 ? 'Your list is on a board you removed' : 'Your lists are on boards you removed'}
               </h2>
               <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
-                Nothing was deleted — add the board back in My Boards and{' '}
+                Nothing was deleted — add the board back and{' '}
                 {hiddenCount === 1 ? 'it' : 'they'} will be here again.
               </p>
-              <Link to="/boards" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}>
-                My Boards
+              <Link to="/boards/add" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}>
+                Add a board
               </Link>
             </>
           ) : addedBoards.length === 0 ? (
@@ -234,8 +234,8 @@ export function ListsScreen() {
               <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
                 Lists belong to a board, so add the MoonBoard you have to start saving problems.
               </p>
-              <Link to="/boards" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}>
-                My Boards
+              <Link to="/boards/add" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}>
+                Add a board
               </Link>
             </>
           ) : (

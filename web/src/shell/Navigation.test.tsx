@@ -7,110 +7,81 @@ import { Navigation } from './Navigation'
 const noop = () => {}
 const baseProps = { query: '', onQueryChange: noop, onClear: noop }
 
+const tab = (name: string) => screen.getByRole('button', { name })
+
 describe('Navigation', () => {
-  it('shows the always-present search field on the catalog, with a Boards button', () => {
-    render(<Navigation {...baseProps} view="catalog" onNavigate={noop} />)
-    expect(screen.getByRole('textbox', { name: 'Search problems' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Boards' })).toBeInTheDocument()
+  it('off the catalog shows Logbook, Lists, Settings and Search, and no Boards tab', () => {
+    render(<Navigation {...baseProps} view="logbook" onNavigate={noop} />)
+    expect(tab('Logbook')).toBeInTheDocument()
+    expect(tab('Lists')).toBeInTheDocument()
+    expect(tab('Settings')).toBeInTheDocument()
+    expect(tab('Search')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Boards' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Search problems' })).toBeNull()
   })
 
-  it('shows Search + Boards on the boards screen, marking Boards current', () => {
-    render(<Navigation {...baseProps} view="boards" onNavigate={noop} />)
-    expect(screen.getByRole('button', { name: 'Boards' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: 'Search problems' })).toBeNull()
+  it('on the catalog shows only Logbook beside the search field when no origin is given', () => {
+    render(<Navigation {...baseProps} view="catalog" onNavigate={noop} />)
+    expect(screen.getByRole('textbox', { name: 'Search problems' })).toBeInTheDocument()
+    expect(tab('Logbook')).toBeInTheDocument()
+    for (const name of ['Lists', 'Settings', 'Boards', 'Search']) {
+      expect(screen.queryByRole('button', { name })).toBeNull()
+    }
+  })
+
+  it.each([
+    ['Logbook', 'logbook'],
+    ['Lists', 'lists'],
+    ['Settings', 'settings'],
+  ] as const)('on the catalog shows only the %s tab when it is the origin', (name, origin) => {
+    const onNavigate = vi.fn()
+    render(<Navigation {...baseProps} view="catalog" origin={origin} onNavigate={onNavigate} />)
+    for (const other of ['Logbook', 'Lists', 'Settings']) {
+      if (other !== name) expect(screen.queryByRole('button', { name: other })).toBeNull()
+    }
+    expect(tab(name)).not.toHaveAttribute('aria-current')
+    fireEvent.click(tab(name))
+    expect(onNavigate).toHaveBeenCalledWith(origin)
+  })
+
+  it('highlights no tab on a screen that belongs to none', () => {
+    render(<Navigation {...baseProps} view="none" onNavigate={noop} />)
+    for (const name of ['Logbook', 'Lists', 'Settings', 'Search']) {
+      expect(tab(name)).not.toHaveAttribute('aria-current')
+    }
   })
 
   it('navigates to the catalog from the Search button', () => {
     const onNavigate = vi.fn()
-    render(<Navigation {...baseProps} view="boards" onNavigate={onNavigate} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+    render(<Navigation {...baseProps} view="none" onNavigate={onNavigate} />)
+    fireEvent.click(tab('Search'))
     expect(onNavigate).toHaveBeenCalledWith('catalog')
   })
 
-  it('navigates to boards from the catalog', () => {
-    const onNavigate = vi.fn()
-    render(<Navigation {...baseProps} view="catalog" onNavigate={onNavigate} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Boards' }))
-    expect(onNavigate).toHaveBeenCalledWith('boards')
-  })
-
   it('disables Search when the catalog is unreachable', () => {
-    render(<Navigation {...baseProps} view="boards" onNavigate={noop} disabled={['catalog']} />)
-    expect(screen.getByRole('button', { name: 'Search' })).toBeDisabled()
+    render(<Navigation {...baseProps} view="none" onNavigate={noop} disabled={['catalog']} />)
+    expect(tab('Search')).toBeDisabled()
   })
 
-  it('shows both home tabs on a home screen and navigates to Logbook', () => {
+  it.each([
+    ['Logbook', 'logbook'],
+    ['Lists', 'lists'],
+    ['Settings', 'settings'],
+  ] as const)('navigates to %s from a screen off the catalog', (name, target) => {
     const onNavigate = vi.fn()
-    render(<Navigation {...baseProps} view="boards" onNavigate={onNavigate} />)
-    expect(screen.getByRole('button', { name: 'Boards' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Logbook' }))
-    expect(onNavigate).toHaveBeenCalledWith('logbook')
+    render(<Navigation {...baseProps} view="none" onNavigate={onNavigate} />)
+    fireEvent.click(tab(name))
+    expect(onNavigate).toHaveBeenCalledWith(target)
   })
 
-  it('marks Logbook current when on the logbook view', () => {
-    render(<Navigation {...baseProps} view="logbook" onNavigate={noop} />)
-    expect(screen.getByRole('button', { name: 'Logbook' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: 'Search problems' })).toBeNull()
-  })
-
-  it('on the catalog shows ONLY the origin tab beside the search field', () => {
-    render(<Navigation {...baseProps} view="catalog" origin="logbook" onNavigate={noop} />)
-    expect(screen.getByRole('textbox', { name: 'Search problems' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Logbook' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Boards' })).toBeNull()
-  })
-
-  it('on the catalog with a Boards origin, hides the Logbook tab', () => {
-    render(<Navigation {...baseProps} view="catalog" origin="boards" onNavigate={noop} />)
-    expect(screen.getByRole('button', { name: 'Boards' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Logbook' })).toBeNull()
-  })
-
-  it('shows the Settings tab on a home screen and navigates to it', () => {
-    const onNavigate = vi.fn()
-    render(<Navigation {...baseProps} view="boards" onNavigate={onNavigate} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(onNavigate).toHaveBeenCalledWith('settings')
-  })
-
-  it('marks Settings current when on the settings view, keeping Search rightmost', () => {
-    render(<Navigation {...baseProps} view="settings" onNavigate={noop} />)
-    expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    )
-    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument()
-  })
-
-  it('on the catalog with a Settings origin, shows only the Settings tab beside search', () => {
-    const onNavigate = vi.fn()
-    render(<Navigation {...baseProps} view="catalog" origin="settings" onNavigate={onNavigate} />)
-    expect(screen.getByRole('textbox', { name: 'Search problems' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Boards' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Logbook' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(onNavigate).toHaveBeenCalledWith('settings')
-  })
-
-  it('shows the Lists tab on a home screen and navigates to it', () => {
-    const onNavigate = vi.fn()
-    render(<Navigation {...baseProps} view="boards" onNavigate={onNavigate} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Lists' }))
-    expect(onNavigate).toHaveBeenCalledWith('lists')
-  })
-
-  it('marks Lists current on the lists view', () => {
-    render(<Navigation {...baseProps} view="lists" onNavigate={noop} />)
-    expect(screen.getByRole('button', { name: 'Lists' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument()
-  })
-
-  it('is home-only: never shows the Lists tab on the collapsed catalog bar', () => {
-    render(<Navigation {...baseProps} view="catalog" origin="logbook" onNavigate={noop} />)
-    expect(screen.queryByRole('button', { name: 'Lists' })).toBeNull()
+  it.each([
+    ['Logbook', 'logbook'],
+    ['Lists', 'lists'],
+    ['Settings', 'settings'],
+  ] as const)('marks %s current on its own view, keeping Search', (name, view) => {
+    render(<Navigation {...baseProps} view={view} onNavigate={noop} />)
+    expect(tab(name)).toHaveAttribute('aria-current', 'page')
+    expect(tab('Search')).toBeInTheDocument()
   })
 
   it('reports typing through onQueryChange and clearing through onClear', () => {

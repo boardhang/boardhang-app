@@ -74,7 +74,7 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
   `SESSION_COLUMNS` never selects `invite_token`. Identity-switch clear is wired from
   `AuthProvider.onAuthStateChange` (a shared device never inherits another user's session).
 - **Removing the board drops you out of its session.** A session is tied to one physical wall,
-  so removing a board in My Boards also calls `exitSessionOnBoard(layoutId)` (`sessionsStore.ts`),
+  so removing a board on its edit page also calls `exitSessionOnBoard(layoutId)` (`sessionsStore.ts`),
   which reuses the two actions SessionBar offers: an **owner who is alone** ends the session
   (`endSession`), everyone else — a member, or an owner with company — only **leaves**
   (`leaveSession`), and the session lives on for the others. A session on any other board is
@@ -91,7 +91,9 @@ keeps it alive for everyone; the 24h backstop only fires once *all* members go q
     untouched on failure, so an unchanged reference means "unconfirmed" and falls through to the
     recoverable leave.
   - **The board goes first.** Removal is local state and must not wait on a network call that has
-    no timeout, so `MyBoards.handleRemove` removes the board and then runs the exit for its toast.
+    no timeout, so `handleRemove` in `boards/EditBoard.tsx` removes the board, starts the exit for
+    its toast, and leaves the page without waiting. The confirm sentence on that page says that
+    removing the board takes the user out of the session when the active session is on it.
     A failed exit retires the session on this device (`endActiveSessionLocally`) and reports which
     exit failed via `SessionExitError.intent` — a failed *end* leaves a session that is still live
     and still joinable through its invite token, which the user must be told; a failed *leave*
@@ -231,9 +233,10 @@ and the join RPC unchanged.
   scanning — always visible on the chooser — which also makes it the natural fallback when the
   camera is denied or the decoder can't load offline (scanning drops back to the chooser, which
   explains what failed). "Start your own session" sits below an "or" divider. `ScanToJoin`
-  takes an optional `onStart`/`starting`/`canStart`: the catalog's `+` button passes it; the boards
-  overview (`shell/MyBoards.tsx`, via `ScanToJoinButton`, a "Join a session" button) omits it and
-  is join-only, since there's no board context to host in. Joining works signed-out (`JoinSession`
+  takes an optional `onStart`/`starting`/`canStart`: the catalog's `+` button passes it; the "Scan
+  a QR code" row (`boards/ScanQrRow.tsx`, via `ScanToJoinButton`, shown on the first-run page)
+  omits it and is join-only, since there's no board context to host in.
+  The row is hidden while a session is active. Joining works signed-out (`JoinSession`
   owns sign-in); only hosting needs an account.
 - **`sessions/qrDecoder.ts`** is the dynamic-import boundary: the `@yudiel/react-qr-scanner`
   wrapper and the ~433 kB `zxing-wasm` reader load only when the dialog opens (the app's first
@@ -301,22 +304,26 @@ Backend: [`supabase/migrations/0016_session_resume.sql`](../supabase/migrations/
   tap only — the hook never auto-adopts (R1).
 - **`sessions/ResumableSessionRow.tsx`** — the presentational one-row button (session name + board
   name + "Resume"/"Resuming…" pill). Accepts a `className` override so callers can skin it for their
-  chrome (card in MyBoards, slim in-bar in SessionBar).
-- **`shell/MyBoards.tsx`** — the **"Resume session"** list across ALL boards, rendered only when
-  signed-in with no active session (the idle surface, above "Join a session"). Consumes
-  `useResumableSessions()` with no filter. Ended notice is a card-style block.
+  chrome (card in the boards drawer, slim in-bar in SessionBar).
+- **`boards/BoardsDrawer.tsx`** — the **"Resume session"** list across ALL boards, at the top of
+  the boards drawer, rendered only when signed-in with no active session. Consumes
+  `useResumableSessions()` with no filter; the drawer's content mounts when it opens, so the
+  list is fetched per open. The ended notice is a card-style block shown in place of the
+  list, only when nothing is left to resume. When the drawer closes is in
+  [navigation-and-ui-flows.md](navigation-and-ui-flows.md#web-pwa-routing).
 - **`catalog/SessionBar.tsx`** — in-context Resume for **this board**: when idle on a catalog and a
   live session exists on the server for that same board (e.g. started on another device), stacks the
   Resume row(s) above the StartBar in the same slim chrome family. Consumes
   `useResumableSessions({ boardLayoutId: board.layoutId })`. Ended notice is a slim in-bar row.
   StartBar (start/join) stays visible below, so a stale/wrong-crew Resume never blocks starting fresh.
 - **`sessions/sessionNav.ts`** — `navigateToSessionBoard(navigate, session)`, the single canonical
-  "session → board catalog" landing shared by `JoinSession` (post-join), `MyBoards` (post-resume),
-  and `SessionBar` (post-in-context-resume) so all three can't drift. Resolves the board from the
+  "session → board catalog" landing shared by `JoinSession` (post-join), the boards drawer
+  (post-resume), and `SessionBar` (post-in-context-resume) so all three can't drift. Resolves the board from the
   static catalog by layout id (no board-add step needed), **activates the board** (promotes it to
   the MRU + persisted `activeBoard` pointer so the device's active board and the URL-scoped catalog
-  don't silently disagree), and falls back to `/boards` for a board this build doesn't ship — never
-  route a session tap through the fallback-less board-browse `onActivated`.
+  don't silently disagree), and falls back to `/boards` for a board this build doesn't ship
+  (which lands on the active board's catalog, or the first-run page) — never route a session
+  tap through a handler with no fallback.
 
 Non-goals (v1): realtime "you have a new session" push, auto-resume on sign-in (explicit tap only),
 iOS, and rejoining an *ended* session (ended = gone).

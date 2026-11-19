@@ -55,7 +55,7 @@ describe('JoinSession', () => {
     render(<JoinSession />)
     fireEvent.click(screen.getByRole('button', { name: 'Join session' }))
     expect(await screen.findByText('Session unavailable')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /go to my boards/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the app' }))
     expect(h.navigate).toHaveBeenCalledWith({ to: '/boards' })
   })
 

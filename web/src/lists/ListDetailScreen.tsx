@@ -168,7 +168,7 @@ export function ListDetailScreen() {
     )
   }
 
-  // ── Board removed from My Boards ────────────────────────────────────────────
+  // ── Board removed from the added boards ────────────────────────────────────────────
   // Nothing is deleted when a board is removed, so this is an invitation, not an error:
   // one tap re-adds the board and the list renders in place (the store is reactive).
   if (!boardAdded) {
@@ -193,8 +193,8 @@ export function ListDetailScreen() {
           ) : (
             // A layout id this build doesn't ship (a newer app made the list). No board to add,
             // so send them somewhere they can act instead of dead-ending on the card.
-            <Link to="/boards" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}>
-              My Boards
+            <Link to="/boards/add" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}>
+              Add a board
             </Link>
           )}
         </div>

@@ -1,4 +1,4 @@
-// Cross-device resume: the fetch/gating/adopt shell shared by MyBoards (all boards) and
+// Cross-device resume: the fetch/gating/adopt shell shared by the boards drawer (all boards) and
 // SessionBar (this board only). Owns the on-demand list of live sessions the signed-in user
 // is a member of, the visibilitychange/online self-heal, the dead-on-arrival branch, and the
 // post-resume navigation via the shared navigateToSessionBoard helper.
