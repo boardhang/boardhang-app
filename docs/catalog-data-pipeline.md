@@ -248,8 +248,9 @@ a merge dry run, and deploy with the import as usual.
 - **An existing row the official app lists as a benchmark** (boardsesh has it unflagged, often at
   another grade): edit the row's fields in the snapshot and pin the same fields, so the import
   updates it now and the feed cannot undo it.
-- **Grade:** where the official app shows a user grade and a setter grade that differ, a
-  hand-entered row takes the **user** grade (`grade`; the snapshot has no slot for the other).
+- **Grade:** where the official app shows a user grade and a setter grade that differ, the **user**
+  grade wins (`grade`; the snapshot has no slot for the other) — on hand-entered rows, and as a pin
+  on a feed row found carrying the setter grade (CAULK BLOCK, 2024 at 40°: 7A → 6C+).
 
 Entered this way on 2026-11-15, all MoonBoard 2024: at 40° ADVECTIVE TERM, REDEYE DISASTER and SPIT
 AND SPITE (hand ids), SICK AND SOUND and 28 DEGREES (boardsesh's uuid; flag, grade and counts

@@ -1075,6 +1075,15 @@
       "field": "stars",
       "value": 4,
       "note": "DUQUE DE AHUMADA: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "4cf60764-f953-50ae-8a2d-84d15e633e10",
+      "field": "grade",
+      "value": "6C+",
+      "note": "CAULK BLOCK: user grade in the official app; boardsesh carries the setter grade 7A, and the user grade wins (official MoonBoard app, 2026-11-27)"
     }
   ]
 }
