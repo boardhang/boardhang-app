@@ -481,6 +481,276 @@
       "field": "stars",
       "value": 5,
       "note": "ROOT BEER TIME: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "e94e3666-334d-5929-b66a-bd6d3086daed",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "COLD THERAPY: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "e94e3666-334d-5929-b66a-bd6d3086daed",
+      "field": "grade",
+      "value": "6B+",
+      "note": "COLD THERAPY: benchmark grade; boardsesh says 6A+ (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "730c21a3-1e27-584b-96f5-a4d79e98b8dd",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "THE KING IN YELLOW: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "730c21a3-1e27-584b-96f5-a4d79e98b8dd",
+      "field": "grade",
+      "value": "6B",
+      "note": "THE KING IN YELLOW: benchmark grade (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "68d9c308-4bff-55cc-a36f-00fcfeef9723",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "VOLUME DAY: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "68d9c308-4bff-55cc-a36f-00fcfeef9723",
+      "field": "grade",
+      "value": "6B",
+      "note": "VOLUME DAY: benchmark grade; boardsesh says 6A+ (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "be6e67a6-f189-5f54-a764-0ae917abb79d",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "THE FIRST 1000: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "be6e67a6-f189-5f54-a764-0ae917abb79d",
+      "field": "grade",
+      "value": "6B",
+      "note": "THE FIRST 1000: benchmark grade; boardsesh says 6A+ (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "66648923-0a38-5493-a519-b431f6c9c7a3",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "HOATA BUA: a benchmark in the official app; boardsesh has it unflagged and below the repeat floor (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "66648923-0a38-5493-a519-b431f6c9c7a3",
+      "field": "grade",
+      "value": "6B",
+      "note": "HOATA BUA: benchmark grade; boardsesh says 6A+ (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "f5fcc4af-aa43-568a-9867-8362b5b733e7",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "OVERNIGHT LOW: hand-added benchmark boardsesh lacks; holds the flag if its copy arrives unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "f5fcc4af-aa43-568a-9867-8362b5b733e7",
+      "field": "grade",
+      "value": "6B+",
+      "note": "OVERNIGHT LOW: hand-added benchmark grade; holds it if boardsesh's copy arrives with another (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "71a7e218-cfdd-50db-862f-3437c3211427",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "WEAVER: a benchmark in the official app; boardsesh has it unflagged and below the repeat floor (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "71a7e218-cfdd-50db-862f-3437c3211427",
+      "field": "grade",
+      "value": "6B+",
+      "note": "WEAVER: benchmark grade (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "6d06249a-3d07-5c26-968b-4dc012f34a02",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "MOTHER'S MILK: a benchmark in the official app; boardsesh has it unflagged and below the repeat floor (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "6d06249a-3d07-5c26-968b-4dc012f34a02",
+      "field": "grade",
+      "value": "6B+",
+      "note": "MOTHER'S MILK: benchmark grade; boardsesh says 6B (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "67b26667-d36a-5d23-bcf7-06c88619066a",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "PASCAL: hand-added benchmark boardsesh lacks; holds the flag if its copy arrives unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "67b26667-d36a-5d23-bcf7-06c88619066a",
+      "field": "grade",
+      "value": "6B+",
+      "note": "PASCAL: hand-added benchmark grade; holds it if boardsesh's copy arrives with another (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "71822dfe-59c2-54cb-97b2-e62e3a9357e1",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "BABY'S FIRST HANDJAM: a benchmark in the official app; boardsesh has it unflagged and below the repeat floor (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "71822dfe-59c2-54cb-97b2-e62e3a9357e1",
+      "field": "grade",
+      "value": "6B+",
+      "note": "BABY'S FIRST HANDJAM: benchmark grade (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "ba223477-1cba-5ae7-897b-d71b72be95b9",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "FIRE DRILL: a benchmark in the official app; boardsesh has it unflagged and below the repeat floor (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "ba223477-1cba-5ae7-897b-d71b72be95b9",
+      "field": "grade",
+      "value": "6B+",
+      "note": "FIRE DRILL: benchmark grade (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "af315a33-2f6e-5988-b173-3363b386f79a",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "FINITO: hand-added benchmark boardsesh lacks; holds the flag if its copy arrives unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "af315a33-2f6e-5988-b173-3363b386f79a",
+      "field": "grade",
+      "value": "6B+",
+      "note": "FINITO: hand-added benchmark grade; holds it if boardsesh's copy arrives with another (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "c9045c73-cb58-5175-9306-79c9ac3147ab",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "KING 👑 MARRA: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "c9045c73-cb58-5175-9306-79c9ac3147ab",
+      "field": "grade",
+      "value": "6B+",
+      "note": "KING 👑 MARRA: benchmark grade; boardsesh says 6C (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8298515c-1a53-54ac-815d-6811e3bb609a",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "MATCH ME IF YOU CAN: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8298515c-1a53-54ac-815d-6811e3bb609a",
+      "field": "grade",
+      "value": "6B+",
+      "note": "MATCH ME IF YOU CAN: benchmark grade; boardsesh says 6B (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "62e235ef-d2ea-5636-ad54-87aa3820e5b2",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "LUCKY NUMBER SLEVIN: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "62e235ef-d2ea-5636-ad54-87aa3820e5b2",
+      "field": "grade",
+      "value": "6B+",
+      "note": "LUCKY NUMBER SLEVIN: benchmark grade (official MoonBoard app, 2026-11-27)"
     }
   ]
 }
