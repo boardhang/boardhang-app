@@ -218,8 +218,8 @@
       "angle": 25,
       "id": "3601c451-825c-5b53-b35d-4e767e3fe01f",
       "field": "repeats",
-      "value": 1134,
-      "note": "DUQUE DE AHUMADA: our row counted 105; drop this pin once boardsesh's count is real (official MoonBoard app, 2026-11-15)"
+      "value": 1391,
+      "note": "DUQUE DE AHUMADA: our row counted 105; drop this pin once boardsesh's count is real (official MoonBoard app, 2026-11-27)"
     },
     {
       "action": "pin",
@@ -1021,6 +1021,24 @@
       "field": "stars",
       "value": 5,
       "note": "LUCKY NUMBER SLEVIN: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "bf270ebb-87c4-5af8-a1b4-00e33b2ac5d7",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "FUNYUN: hand-added benchmark boardsesh lacks; holds the flag if its copy arrives unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "bf270ebb-87c4-5af8-a1b4-00e33b2ac5d7",
+      "field": "grade",
+      "value": "6C+",
+      "note": "FUNYUN: hand-added benchmark grade; holds it if boardsesh's copy arrives with another (official MoonBoard app, 2026-11-27)"
     }
   ]
 }
