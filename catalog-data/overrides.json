@@ -1039,6 +1039,42 @@
       "field": "grade",
       "value": "6C+",
       "note": "FUNYUN: hand-added benchmark grade; holds it if boardsesh's copy arrives with another (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "9d538508-daf2-5c9a-9ce5-e1391bcef09e",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "DUQUE DE AHUMADA: a 6C+ benchmark in the official app's 40° list (set at 25°); boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "9d538508-daf2-5c9a-9ce5-e1391bcef09e",
+      "field": "grade",
+      "value": "6C+",
+      "note": "DUQUE DE AHUMADA: benchmark grade; boardsesh has none at 40° (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "9d538508-daf2-5c9a-9ce5-e1391bcef09e",
+      "field": "repeats",
+      "value": 1391,
+      "note": "DUQUE DE AHUMADA: boardsesh counts 1 at 40°; drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 3,
+      "angle": 40,
+      "id": "9d538508-daf2-5c9a-9ce5-e1391bcef09e",
+      "field": "stars",
+      "value": 4,
+      "note": "DUQUE DE AHUMADA: held with the repeat count (official MoonBoard app, 2026-11-27)"
     }
   ]
 }

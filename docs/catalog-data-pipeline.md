@@ -262,7 +262,8 @@ TIME and HOT DOG WATER (existing rows, all 6A+); COLD THERAPY, THE KING IN YELLO
 FIRST 1000, KING 👑 MARRA, MATCH ME IF YOU CAN and LUCKY NUMBER SLEVIN (existing rows); HOATA BUA,
 WEAVER, MOTHER'S MILK, BABY'S FIRST HANDJAM and FIRE DRILL (boardsesh's uuid); OVERNIGHT LOW, PASCAL
 and FINITO (hand ids). Flag, grade and counts pinned on all nineteen.
-Also that day, MoonBoard 2024: FUNYUN at 40° (hand id) and a refreshed count for DUQUE DE AHUMADA at 25°.
+Also that day, MoonBoard 2024: FUNYUN at 40° (hand id); DUQUE DE AHUMADA added at 40° as the 25° row's
+second-angle twin (derived id, boardsesh's uuid; flag, grade and counts pinned) and its 25° count refreshed.
 
 ## Runbook: refreshing a slab
 
