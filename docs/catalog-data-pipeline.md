@@ -257,6 +257,9 @@ pinned) and BILLY MAVERICK, ME TIME, SHORT STACK and EARTH BENDER (existing rows
 counts pinned, BILLY MAVERICK's setter too); at 25° DUQUE DE AHUMADA (existing row; flag, grade and
 counts pinned).
 
+Entered this way on 2026-11-27, Mini MoonBoard 2025 at 40°: FAIRER WINDS, OZARK TRAIL, ROOT BEER
+TIME and HOT DOG WATER (existing rows, all 6A+; flag, grade and counts pinned).
+
 ## Runbook: refreshing a slab
 
 Everything up to the apply is offline from prod's point of view; the apply is the one write.

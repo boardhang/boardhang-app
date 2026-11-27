@@ -337,6 +337,150 @@
       "field": "stars",
       "value": 5,
       "note": "EARTH BENDER: held with the repeat count (official MoonBoard app, 2026-11-15)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "711ebbe3-8abb-5598-8f53-c4fb4009b754",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "OZARK TRAIL: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "711ebbe3-8abb-5598-8f53-c4fb4009b754",
+      "field": "grade",
+      "value": "6A+",
+      "note": "OZARK TRAIL: benchmark grade (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "711ebbe3-8abb-5598-8f53-c4fb4009b754",
+      "field": "repeats",
+      "value": 249,
+      "note": "OZARK TRAIL: boardsesh counts fewer (22 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "711ebbe3-8abb-5598-8f53-c4fb4009b754",
+      "field": "stars",
+      "value": 5,
+      "note": "OZARK TRAIL: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8dad358e-cb81-5f27-92e0-3aa9471fc574",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "HOT DOG WATER: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8dad358e-cb81-5f27-92e0-3aa9471fc574",
+      "field": "grade",
+      "value": "6A+",
+      "note": "HOT DOG WATER: benchmark grade (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8dad358e-cb81-5f27-92e0-3aa9471fc574",
+      "field": "repeats",
+      "value": 232,
+      "note": "HOT DOG WATER: boardsesh counts fewer (28 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8dad358e-cb81-5f27-92e0-3aa9471fc574",
+      "field": "stars",
+      "value": 5,
+      "note": "HOT DOG WATER: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8e9b7b7b-e47f-5ee4-96d4-8762060bf3eb",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "FAIRER WINDS: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8e9b7b7b-e47f-5ee4-96d4-8762060bf3eb",
+      "field": "grade",
+      "value": "6A+",
+      "note": "FAIRER WINDS: benchmark grade (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8e9b7b7b-e47f-5ee4-96d4-8762060bf3eb",
+      "field": "repeats",
+      "value": 285,
+      "note": "FAIRER WINDS: boardsesh counts fewer (55 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8e9b7b7b-e47f-5ee4-96d4-8762060bf3eb",
+      "field": "stars",
+      "value": 5,
+      "note": "FAIRER WINDS: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "cf755967-4c2a-57f6-b33c-06cb35ba35f3",
+      "field": "isBenchmark",
+      "value": true,
+      "note": "ROOT BEER TIME: a benchmark in the official app; boardsesh has it unflagged (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "cf755967-4c2a-57f6-b33c-06cb35ba35f3",
+      "field": "grade",
+      "value": "6A+",
+      "note": "ROOT BEER TIME: benchmark grade (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "cf755967-4c2a-57f6-b33c-06cb35ba35f3",
+      "field": "repeats",
+      "value": 235,
+      "note": "ROOT BEER TIME: boardsesh counts fewer (21 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "cf755967-4c2a-57f6-b33c-06cb35ba35f3",
+      "field": "stars",
+      "value": 5,
+      "note": "ROOT BEER TIME: held with the repeat count (official MoonBoard app, 2026-11-27)"
     }
   ]
 }
