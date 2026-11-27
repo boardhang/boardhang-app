@@ -258,11 +258,10 @@ counts pinned, BILLY MAVERICK's setter too); at 25° DUQUE DE AHUMADA (existing 
 counts pinned).
 
 Entered this way on 2026-11-27, Mini MoonBoard 2025 at 40°: FAIRER WINDS, OZARK TRAIL, ROOT BEER
-TIME and HOT DOG WATER (existing rows, all 6A+; flag, grade and counts pinned). The same day, from
-detail screenshots that show no repeat count (flag and grade pinned, counts left to the feed):
-COLD THERAPY, THE KING IN YELLOW, VOLUME DAY, THE FIRST 1000, KING 👑 MARRA, MATCH ME IF YOU CAN and
-LUCKY NUMBER SLEVIN (existing rows); HOATA BUA, WEAVER, MOTHER'S MILK, BABY'S FIRST HANDJAM and FIRE
-DRILL (boardsesh's uuid); OVERNIGHT LOW, PASCAL and FINITO (hand ids, repeats 0 until known).
+TIME and HOT DOG WATER (existing rows, all 6A+); COLD THERAPY, THE KING IN YELLOW, VOLUME DAY, THE
+FIRST 1000, KING 👑 MARRA, MATCH ME IF YOU CAN and LUCKY NUMBER SLEVIN (existing rows); HOATA BUA,
+WEAVER, MOTHER'S MILK, BABY'S FIRST HANDJAM and FIRE DRILL (boardsesh's uuid); OVERNIGHT LOW, PASCAL
+and FINITO (hand ids). Flag, grade and counts pinned on all nineteen.
 
 ## Runbook: refreshing a slab
 

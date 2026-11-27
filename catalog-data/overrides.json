@@ -751,6 +751,276 @@
       "field": "grade",
       "value": "6B+",
       "note": "LUCKY NUMBER SLEVIN: benchmark grade (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "e94e3666-334d-5929-b66a-bd6d3086daed",
+      "field": "repeats",
+      "value": 102,
+      "note": "COLD THERAPY: boardsesh counts fewer (14 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "e94e3666-334d-5929-b66a-bd6d3086daed",
+      "field": "stars",
+      "value": 5,
+      "note": "COLD THERAPY: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "730c21a3-1e27-584b-96f5-a4d79e98b8dd",
+      "field": "repeats",
+      "value": 153,
+      "note": "THE KING IN YELLOW: boardsesh counts fewer (37 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "730c21a3-1e27-584b-96f5-a4d79e98b8dd",
+      "field": "stars",
+      "value": 5,
+      "note": "THE KING IN YELLOW: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "68d9c308-4bff-55cc-a36f-00fcfeef9723",
+      "field": "repeats",
+      "value": 157,
+      "note": "VOLUME DAY: boardsesh counts fewer (18 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "68d9c308-4bff-55cc-a36f-00fcfeef9723",
+      "field": "stars",
+      "value": 5,
+      "note": "VOLUME DAY: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "be6e67a6-f189-5f54-a764-0ae917abb79d",
+      "field": "repeats",
+      "value": 230,
+      "note": "THE FIRST 1000: boardsesh counts fewer (80 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "be6e67a6-f189-5f54-a764-0ae917abb79d",
+      "field": "stars",
+      "value": 5,
+      "note": "THE FIRST 1000: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "66648923-0a38-5493-a519-b431f6c9c7a3",
+      "field": "repeats",
+      "value": 201,
+      "note": "HOATA BUA: boardsesh counts fewer (35 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "66648923-0a38-5493-a519-b431f6c9c7a3",
+      "field": "stars",
+      "value": 5,
+      "note": "HOATA BUA: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "f5fcc4af-aa43-568a-9867-8362b5b733e7",
+      "field": "repeats",
+      "value": 47,
+      "note": "OVERNIGHT LOW: hand-added count; holds it if boardsesh's copy arrives with fewer (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "f5fcc4af-aa43-568a-9867-8362b5b733e7",
+      "field": "stars",
+      "value": 5,
+      "note": "OVERNIGHT LOW: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "71a7e218-cfdd-50db-862f-3437c3211427",
+      "field": "repeats",
+      "value": 53,
+      "note": "WEAVER: boardsesh counts fewer (1 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "71a7e218-cfdd-50db-862f-3437c3211427",
+      "field": "stars",
+      "value": 5,
+      "note": "WEAVER: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "6d06249a-3d07-5c26-968b-4dc012f34a02",
+      "field": "repeats",
+      "value": 62,
+      "note": "MOTHER'S MILK: boardsesh counts fewer (3 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "6d06249a-3d07-5c26-968b-4dc012f34a02",
+      "field": "stars",
+      "value": 5,
+      "note": "MOTHER'S MILK: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "67b26667-d36a-5d23-bcf7-06c88619066a",
+      "field": "repeats",
+      "value": 64,
+      "note": "PASCAL: hand-added count; holds it if boardsesh's copy arrives with fewer (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "67b26667-d36a-5d23-bcf7-06c88619066a",
+      "field": "stars",
+      "value": 5,
+      "note": "PASCAL: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "71822dfe-59c2-54cb-97b2-e62e3a9357e1",
+      "field": "repeats",
+      "value": 78,
+      "note": "BABY'S FIRST HANDJAM: boardsesh counts fewer (5 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "71822dfe-59c2-54cb-97b2-e62e3a9357e1",
+      "field": "stars",
+      "value": 5,
+      "note": "BABY'S FIRST HANDJAM: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "ba223477-1cba-5ae7-897b-d71b72be95b9",
+      "field": "repeats",
+      "value": 85,
+      "note": "FIRE DRILL: boardsesh counts fewer (6 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "ba223477-1cba-5ae7-897b-d71b72be95b9",
+      "field": "stars",
+      "value": 5,
+      "note": "FIRE DRILL: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "af315a33-2f6e-5988-b173-3363b386f79a",
+      "field": "repeats",
+      "value": 87,
+      "note": "FINITO: hand-added count; holds it if boardsesh's copy arrives with fewer (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "af315a33-2f6e-5988-b173-3363b386f79a",
+      "field": "stars",
+      "value": 5,
+      "note": "FINITO: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "c9045c73-cb58-5175-9306-79c9ac3147ab",
+      "field": "repeats",
+      "value": 113,
+      "note": "KING 👑 MARRA: boardsesh counts fewer (19 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "c9045c73-cb58-5175-9306-79c9ac3147ab",
+      "field": "stars",
+      "value": 5,
+      "note": "KING 👑 MARRA: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8298515c-1a53-54ac-815d-6811e3bb609a",
+      "field": "repeats",
+      "value": 96,
+      "note": "MATCH ME IF YOU CAN: boardsesh counts fewer (10 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "8298515c-1a53-54ac-815d-6811e3bb609a",
+      "field": "stars",
+      "value": 5,
+      "note": "MATCH ME IF YOU CAN: held with the repeat count (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "62e235ef-d2ea-5636-ad54-87aa3820e5b2",
+      "field": "repeats",
+      "value": 128,
+      "note": "LUCKY NUMBER SLEVIN: boardsesh counts fewer (30 at entry); drop this pin once its count is real (official MoonBoard app, 2026-11-27)"
+    },
+    {
+      "action": "pin",
+      "layout_id": 7,
+      "angle": 40,
+      "id": "62e235ef-d2ea-5636-ad54-87aa3820e5b2",
+      "field": "stars",
+      "value": 5,
+      "note": "LUCKY NUMBER SLEVIN: held with the repeat count (official MoonBoard app, 2026-11-27)"
     }
   ]
 }
